@@ -16,7 +16,7 @@ import os
 from ctypes import *
 
 #mkl = cdll.LoadLibrary("mk2_rt.dll")
-mkl = cdll.LoadLibrary("libmkl_rt.so")
+#mkl = cdll.LoadLibrary("libmkl_rt.so")
 #c_double_p = POINTER(c_double)
 #DFTI_COMPLEX = c_int(32)
 #DFTI_DOUBLE = c_int(36)
