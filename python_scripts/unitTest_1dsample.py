@@ -35,7 +35,7 @@ phase = bg.scale(bg.twain(shape_sample), -np.pi, np.pi)
 sample = amp * np.exp(1J * phase)
 
 # Now let's just take a slice out of the sample
-sample_1d = sample[:, sample.shape[1]/2]
+sample_1d = sample[sample.shape[0]/2, :]
 
 # and expand back to the sample
 sample[:] = sample_1d
@@ -96,7 +96,7 @@ print 'outputputing files...'
 print 'output directory is ', outputdir
 
 sequence = """# This is a sequence file which determines the ptychography algorithm to use
-Thibault_sample = 200
+Thibault_sample = 300
 ERA_sample = 500
 """
 
