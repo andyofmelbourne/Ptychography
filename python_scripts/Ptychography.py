@@ -1,30 +1,30 @@
+# This code is primarily designed to run from the command 
+# line with a configuration file as input from the user.
 import numpy as np
 import scipy as sp
 from scipy import ndimage
-import sys
-import os
+import os, sys, getopt
 from ctypes import *
 import bagOfns as bg
 import time
 
-# Add results output, with time stamp?
-# Add algorithm input 
-# I need a way to input the algorithm
-# maybe a list like
-# ERA_sample = 200
-# ERA_probe = 10
-# ERA_sample = 200
-# ERA_probe = 10
-# ERA_sample = 200
-# ERA_probe = 10
-# coord = 100
-# ..
-
-# Add coords update (hard)
-
-def timeStamp():
-    """Filename safe timestamp"""
-    return time.strftime("%Y%m%d%H%M%S")
+def main(argv):
+    inpurtdir = './'
+    outputdir = './'
+    try :
+        opts, args = getopt.getopt(argv,"hi:o:",["inputdir=","outputdir="])
+    except getopt.GetoptError:
+        print 'process_diffs.py -i <inputdir> -o <outputdir>'
+        sys.exit(2)
+    for opt, arg in opts:
+        if opt == '-h':
+            print 'process_diffs.py -i <inputdir> -o <outputdir>'
+            sys.exit()
+        elif opt in ("-i", "--inputdir"):
+            inputdir = arg
+        elif opt in ("-o", "--outputdir"):
+            outputdir = arg
+    return inputdir, outputdir
 
 def fnamBase_match(fnam):
     fnam_base  = os.path.basename(fnam)
@@ -36,7 +36,6 @@ def fnamBase_match(fnam):
     except :
         return False
     return True
-
 
 class Ptychography(object):
     def __init__(self, diffs, coords, mask, probe, sample): 
@@ -315,6 +314,8 @@ def input_output(inputDir):
     #
     # load the y,x pixel shift coordinates
     coords   = bg.binary_in(inputDir + 'coords', dt=np.float64, dimFnam=True)
+    print 'warning: casting the coordinates from float to ints.'
+    coords = np.array(coords, dtype=np.int32)
     #
     # load the mask
     if fnamBase_match(inputDir + 'mask'):
@@ -382,21 +383,22 @@ def runSequence(prob, sequence):
     return prob
 
 if __name__ == '__main__':
-    inputDir  = '../input_0181_0/'
-    #outputDir = inputDir[:-1] + '_output_' + timeStamp() + '/'
-    outputDir = '../output_0181_0_2/'
-    prob, sequence = input_output(inputDir)
-    prob      = runSequence(prob, sequence)
+    inputdir, outputdir = main(sys.argv[1:])
+    print 'input directory is ', inputdir
+    print 'output directory is ', outputdir
+    prob, sequence = input_output(inputdir)
+    prob           = runSequence(prob, sequence)
     #
     # output the results
-    bg.binary_out(prob.sample, outputDir + 'sample_retrieved', dt=np.complex128, appendDim=True)
-    bg.binary_out(prob.probe, outputDir + 'probe_retrieved', dt=np.complex128, appendDim=True)
-    bg.binary_out(prob.coords, outputDir + 'coords_retrieved', appendDim=True)
+    bg.binary_out(prob.sample, outputdir + 'sample_retrieved', dt=np.complex128, appendDim=True)
+    bg.binary_out(prob.probe, outputdir + 'probe_retrieved', dt=np.complex128, appendDim=True)
+    bg.binary_out(prob.coords, outputdir + 'coords_retrieved', appendDim=True)
     #
-    bg.binary_out(np.array(prob.error_mod), outputDir + 'error_mod', appendDim=True)
-    bg.binary_out(np.array(prob.error_sup), outputDir + 'error_sup', appendDim=True)
+    bg.binary_out(np.array(prob.error_mod), outputdir + 'error_mod', appendDim=True)
+    bg.binary_out(np.array(prob.error_sup), outputdir + 'error_sup', appendDim=True)
     #
-    bg.binary_out(np.abs(bg.fftn(prob.exits))**2, outputDir + 'diffs_retrieved', appendDim=True)
+    # do not output this because they can easily be generated from the retrieved sample, probe and coords
+    # bg.binary_out(np.abs(bg.fftn(prob.exits))**2, outputDir + 'diffs_retrieved', appendDim=True)
 
 
     
