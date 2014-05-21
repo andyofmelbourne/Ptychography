@@ -6,9 +6,8 @@ import scipy as sp
 import random
 import time
 import threading
-import sys
+import sys, os, getopt
 import scipy.misc as sm
-import os
 from ctypes import *
 
 ####################################################################################
@@ -240,6 +239,22 @@ def gauss_1d(arrayin,a,ryc=0.0,rxc=0.0):
     if ryc != 0.0 :
         arrayout = np.roll(arrayout,shifty,0)
     return arrayout
+
+def circle_new(shape = (1024, 1024), radius=0.25, Nrad = None, origin=[0,0]):
+    """Make a circle of optional radius as a fraction of the array size.
+    
+    If ny > nx (or vise versa) use the smaller radius."""
+    if Nrad == None :
+        x, y = make_xy(shape, origin = origin)
+        r    = np.sqrt(x**2 + y**2)
+        if shape[1] > shape[0]:
+            rmax = radius * shape[0] / 2
+        else :
+            rmax = radius * shape[1] / 2
+        arrayout = (r <= rmax)
+    else :
+        pass
+    return np.array(arrayout, dtype=np.float64)
 
 def circle(ny, nx, radius=0.25, Nrad = None):
     """Make a circle of optional radius as a fraction of the array size"""
@@ -717,15 +732,15 @@ def roll_nowrap(arrayin,dy = 0,dx = 0):
         arrayout = arrayin
     return arrayout
 
-def interpolate(arrayin,new_res):
+def interpolate(arrayin,shape=(256, 256)):
     """Interpolate to the grid."""
     if arrayin.dtype == 'complex' :
-        Ln = interpolate(np.real(arrayin),new_res) + 1.0J * interpolate(np.imag(arrayin),new_res)
+        Ln = interpolate(np.real(arrayin),shape) + 1.0J * interpolate(np.imag(arrayin),shape)
         #Ln = interpolate(np.abs(arrayin),new_res) * np.exp(1.0J * interpolate(np.angle(arrayin),new_res))
     else :
         coeffs    = ndimage.spline_filter(arrayin)
         rows,cols = arrayin.shape
-        coords    = np.mgrid[0:rows-1:1j*new_res,0:cols-1:1j*new_res]
+        coords    = np.mgrid[0:rows-1:1j*shape[0],0:cols-1:1j*shape[1]]
         Ln        = sp.ndimage.map_coordinates(coeffs, coords, prefilter=False)
     return Ln
 
@@ -833,26 +848,25 @@ def orientate(arrayin,orientation):
         print 'orientation must be an integer between 1 and 8.'
     return np.copy(arrayin[y,x])
     
-def brog(N=256):
+
+def brog(shape=(256, 256)):
     """Load an image of debroglie and return the array.
 
     it is an 256x256 np.float64 array."""
-    import os
-    fnam = os.path.dirname(os.path.realpath(__file__)) + os.path.normcase('/test_cases/brog_256x256_32bit_big.raw')
-    array = binary_in(fnam,256,256)
-    if N != 256 :
-        array = interpolate(array,N)
+    fnam = os.path.dirname(os.path.realpath(__file__)) + os.path.normcase('/brog_256x256_32bit_big.raw')
+    array = binary_in(fnam, (256,256), dt=np.float32)
+    if shape != (256, 256) :
+        array = interpolate(array, shape)
     return array 
 
-def twain(N=256):
+def twain(shape=(256, 256)):
     """Load an image of Mark Twain and return the array.
 
     it is an 256x256 np.float64 array."""
-    import os
-    fnam = os.path.dirname(os.path.realpath(__file__)) + os.path.normcase('/test_cases/twain_256x256_32bit_big.raw')
-    array = binary_in(fnam,256,256)
-    if N != 256 :
-        array = interpolate(array,N)
+    fnam = os.path.dirname(os.path.realpath(__file__)) + os.path.normcase('/twain_256x256_32bit_big.raw')
+    array = binary_in(fnam, (256,256), dt=np.float32)
+    if shape != (256, 256) :
+        array = interpolate(array, shape)
     return array 
 
 def overlap(array1,array2,thresh=0.05e0):
