@@ -276,6 +276,52 @@ class Ptychography(object):
                        + (~self.mask) )
         self.exits = bg.ifftn(exits_out)
 
+class Ptychography_1dsample(Ptychography):
+
+    def __init__(self, diffs, coords, mask, probe, sample_1d): 
+        self.sample_1d = sample_1d
+        sample = np.array((probe.shape[0], sample_1d.shape[0]), dtype = sample_1d.dtype)
+        sample[:] = sample_1d
+        Ptychography.__init__(self, diffs, coords, mask, probe, sample)
+
+    def Psup_sample(self, exits, thresh=False, inPlace=True):
+        """ """
+        sample_out  = np.zeros_like(self.sample)
+        # 
+        # Calculate denominator
+        # but only do this if it hasn't been done already
+        # (we must set self.probe_sum = None when the probe/coords has changed)
+        if self.probe_sum is None :
+            probe_sum   = np.zeros_like(self.sample, dtype=np.float64)
+            probe_large = np.zeros_like(self.sample, dtype=np.float64)
+            probe_large[:self.shape[0], :self.shape[1]] = np.real(np.conj(self.probe) * self.probe)
+            for coord in self.coords:
+                probe_sum  += bg.roll(probe_large, [-coord[0], -coord[1]])
+            self.probe_sum = probe_sum.copy()
+        # 
+        # Calculate numerator
+        exits2     = np.conj(self.probe) * exits 
+        temp       = np.zeros_like(self.sample)
+        for i in range(len(self.coords)):
+            temp[:self.shape[0], :self.shape[1]] = exits2[i]
+            sample_out += bg.roll(temp, [-self.coords[i][0], -self.coords[i][1]])
+        # 
+        # project to 1d
+        sample_1d = np.sum(sample_out, axis=0)
+        #
+        # divide
+        sample_1d = sample_1d / (np.sum(probe_sum, axis=0) + self.alpha_div)
+        # 
+        # expand
+        sample_out[:] = sample_1d
+        #
+        if thresh :
+            sample_out = bg.threshold(sample_out, thresh=thresh)
+        if inPlace :
+            self.sample = sample_out
+        self.sample_sum = None
+        # 
+        return sample_out
 
 def makeExits(sample, probe, coords):
     exits = np.zeros((len(coords), probe.shape[0], probe.shape[1]), dtype=np.complex128)
@@ -346,7 +392,12 @@ def input_output(inputDir):
                 if temp[1] == '=':
                     sequence.append([temp[0], temp[2]])
     #
-    return Ptychography(diffs, coords, mask, probe, sample), sequence
+    # If the sample is 1d then do a 1d retrieval 
+    if len(sample.shape) == 1 :
+        prob = Ptychography_1dsample(diffs, coords, mask, probe, sample)
+    elif len(sample.shape) == 2 :
+        prob = Ptychography(diffs, coords, mask, probe, sample)
+    return prob, sequence
 
 def runSequence(prob, sequence):
     if not isinstance(prob, Ptychography):
