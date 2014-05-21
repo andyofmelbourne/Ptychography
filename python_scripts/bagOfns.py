@@ -1,10 +1,6 @@
 import numpy as np
-#import matplotlib.pyplot as plt
 from scipy import ndimage
-#from matplotlib.colors import LogNorm
-#import mahotas
 from scipy import fftpack
-#import pymorph
 from random import *
 import scipy as sp
 import random
@@ -15,20 +11,27 @@ import scipy.misc as sm
 import os
 from ctypes import *
 
-#mkl = cdll.LoadLibrary("mk2_rt.dll")
-#mkl = cdll.LoadLibrary("libmkl_rt.so")
-#c_double_p = POINTER(c_double)
-#DFTI_COMPLEX = c_int(32)
-#DFTI_DOUBLE = c_int(36)
-
-
+####################################################################################
+####################################################################################
+# file input and output routines. As well as h5 support
 # Input/Output Routines
-def binary_in(fnam, ny = 0, nx = 0, dt = np.dtype(np.float32), endianness='big', dimFnam = False):
-    """Read a 2-d array from a binary file."""
+def binary_in(fnam, dim = (0,0), dt = np.dtype(np.float64), endianness='big', dimFnam = False):
+    """Read a 2-d array from a binary file. 
+    
+    if dimFnam == True then the array dimensions are deduced from the file name but only if they have the form
+    fnam_10x30x20.raw
+    where raw may be replaced by any three letter string."""
     if dimFnam :
-        onlyfiles  = [ f for f in os.listdir('.') if os.path.isfile(f) ]
-        fnam_match = [ f for f in onlyfiles if f[:len(fnam)] == fnam ]
-        dim        = fnam_match[0][len(fnam) + 1 :-4]
+        fnam_base  = os.path.basename(fnam)
+        fnam_dir   = os.path.abspath(os.path.dirname(fnam))
+        onlyfiles  = [ f for f in os.listdir(fnam_dir) if os.path.isfile(os.path.join(fnam_dir,f)) ]
+        fnam_match = [ f for f in onlyfiles if f[:len(fnam_base)] == fnam_base ]
+        try : 
+            fnam_match[0]
+        except :
+            raise NameError('I can\'t seem to find this file you speak of...\t'+fnam)
+        dim        = fnam_match[0][fnam_match[0].rfind('_') + 1 :-4]
+        #dim        = fnam_match[0][len(fnam_base) + 1 :-4]
         dim_list   = []
         b = ''
         for a in dim:
@@ -40,24 +43,21 @@ def binary_in(fnam, ny = 0, nx = 0, dt = np.dtype(np.float32), endianness='big',
         dim_list.append(int(b))
         dim     = tuple(dim_list)
         fnam_in = fnam_match[0]
-        arrayout = np.fromfile(fnam_in,dtype=dt).reshape( dim )
+        fnam_in = os.path.join(fnam_dir, fnam_in)
+        arrayout = np.fromfile(os.path.abspath(fnam_in),dtype=dt).reshape( dim )
     else :
-        arrayout = np.fromfile(fnam,dtype=dt).reshape( (ny,nx) )
+        arrayout = np.fromfile(os.path.abspath(fnam),dtype=dt).reshape( dim )
+    
     if sys.byteorder != endianness:
         arrayout.byteswap(True)
-    #arrayout = np.float64(arrayout)
     return arrayout
 
-def binary_in_complex(fnam,ny,nx,dt=np.dtype(np.complex128),endianness='big'):
-    """Read a 2-d array from a binary file."""
-    arrayout = np.fromfile(fnam,dtype=dt).reshape( (ny,nx) )
-    if sys.byteorder != endianness:
-        arrayout.byteswap(True)
-    arrayout = np.complex128(arrayout)
-    return arrayout
-
-def binary_out(array, fnam, dt=np.dtype(np.float32), endianness='big', appendDim=False):
-    """Write a 2-d array to a binary file."""
+def binary_out(array, fnam, dt=np.dtype(np.float64), endianness='big', appendDim=False):
+    """Write a 2-d array to a binary file.
+    
+    If appendDim == True then the dimensions of the output array are appended to the file name.
+    eg. fnam --> fnam_10x20x30.raw
+    This is done so that binary_in with dimFnam == True will work."""
     if appendDim == True :
         fnam_out = fnam + '_'
         for i in array.shape[:-1] :
@@ -65,16 +65,133 @@ def binary_out(array, fnam, dt=np.dtype(np.float32), endianness='big', appendDim
         fnam_out += str(array.shape[-1]) + '.raw'
     else :
         fnam_out = fnam
-    arrayout = np.array(array,dtype=dt)
+    arrayout = np.array(array, dtype=dt)
     if sys.byteorder != endianness:
         arrayout.byteswap(True)
-    arrayout.tofile(fnam_out)
+    arrayout.tofile(os.path.abspath(fnam_out))
 
-def binary_in_amp_phase(fnamAmp,fnamPhase,N,dt=np.float64,endianness='big'):
-    """call in fnamAmp and fnamPhase and return the complex array."""
-    amp   = binary_in(fnamAmp  ,N,N,dt=dt,endianness=endianness)
-    phase = binary_in(fnamPhase,N,N,dt=dt,endianness=endianness)
-    return amp * np.exp(1.0J * phase)
+def get_fnams(start = '', dir_base = './', end = ''):
+    """Return the relative path and file names off all files in 'dir_base' that start with 'base' and end with 'end'."""
+    fnams           = os.listdir(dir_base)
+    fnams_out       = []
+    for i, fnam in enumerate(fnams):
+        if fnam[:len(start)] == start :
+            if fnam[-len(end):] == end or len(end) == 0 :
+                temp = os.path.join( dir_base, fnam)
+                if os.path.isfile( temp ) :
+                    fnams_out.append(temp)
+    return fnams_out
+    
+####################################################################################
+####################################################################################
+def quadshift(a):
+    """Move N/2 - 1 to 0 for the last two dimensions. If the array is 1d then this is only done over the first."""
+    if len(a.shape) == 1 :
+        b = np.roll(a, -(a.shape[-1]/2-1), -1)
+    else :
+        b = np.roll(a, -(a.shape[-2]/2-1), -2)
+        b = np.roll(b, -(b.shape[-1]/2-1), -1)
+    return b
+
+def iquadshift(a):
+    """Move 0 to N/2 - 1 for the last two dimensions. If the array is 1d then this is only done over the first."""
+    if len(a.shape) == 1 :
+        b = np.roll(a, +(a.shape[-1]/2-1), -1)
+    else :
+        b = np.roll(a, +(a.shape[-2]/2-1), -2)
+        b = np.roll(b, +(b.shape[-1]/2-1), -1)
+    return b
+
+def fft2(a, origin='centre'):
+    """Norm preserving fft on a over the last two dimensions (2d ffts). 
+    
+    If len(a) == 1 then a 1d transform is done.
+    If len(a) == 2 then a 2d transform is done.
+    If len(a) >  2 then many 2d transforms are done.
+    
+    If origin is 'zero' then the the zero pixel is at 0,0.
+    If origin is 'centre' then the the zero pixel is at a.shape[0]/2 -1, a.shape[0]/2 -1.
+    
+    this is not an in place operation."""
+    if origin == 'centre' :
+        b = quadshift(a)
+    else :
+        b = a.copy()
+    if len(b.shape) == 1 :
+        b = np.fft.fftpack.fft(b)     
+    elif len(b.shape) == 2 :
+        b = np.fft.fftpack.fft2(b)     
+    elif len(b.shape) > 2 :
+        b = fftn(b)
+        if origin == 'centre' :
+            b = iquadshift(b)
+        return b
+    if origin == 'centre' :
+        b = iquadshift(b)
+    return np.divide(b, np.sqrt(b.size))
+
+def ifft2(a, origin='centre'):
+    """Norm preserving inverse fft on a over the last two dimensions (2d ffts). 
+    
+    If len(a) == 1 then a 1d transform is done.
+    If len(a) == 2 then a 2d transform is done.
+    If len(a) >  2 then many 2d transforms are done.
+    
+    If origin is 'zero' then the the zero pixel is at 0,0.
+    If origin is 'centre' then the the zero pixel is at a.shape[0]/2 -1, a.shape[0]/2 -1.
+    
+    this is not an in place operation."""
+    if origin == 'centre' :
+        b = quadshift(a)
+    else :
+        b = a.copy()
+    if len(b.shape) == 1 :
+        b = np.fft.fftpack.ifft(b)     
+    elif len(b.shape) == 2 :
+        b = np.fft.fftpack.ifft2(b)     
+    elif len(b.shape) > 2 :
+        b = ifftn(b)
+        if origin == 'centre' :
+            b = iquadshift(b)
+        return b
+    if origin == 'centre' :
+        b = iquadshift(b)
+    return np.divide(b, np.sqrt(b.size))
+
+def fftn(a):
+    """Norm preserving fft on the zero pixel 0,0 this is not in place."""
+    b = np.fft.fftpack.fftn(a, axes=(len(a.shape)-2,len(a.shape)-1))     
+    return np.divide(b, np.sqrt(a.shape[-1] * a.shape[-2]))
+
+def ifftn(a):
+    """Norm preserving fft on the zero pixel 0,0 this is not in place."""
+    b = np.fft.fftpack.ifftn(a, axes=(len(a.shape)-2,len(a.shape)-1))     
+    return np.multiply(b, np.sqrt(a.shape[-1] * a.shape[-2]))
+
+def fftn_1d(a):
+    """Norm preserving fft on the zero pixel 0,0 this is not in place."""
+    b = np.fft.fftpack.fftn(a, axes=(len(a.shape)-1, ))     
+    return np.divide(b, np.sqrt(a.shape[-1]))
+
+def ifftn_1d(a):
+    """Norm preserving fft on the zero pixel 0,0 this is not in place."""
+    b = np.fft.fftpack.ifftn(a, axes=(len(a.shape)-1, ))     
+    return np.multiply(b, np.sqrt(a.shape[-1]))
+
+####################################################################################
+####################################################################################
+# I want thresholding masking and such. Maybe look at numpy's masked array operations
+def threshold(arrayin, thresh = 1.0):
+    """Threshold any values in arrayin above thresh to "thresh", apply this to the amplitude only for complex arrays."""
+    if arrayin.dtype == 'complex' :
+        arrayout = np.abs(arrayin)
+    else :
+        arrayout = arrayin
+    mask     = np.array(1.0 * (arrayout > thresh),dtype=np.bool)  
+    arrayout = (~mask) * arrayout + mask 
+    if arrayin.dtype == 'complex' :
+        arrayout = arrayout * np.exp(1J*np.angle(arrayin))
+    return arrayout
 
 def gauss(arrayin,a,ryc=0.0,rxc=0.0): 
     """Return a real gaussian as an numpy array e^{-a x^2}."""
@@ -143,146 +260,6 @@ def circle(ny, nx, radius=0.25, Nrad = None):
                 if r < nrad:
                     arrayout[i][j] = 1.0
     return arrayout
-
-
-
-
-def fft2_inplace(a):
-    desc_handle = c_void_p()
-    mkl.DftiCreateDescriptor(byref(desc_handle), c_longlong(36), c_longlong(32), c_longlong(2), (c_longlong*2)(a.shape[0], a.shape[1]))
-    mkl.DftiCommitDescriptor(desc_handle)
-    mkl.DftiComputeForward(desc_handle, a.ctypes.data_as(c_void_p))
-    mkl.DftiFreeDescriptor(desc_handle)
-    return a
-
-def ifft2_inplace(a):
-    desc_handle = c_void_p()
-    mkl.DftiCreateDescriptor(byref(desc_handle), c_longlong(36), c_longlong(32), c_longlong(2), (c_longlong*2)(a.shape[0], a.shape[1]))
-    mkl.DftiCommitDescriptor(desc_handle)
-    mkl.DftiComputeBackward(desc_handle, a.ctypes.data_as(c_void_p))
-    mkl.DftiFreeDescriptor(desc_handle)
-    return a
-
-def fft2_memoryLeak(arrayin):
-    """Calculate the 2d fourier transform of an array with N/2 - 1 as the zero-pixel."""
-    # do an fft
-    # check if arrayin is 2d
-    a = arrayin.shape
-    if len(a) == 1 :
-        arrayout = fft(arrayin)
-    elif len(a) == 2 :
-        ny = arrayin.shape[0]
-        nx = arrayin.shape[1]
-        arrayout = np.array(arrayin,dtype=np.complex128)
-        arrayout = np.roll(arrayout,-(ny/2-1),0)
-        arrayout = np.roll(arrayout,-(nx/2-1),1)
-        fft2_inplace(arrayout) 
-        arrayout/= np.sqrt(float(ny*nx))
-        arrayout = np.roll(arrayout,-(ny/2+1),0)
-        arrayout = np.roll(arrayout,-(nx/2+1),1)
-    elif len(a) == 3 :
-        arrayout = np.array(arrayin,dtype=np.complex128)
-        for i in range(a[0]):
-            arrayout[i] = fft2(arrayin[i])
-    return arrayout
-
-def ifft2_memoryLeak(arrayin):
-    """Calculate the 2d inverse fourier transform of an array with N/2 - 1 as the zero-pixel."""
-    # do an fft
-    # check if arrayin is 2d
-    a = arrayin.shape
-    if len(a) == 1 :
-        arrayout = ifft(arrayin)
-    elif len(a) == 2 :
-        ny = arrayin.shape[0]
-        nx = arrayin.shape[1]
-        arrayout = np.array(arrayin,dtype=np.complex128)
-        arrayout = np.roll(arrayout,-(ny/2-1),0)
-        arrayout = np.roll(arrayout,-(nx/2-1),1)
-        ifft2_inplace(arrayout) 
-        arrayout /= np.sqrt(float(ny*nx))
-        arrayout = np.roll(arrayout,-(ny/2+1),0)
-        arrayout = np.roll(arrayout,-(nx/2+1),1)
-    elif len(a) == 3 :
-        arrayout = np.array(arrayin,dtype=np.complex128)
-        for i in range(a[0]):
-            arrayout[i] = ifft2(arrayin[i])
-    return arrayout
-
-
-
-
-def fft2(arrayin):
-    """Calculate the 2d fourier transform of an array with N/2 - 1 as the zero-pixel."""
-    # do an fft
-    # check if arrayin is 2d
-    a = arrayin.shape
-    if len(a) == 1 :
-        arrayout = fft(arrayin)
-    elif len(a) == 2 :
-        ny = arrayin.shape[0]
-        nx = arrayin.shape[1]
-        arrayout = np.array(arrayin,dtype=np.complex128)
-        arrayout = np.roll(arrayout,-(ny/2-1),0)
-        arrayout = np.roll(arrayout,-(nx/2-1),1)
-        arrayout = fftpack.fft2(arrayout) / np.sqrt(float(ny*nx))
-        arrayout = np.roll(arrayout,-(ny/2+1),0)
-        arrayout = np.roll(arrayout,-(nx/2+1),1)
-    elif len(a) == 3 :
-        arrayout = np.array(arrayin,dtype=np.complex128)
-        for i in range(a[0]):
-            arrayout[i] = fft2(arrayin[i])
-    return arrayout
-
-def ifft2(arrayin):
-    """Calculate the 2d inverse fourier transform of an array with N/2 - 1 as the zero-pixel."""
-    # do an fft
-    # check if arrayin is 2d
-    a = arrayin.shape
-    if len(a) == 1 :
-        arrayout = ifft(arrayin)
-    elif len(a) == 2 :
-        ny = arrayin.shape[0]
-        nx = arrayin.shape[1]
-        arrayout = np.array(arrayin,dtype=np.complex128)
-        arrayout = np.roll(arrayout,-(ny/2-1),0)
-        arrayout = np.roll(arrayout,-(nx/2-1),1)
-        arrayout = fftpack.ifft2(arrayout) * np.sqrt(float(ny*nx))
-        arrayout = np.roll(arrayout,-(ny/2+1),0)
-        arrayout = np.roll(arrayout,-(nx/2+1),1)
-    elif len(a) == 3 :
-        arrayout = np.array(arrayin,dtype=np.complex128)
-        for i in range(a[0]):
-            arrayout[i] = ifft2(arrayin[i])
-    return arrayout
-
-def fft(arrayin):
-    """Calculate the 1d fourier transform of an array with N/2 - 1 as the zero-pixel."""
-    # do an fft
-    ny = arrayin.shape[0]
-    arrayout = np.array(arrayin,dtype=np.complex128)
-    arrayout = np.roll(arrayout,-(ny/2-1),0)
-    arrayout = fftpack.fft(arrayout) / np.sqrt(float(ny))
-    arrayout = np.roll(arrayout,-(ny/2+1),0)
-    return arrayout
-
-def ifft(arrayin):
-    """Calculate the 2d inverse fourier transform of an array with N/2 - 1 as the zero-pixel."""
-    # do an fft
-    ny = arrayin.shape[0]
-    arrayout = np.array(arrayin,dtype=np.complex128)
-    arrayout = np.roll(arrayout,-(ny/2-1),0)
-    arrayout = fftpack.ifft(arrayout) * np.sqrt(float(ny))
-    arrayout = np.roll(arrayout,-(ny/2+1),0)
-    return arrayout
-
-def show(arrayin):
-    array = np.abs(arrayin)
-    plt.clf()
-    plt.ion()
-    plt.imshow(array,cmap='hot')
-    plt.axis('off')
-    plt.show()
 
 def waveno(E):
     """Calculates the wave-number of an electron from its energy.
@@ -520,12 +497,6 @@ def reproject_image_into_polar(data, origin=None):
     zi = sp.ndimage.map_coordinates(data, coords, order=1)
     return zi.reshape((nx, ny)), r_i, theta_i
 
-def quadshift(arrayin):
-    ny = arrayin.shape[0]
-    nx = arrayin.shape[1]
-    arrayout = np.roll(arrayin,-(ny/2+1),0)
-    arrayout = np.roll(arrayout,-(nx/2+1),1)
-    return arrayout
 
 def centre(arrayin):
     """Shift an array so that its centre of mass is on the N/2 - 1."""
@@ -698,11 +669,11 @@ def crop_to_nonzero(arrayin, mask=None):
             arrayout.append(i[top:bottom+1,left:right+1])
     return arrayout
     
-def roll(arrayin,dy = 0,dx = 0):
+def roll(arrayin, shift = (0, 0)):
     """np.roll arrayin by dy in dim 0 and dx in dim 1."""
-    if (dy != 0) or (dx != 0):
-        arrayout = np.roll(arrayin,dy,0)
-        arrayout = np.roll(arrayout,dx,1)
+    if (shift[0] != 0) or (shift[1] != 0):
+        arrayout = np.roll(arrayin,shift[0],0)
+        arrayout = np.roll(arrayout,shift[1],1)
     else :
         arrayout = arrayin
     return arrayout
@@ -1284,266 +1255,3 @@ class test_retrievals(object):
         self.Exit  = (self.Sample + 1.0) * self.Illum 
         self.image = np.square(np.abs(fft2(self.Exit)))
         self.N     = N
-
-# This is a simple job runner for the program SAAF_STEM_basics_x64.exe 
-# it will edit the input text file, run the program then grab the desired output
-
-# I want to make the job just act like a module
-
-def saaf_func(unitcells = 1, unitcell_x = 8, Nsupercell = 512, phaseObject = False, slices_perunit = 4.0):
-    sa = SAAF(unitcells_z = unitcells, Nsupercell = Nsupercell, unitcell_x = unitcell_x, phaseObject = phaseObject, slices_perunit = slices_perunit )
-    out = {}
-    out['STEM_images'] = sa.arrays
-    out['proj_pot']    = sa.proj_potential_real + 1.0J * sa.proj_potential_imag 
-    out['dmap']        = sa.dmap
-    out['probe']       = sa.probe_real + 1.0J * sa.probe_imag
-    return out
-
-class SAAF(object):
-    def __init__(self, unitcells_z = 1, Nsupercell = 256, unitcell_x = 5, probePoints = 0, phaseObject = False, slices_perunit = 4.0):
-        # Set directories
-        self.execution_dir = 'C:\\Users\\andyofmelbourne\Desktop\\for_Andrew\\SAAF_STEM_basics\\'
-        self.exe_file      = 'SAAF_STEM_basics.exe'
-        self.input_file    = 'blank.txt'
-        self.user_input    = 'user_input.txt'
-        self.output_dir    = 'output_test/'
-        
-        self.unit_cell_thickness = 3.90500000000000
-        self.options       = self.setVariables()
-        ###########################################
-        # over ride defaults
-        crystal_thickness = ['Crystal thickness', self.unit_cell_thickness * unitcells_z, 20]
-        self.options['crystal_thickness'] = crystal_thickness 
-
-        supercell_x    = ['Number of pixels in x-dirn', Nsupercell, 5]
-        self.options['supercell_x'] = supercell_x    
-        #
-        supercell_y    = ['Number of pixels in y-dirn', Nsupercell, 6]
-        self.options['supercell_y'] = supercell_y    
-        #
-        unitcells_x    = ['Number of unit cells in x-dirn', unitcell_x, 7]
-        self.options['unitcells_x'] = unitcells_x    
-        #
-        unitcells_y    = ['Number of unit cells in y-dirn', unitcell_x, 8]
-        self.options['unitcells_y'] = unitcells_y    
-        #
-        if probePoints == 0 :
-            probe_points_x = ['Number of probe points in x-dirn', Nsupercell / unitcell_x, 46]
-            self.options['probe_points_x'] = probe_points_x 
-            probe_points_y = ['Number of probe points in y-dirn', Nsupercell / unitcell_x, 47]
-            self.options['probe_points_y'] = probe_points_y 
-        #
-        if phaseObject:
-            full_prop      = ['<1> full propagation, <2> POA', 2, 52]
-            self.options['full_prop'] = full_prop      
-        #
-        slice_thickness   = ['Slice thickness', self.unit_cell_thickness / slices_perunit, 21]
-        self.options['slice_thickness'] = slice_thickness   
-        #
-        self.write_options(self.options, self.input_file)
-        self.run_job()
-        self.arrays = self.grab_files()
-
-
-    def order_options(self, options):
-        opList = []
-        ii = 0
-        for i in range(len(options)):
-            for item in options.values():
-                if ii == item[-1]:
-                    opList.append(item[:-1])
-                    ii = ii + 1
-        return opList
-
-    def grab_files(self):
-        """Grab the output of the program and put them into arrays for processing."""
-        onlyfiles = [ f for f in os.listdir(self.execution_dir) if os.path.isfile(os.path.join(self.execution_dir,f)) ]
-        
-        # grab the projected potentials
-        fnam_real = [f for f in onlyfiles if self.options['output_file_real'][1] == f ]
-        fnam_imag = [f for f in onlyfiles if self.options['output_file_imag'][1] == f ]
-        
-        if len(fnam_real) > 0 :
-            self.proj_potential_real = np.loadtxt(os.path.join(self.execution_dir, fnam_real[0]))
-            os.remove(os.path.join(self.execution_dir, fnam_real[0]))
-        if len(fnam_imag) > 0 :
-            self.proj_potential_imag = np.loadtxt(os.path.join(self.execution_dir, fnam_imag[0]))
-            os.remove(os.path.join(self.execution_dir, fnam_imag[0]))
-
-        # grab the real space STEM probe
-        if self.options['probe_output'][1] == 1 :
-            fnam_probe_real = [f for f in onlyfiles if 'probe_real.txt' == f ]
-            fnam_probe_imag = [f for f in onlyfiles if 'probe_imag.txt' == f ]
-        
-
-        if (len(fnam_probe_real) > 0) & (len(fnam_probe_imag) > 0) :
-            self.probe_real = np.loadtxt(os.path.join(self.execution_dir, fnam_probe_real[0]))
-            os.remove(os.path.join(self.execution_dir, fnam_probe_real[0]))
-            self.probe_imag = np.loadtxt(os.path.join(self.execution_dir, fnam_probe_imag[0]))
-            os.remove(os.path.join(self.execution_dir, fnam_probe_imag[0]))
-
-        # grab every file starting with fnam basis
-        only_basis = [f for f in onlyfiles if self.options['fnam_basis'][1] == f[:len(self.options['fnam_basis'][1])] ]
-        # there is an det_info file I want to get rid of
-        only_arrays   = [f for f in only_basis if  f.find('det_info') == -1 ]
-
-        only_det_info = [f for f in only_basis if  f.find('det_info') != -1 ]
-        if len(only_det_info) > 0:
-            with open(os.path.join(self.execution_dir, only_det_info[0]), "r") as myfile:
-                self.det_info = myfile.readlines()
-            os.remove(os.path.join(self.execution_dir, only_det_info[0]))
-        
-        self.dmap = np.loadtxt(os.path.join(self.execution_dir, self.options['dmap_fnam'][1]))
-        os.remove(os.path.join(self.execution_dir, self.options['dmap_fnam'][1]))
-        
-        # read in the arrays
-        arrays = []
-        for i in range(len(only_arrays)):
-            arrays.append(np.loadtxt(os.path.join(self.execution_dir, only_arrays[i])))
-            os.remove(os.path.join(self.execution_dir, only_arrays[i]))
-        return arrays
-
-    def run_job(self):
-        # execute program
-        # get the current working directory
-        cwd = os.getcwd()
-        # set the current working directory to the execution directory
-        os.chdir(self.execution_dir)
-        # execute the program
-        os.system(self.exe_file)
-        # return to the directory of this program
-        os.chdir(cwd)
-
-    def write_options(self, options, input_file):
-        """Write a list of string value pairs to the file input_file in the directory self.execution_dir"""
-        # get the current working directory
-        cwd = os.getcwd()
-        # set the current working directory to the execution directory
-        os.chdir(self.execution_dir)
-        # write to file
-        f = open(input_file, 'w')
-        for option in self.order_options(options):
-            f.write(option[0] + '\n')
-            f.write(str(option[1]) + '\n')
-            print option[0] + '\n'
-            print str(option[1]) + '\n'
-        f.close()
-        # return to the directory of this program
-        os.chdir(cwd)
-        return 
-
-    def setVariables(self):
-        """A long list of variables used to construct the input file for executable.
-        """
-        options = {}
-        numThreads     = ['', 0, 0] # use all threads
-        options['numThreads'] = numThreads     
-        absorptive_Fph = ['<1> absorptive, <2> FPh, <0> exit', 1, 1]
-        options['absorptive_Fph'] = absorptive_Fph 
-        MS_abs_menu    = ['MS abs menu', 1, 2]
-        options['MS_abs_menu'] = MS_abs_menu    
-        xtl_fnam       = ['.xtl file name', 'srtio3_001_200.xtl', 3]
-        options['xtl_fnam'] = xtl_fnam       
-        zone_sysRow    = ['<1> zone axis, <2> sys row', 1, 4]
-        options['zone_sysRow'] = zone_sysRow    
-        supercell_x    = ['Number of pixels in x-dirn', 256, 5]
-        options['supercell_x'] = supercell_x    
-        supercell_y    = ['Number of pixels in y-dirn', 256, 6]
-        options['supercell_y'] = supercell_y    
-        unitcells_x    = ['Number of unit cells in x-dirn', 3, 7]
-        options['unitcells_x'] = unitcells_x    
-        unitcells_y    = ['Number of unit cells in y-dirn', 3, 8]
-        options['unitcells_y'] = unitcells_y    
-        contin         = ['<1> continue, <2> change', 1, 9]
-        options['contin'] = contin         
-        absorption     = ['<1> include absorption, <2> otherwise', 1, 10]
-        options['absorption'] = absorption     
-        absorp_calc    = ['absorptive potential: <1> calc, <2> read', 1, 11]
-        options['absorp_calc'] = absorp_calc    
-        save_formfact  = ['Inelastic form factors: <1> save, <2> otherwise', 2, 12]
-        options['save_formfact'] = save_formfact  
-        MS_abs_menu2   = ['MS abs menu', 2, 13]
-        options['MS_abs_menu2'] = MS_abs_menu2   
-        D1D            = ['<1> 2D output, <2> 1D output', 1, 14]
-        options['2D1D'] = D1D
-        D1D2           = ['<1> 2D output, <2> 1D output', 1, 15]
-        options['2D1D2'] = D1D2
-        realImag       = ['Output: <1> Re+Im, <2> Re, <3> Im', 1, 16]
-        options['realImag'] = realImag
-        output_file    = ['Output file', 'proj_potential_real.txt', 17]
-        options['output_file_real'] = output_file
-        output_file2   = ['Output file', 'proj_potential_imag.txt', 18]
-        options['output_file_imag'] = output_file2
-        MS_abs_menu3   = ['MS abs menu', 5, 19]
-        options['MS_abs_menu3'] = MS_abs_menu3   
-        crystal_thickness = ['Crystal thickness', 3.90500000000000, 20]
-        options['crystal_thickness'] = crystal_thickness 
-        slice_thickness   = ['Slice thickness', self.unit_cell_thickness / 4.0, 21]
-        options['slice_thickness'] = slice_thickness   
-        contin2        = ['<1> continue, <2> change', 1, 22]
-        options['contin2'] = contin2        
-        BWL            = ['<1> BWL, <2> otherwise', 1, 23]
-        options['BWL'] = BWL            
-        rings          = ['Number of rings in polar dirn', 2, 24]
-        options['rings'] = rings          
-        ring_divns     = ['Number of divisions in azimuthal dirn', 4, 25]
-        options['ring_divns'] = ring_divns     
-        ang_offset     = ['Angular offset for azimuthal integration', 45.0000000000000, 26]
-        options['ang_offset'] = ang_offset     
-        confirm        = ['<1> confirm, <2> change', 1, 27]
-        options['confirm'] = confirm        
-        theta_inner    = ['Theta inner angle', 0.00000000000000, 28]
-        options['theta_inner'] = theta_inner    
-        theta_outer    = ['Theta outer angle', 11.500000, 29]
-        options['theta_outer'] = theta_outer    
-        theta_inner2   = ['Theta inner angle', 11.500000, 30]
-        options['theta_inner2'] = theta_inner2   
-        theta_outer2   = ['Theta outer angle', 23.000000, 31]
-        options['theta_outer2'] = theta_outer2    
-        detector_shift = ['<1> shift detector off axis, <2> otherwise', 2, 32]
-        options['detector_shift'] = detector_shift 
-        pixel_suff     = ['<1> pixel sufficiency test, <2> otherwise', 1, 33]
-        options['pixel_suff'] = pixel_suff     
-        safety_factor  = ['Safety factor', 3, 34]
-        options['safety_factor'] = safety_factor  
-        output_detector_map = ['<1> output detector config, <2> otherwise', 1, 35]
-        options['output_detector_map'] = output_detector_map 
-        dmap_fnam      = ['File name for detector config', 'detector_map.txt', 36]
-        options['dmap_fnam'] = dmap_fnam      
-        bf_detector    = ['<1> include BF detector, <2> otherwise', 2, 37]
-        options['bf_detector'] = bf_detector    
-        Cs             = ['Cs in mm', 0.00000000000000, 38]
-        options['Cs'] = Cs             
-        Scherzer       = ['<1> use Scherzer defocus, <2> change', 1, 39]
-        options['Scherzer'] = Scherzer       
-        confirm2       = ['<1> use this cutoff, <2> change', 2, 40]
-        options['confirm2'] = confirm2       
-        aperture_size  = ['New cutoff', 0.917000000000000, 41] # this is in A401
-        options['aperture_size'] = aperture_size  
-        confirm3       = ['<1> use this cutoff, <2> change', 1, 42]
-        options['confirm3'] = confirm3       
-        include_C5     = ['<1> include C5, <2> otherwise', 2, 43]
-        options['include_C5'] = include_C5     
-        contin3        = ['<1> continue, <2> change', 1, 44]
-        options['contin3'] = contin3        
-        confirm4       = ['<1> OK, <2> change size, <3> change direction', 1, 45]
-        options['confirm4'] = confirm4       
-        probe_points_x = ['Number of probe points in x-dirn', 64, 46]
-        options['probe_points_x'] = probe_points_x 
-        probe_points_y = ['Number of probe points in y-dirn', 64, 47]
-        options['probe_points_y'] = probe_points_y 
-        probe_shift    = ['<1> shift incident probe, <2> otherwise', 2, 48]
-        options['probe_shift'] = probe_shift    
-        probe_output   = ['<1> output probe, <2> dont', 1, 49]
-        options['probe_output'] = probe_output    
-        fnam_basis     = ['File name basis', 'output_diffs', 50]
-        options['fnam_basis'] = fnam_basis     
-        output_separate= ['Output: <1> single, <2> separate, <3> both', 2, 51]
-        options['output_separate'] = output_separate
-        full_prop      = ['<1> full propagation, <2> POA', 1, 52]
-        options['full_prop'] = full_prop      
-        MS_abs         = ['MS abs menu', 0, 53]
-        options['MS_abs'] = MS_abs         
-        contin4        = ['<1> absorptive, <2> FPh, <0> exit', 0, 54]
-        options['contin4'] = contin4        
-        return options
