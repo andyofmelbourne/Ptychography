@@ -177,8 +177,21 @@ def ifftn_1d(a):
     """Norm preserving fft on the zero pixel 0,0 this is not in place."""
     b = np.fft.fftpack.ifftn(a, axes=(len(a.shape)-1, ))     
     return np.multiply(b, np.sqrt(a.shape[-1]))
+
 ####################################################################################
 ####################################################################################
+# I want thresholding masking and such. Maybe look at numpy's masked array operations
+def threshold(arrayin, thresh = 1.0):
+    """Threshold any values in arrayin above thresh to "thresh", apply this to the amplitude only for complex arrays."""
+    if arrayin.dtype == 'complex' :
+        arrayout = np.abs(arrayin)
+    else :
+        arrayout = arrayin
+    mask     = np.array(1.0 * (arrayout > thresh),dtype=np.bool)  
+    arrayout = (~mask) * arrayout + mask 
+    if arrayin.dtype == 'complex' :
+        arrayout = arrayout * np.exp(1J*np.angle(arrayin))
+    return arrayout
 
 def gauss(arrayin,a,ryc=0.0,rxc=0.0): 
     """Return a real gaussian as an numpy array e^{-a x^2}."""
@@ -656,11 +669,11 @@ def crop_to_nonzero(arrayin, mask=None):
             arrayout.append(i[top:bottom+1,left:right+1])
     return arrayout
     
-def roll(arrayin,dy = 0,dx = 0):
+def roll(arrayin, shift = (0, 0)):
     """np.roll arrayin by dy in dim 0 and dx in dim 1."""
-    if (dy != 0) or (dx != 0):
-        arrayout = np.roll(arrayin,dy,0)
-        arrayout = np.roll(arrayout,dx,1)
+    if (shift[0] != 0) or (shift[1] != 0):
+        arrayout = np.roll(arrayin,shift[0],0)
+        arrayout = np.roll(arrayout,shift[1],1)
     else :
         arrayout = arrayin
     return arrayout
