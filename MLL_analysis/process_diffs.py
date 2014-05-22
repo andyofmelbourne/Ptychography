@@ -513,6 +513,10 @@ if __name__ == "__main__":
     print 'I want the probe to start at the "right". 0 --> sample.shape[1] - probe.shape[1]'
     ij_coords[:, 1] = ij_coords[:, 1] + (sample.shape[1] - probe.shape[1])
     #
+    subset = 10
+    print 'taking a subset of', str(subset), 'diffraction patterns'
+    diffs = diffs[:subset]
+    ij_coords = ij_coords[:subset]
     #
     # Output 
     print """outputing:
