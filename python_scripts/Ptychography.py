@@ -128,23 +128,12 @@ def input_output(inputDir):
                     sequence.append([temp[0], temp[2]])
     #
     # If the sample is 1d then do a 1d retrieval 
-    if len(sample.shape) == 1 and GPU_calc == False :
+    if len(sample.shape) == 1 :
         print '1d sample => 1d Ptychography'
-        prob = Ptychography_1dsample(diffs, coords, mask, probe, sample, sample_support)
-        #
-    elif len(sample.shape) == 2 and GPU_calc == False :
+        prob = Ptychography_1dsample(diffs, coords, mask, probe, sample)
+    elif len(sample.shape) == 2 :
         print '2d sample => 2d Ptychography'
-        prob = Ptychography(diffs, coords, mask, probe, sample, sample_support)
-        #
-    elif len(sample.shape) == 2 and GPU_calc == True :
-        print 'Performing calculations on GPU'
-        print '2d sample => 2d Ptychography'
-        prob = Ptychography_gpu(diffs, coords, mask, probe, sample, sample_support)
-    elif len(sample.shape) == 1 and GPU_calc == True :
-        print 'Performing calculations on GPU'
-        print '1d sample => 1d Ptychography'
-        prob = Ptychography_1dsample_gpu(diffs, coords, mask, probe, sample, sample_support)
-        #
+        prob = Ptychography(diffs, coords, mask, probe, sample)
     return prob, sequence
 
 def runSequence(prob, sequence):

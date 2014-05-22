@@ -14,6 +14,17 @@ import sys
 import os, sys, getopt
 import subprocess 
 
+# Parameters
+##########################################
+##########################################
+tempdata_dir = '../../../tempdata/MLL_calc/'
+
+sequence = """
+ERA_sample = 10
+"""
+##########################################
+##########################################
+
 # I think this is just for python files
 #subprocess.Popen([sys.executable, "eg.py", "--pos=0.0"])
 
@@ -61,10 +72,17 @@ if __name__=='__main__':
         commands = []
         #
         # process the .h5 files
-        commands.append('python process_diffs.py -s0181 -r0 -o ../../../tempdata/MLL_calc/')
+        commands.append('python process_diffs.py -s0181 -r0 -o ' +tempdata_dir)
+        #
+        # Output the algorithm parameters
+        print '#########################################################'
+        print 'Outputing the sequence.txt file...'
+        with open(tempdata_dir + "sequence.txt", "w") as text_file:
+            text_file.write(sequence)
+        print '#########################################################'
         #
         # Run the retrieval on the data 
-        #commands.append('python ../python_scripts/Ptychography.py -i ../../../tempdata/MLL_calc/ -o ../../../tempdata/MLL_calc/')
+        commands.append('python ../python_scripts/Ptychography.py -i ' +tempdata_dir+ ' -o ' +tempdata_dir)
         #
         # Process the results 
         #commands.append('python ../python_scripts/process_results.py -i ../../../tempdata/MLL_calc/ -o ../../../tempdata/MLL_calc/')
