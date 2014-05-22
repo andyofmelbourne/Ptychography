@@ -359,30 +359,38 @@ def input_output(inputDir):
     shape = diffs.shape
     #
     # load the y,x pixel shift coordinates
+    print 'Loading the ij coordinates...'
     coords   = bg.binary_in(inputDir + 'coords', dt=np.float64, dimFnam=True)
     print 'warning: casting the coordinates from float to ints.'
     coords = np.array(coords, dtype=np.int32)
     #
     # load the mask
     if fnamBase_match(inputDir + 'mask'):
+        print 'Loading the mask...'
         mask = bg.binary_in(inputDir + 'mask', dt=np.float64, dimFnam=True)
         mask = np.array(mask, dtype=np.bool)
     else :
+        print 'no mask...'
         mask = np.ones_like(diffAmps[0], dtype=np.bool)
     #
     # load the probe
     if fnamBase_match(inputDir + 'probeInit'):
+        print 'Loading the probe...'
         probe = bg.binary_in(inputDir + 'probeInit', dt=np.complex128, dimFnam=True)
     else :
+        print 'generating a random probe...'
         probe = np.random.random(shape) + 1J * np.random.random(shape) 
     #
     # load the sample
     if fnamBase_match(inputDir + 'sampleInit'):
+        print 'Loading the sample...'
         sample = bg.binary_in(inputDir + 'sampleInit', dt=np.complex128, dimFnam=True)
     else :
+        print 'generating a random sample...'
         sample = np.random.random(shape) + 1J * np.random.random(shape) 
     #
     # load the sequence, cannot be a dict! This screws up the order
+    print 'Loading the sequence file...'
     f = open(inputDir + 'sequence.txt', 'r')
     sequence = []
     for line in f:
@@ -394,8 +402,10 @@ def input_output(inputDir):
     #
     # If the sample is 1d then do a 1d retrieval 
     if len(sample.shape) == 1 :
+        print '1d sample => 1d Ptychography'
         prob = Ptychography_1dsample(diffs, coords, mask, probe, sample)
     elif len(sample.shape) == 2 :
+        print '2d sample => 2d Ptychography'
         prob = Ptychography(diffs, coords, mask, probe, sample)
     return prob, sequence
 
@@ -434,6 +444,9 @@ def runSequence(prob, sequence):
     return prob
 
 if __name__ == '__main__':
+    print '#########################################################'
+    print 'Ptychography routine'
+    print '#########################################################'
     inputdir, outputdir = main(sys.argv[1:])
     print 'input directory is ', inputdir
     print 'output directory is ', outputdir

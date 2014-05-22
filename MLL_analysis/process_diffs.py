@@ -497,7 +497,7 @@ if __name__ == "__main__":
     probe = make_probe(mask, lamb, 1/X)
     # 
     # propagate the probe for the run
-    print 'propagating the in-focus probe to the sample plane at (m):', zyx[0]
+    print 'propagating the in-focus probe to the sample plane by (m):', zyx[0][0]
     spacing = [X / probe.shape[0], X / probe.shape[1]]
     probe   = probe_z(probe, zyx[0], spacing, lamb)
     #
