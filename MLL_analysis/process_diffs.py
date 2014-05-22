@@ -68,6 +68,25 @@ def get_fnams_faster(dir_base):
         dir_fnam[key] = sorted(fnams)
     return dir_fnam
 
+def update_progress(progress):
+    barLength = 20 # Modify this to change the length of the progress bar
+    status = ""
+    if isinstance(progress, int):
+        progress = float(progress)
+    if not isinstance(progress, float):
+        progress = 0
+        status = "error: progress var must be float\r\n"
+    if progress < 0:
+        progress = 0
+        status = "Halt...\r\n"
+    if progress >= 1:
+        progress = 1
+        status = "Done...\r\n"
+    block = int(round(barLength*progress))
+    text = "\rPercent: [{0}] {1}% {2}".format( "#"*block + "-"*(barLength-block), progress*100, status)
+    sys.stdout.write(text)
+    sys.stdout.flush()
+
 def load_metadata(path_base = '../../../rawdata/PETRA3/P11/P11-201311/10010762/', scan = '0181'):
     """Returns a list of numpy arrays of z, y, x and N (a unique identifier) coordinates in loaded from the path metadata dir. where each item in the list is a different z-plane along the optical axis. 
     
@@ -183,19 +202,19 @@ def array_from_h5(fnam = None, scan = None, number = 0, pos = None):
     h5py.File.close(g)
     return array
 
-def load_h5s(zyxN, fnams):
+def load_h5s(fnams):
     diffs = []
-    for i in range(len(zyxN)):
-        #print i, len(zyxN)
-        diff = array_from_h5(fnams[i])
-        diffs.append(diff)
+    itot  = float(len(fnams))
+    for i,fnam in enumerate(fnams):
+        update_progress(i/(itot-1.0))
+        diffs.append(array_from_h5(fnam))
     return np.array(diffs)
 
 def darkfield_array( scan = '0119', run = 40):
     """I can't find a dark field image at the moment, so I'll skip this for now."""
     zyxN_stack, fnams   = load_metadata(scan = scan)
     zyxN                = zyxN_stack[run]
-    dark_diffs          = load_h5s(zyxN, fnams)
+    dark_diffs          = load_h5s(fnams)
     return np.mean(dark_diffs, axis = 0)
 
 def make_panel_edge_mask(window=2, shape = (512, 1536)):
@@ -289,8 +308,11 @@ def process_diffs(diffs):
     Padd the diffraction patterns
     Padd the mask
     make the mask by masking edges and finding bad pixels"""
+    print 'masking the panel edges...'
     mask    = make_panel_edge_mask() 
+    print 'masking bad pixels with a mean filter...'
     mask   *= bad_pixels(np.sum(diffs, axis=0))
+    print 'masking bad pixels manually...'
     mask[: 427, 784] = 0    # this is a bad streak that occurs often
     mask[: , 829] = 0       # this is a bad pixel that occurs often
     mask[: , 828] = 0    # this is a bad pixel that occurs often
@@ -298,16 +320,19 @@ def process_diffs(diffs):
     mask[: , 785] = 0    # this is a bad pixel that occurs often
     mask[:, 1330 :]  = 0     # mask the plate on the detector 1331 (1 pixel buffer)
     #mask[:, 1490]  = 0     # mask the plate on the detector 1331 (1 pixel buffer)
+    print 'Shifting, padding and deleting positive frequencies...'
     mask    = padd_array(mask)
     # Do not allow positive frequencies in the reconstruction
     mask = bg.quadshift(mask)
     mask[:, mask.shape[1]/2 + 10 :] = 1
     mask = bg.iquadshift(mask)
     #
+    print 'Shifting, padding and deleting positive frequencies for the diffraction data...'
     diffs_out = []
-    for i in range(len(diffs)):
-        print i, len(diffs)
-        diffs_out.append(padd_array(diffs[i]))
+    itot = float(len(diffs))
+    for i, diff in enumerate(diffs):
+        update_progress(i/(itot-1.0))
+        diffs_out.append(padd_array(diff))
     return np.array(diffs_out), mask
 
 if __name__ == "__main__":
@@ -325,13 +350,14 @@ if __name__ == "__main__":
     fnams                   = fnams_stack[int(run)]
     #
     print 'loading diffraction data...'
-    diffs                = load_h5s(zyxN, fnams)
+    diffs                = load_h5s(fnams)
     #
     print 'Processing diffraction data and generating the diffraction mask...'
     diffs, mask = process_diffs(diffs)
     #
     #
     # Output 
+    print 'outputing the diffraction data and the mask to', os.path.abspath(outputdir)
     bg.binary_out(diffs, outputdir + 'diffs', dt=np.float64, appendDim=True) 
     bg.binary_out(mask, outputdir + 'mask', dt=np.float64, appendDim=True) 
     #bg.binary_out(zyxN[:, : 3], outputdir + 'zyx', dt=np.float64, appendDim=True) 
