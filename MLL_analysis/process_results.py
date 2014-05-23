@@ -198,6 +198,12 @@ def make_error_fig(ij_coords, mask, sample_init, sample_ret, sample_support, pro
     ax.legend()  
     ax.set_title('l2norm per diff -- Total(initial, final): '+str(np.sum(e_init))+','+str(np.sum(e_ret)), fontsize=18, position=(0.5, 1.01))
     #
+    ax = plt.subplot(gs[: 2, 2 :])
+    ax.plot(np.log10(eMod), linewidth=5, alpha=0.5, label='modulus')
+    ax.plot(np.log10(eSup) , linewidth=5, alpha=0.5, label='support')
+    ax.legend()  
+    ax.set_title('projection error', fontsize=18, position=(0.5, 1.01))
+    #
     ax = plt.subplot(gs[2 : 4 , : 2])
     ax.plot(np.sum(lines_diff, axis=1), linewidth=5, alpha=0.5, label='experiment')
     ax.plot(np.sum(lines_init, axis=1), linewidth=5, alpha=0.5, label='simulation')
@@ -207,7 +213,7 @@ def make_error_fig(ij_coords, mask, sample_init, sample_ret, sample_support, pro
     ax.set_ylabel(r'counts absolute', fontsize=18)
     ax.legend()
     #
-    ax = plt.subplot(gs[4 : 6,: 2])
+    ax = plt.subplot(gs[2 : 4, 2 :])
     ax.plot(100*np.abs(np.sum(lines_diff - lines_init, axis=1))/np.abs(np.sum(lines_diff, axis=1)), linewidth=5, alpha=0.5, label='difference simulation')
     ax.plot(100*np.abs(np.sum(lines_diff - lines_ret, axis=1))/np.abs(np.sum(lines_diff, axis=1)), linewidth=5, alpha=0.5, label='difference retrieved')
     ax.set_title('Difference', fontsize=18, position=(0.5, 1.01))
