@@ -55,7 +55,7 @@ def update_progress(progress, algorithm, i, emod, esup):
         progress = 1
         status = "Done...\r\n"
     block = int(round(barLength*progress))
-    text = "\r{0}: [{1}] {2}% {3} {4} {5} {6}".format(algorithm, "#"*block + "-"*(barLength-block), int(progress*100), i, emod, esup, status)
+    text = "\r{0}: [{1}] {2}% {3} {4} {5} {6} {7}".format(algorithm, "#"*block + "-"*(barLength-block), int(progress*100), i, emod, esup, status, " " * 5) # this last bit clears the line
     sys.stdout.write(text)
     sys.stdout.flush()
 
@@ -155,25 +155,7 @@ class Ptychography(object):
             exits     -= self.exits
             self.error_sup.append(np.sum(np.real(np.conj(exits)*exits))/self.diffNorm)
             #
-            update_progress(i / max(1.0, float(iters-1)), 'ERA Probe', i, self.error_mod[-1], self.error_sup[-1])
-
-    def ERA_both(self, iters=1):
-        print 'i, eMod, eSup'
-        for i in range(iters):
-            exits = self.Pmod(self.exits)
-            #
-            self.exits -= exits
-            self.error_mod.append(np.sum(np.real(np.conj(self.exits)*self.exits))/self.diffNorm)
-            #
-            for j in range(5):
-                self.Psup_sample(exits, thresh=1.0)
-                self.Psup_probe(exits)
-            #
-            self.exits = makeExits(self.sample, self.probe, self.coords)
-            exits     -= self.exits
-            self.error_sup.append(np.sum(np.real(np.conj(exits)*exits))/self.diffNorm)
-            #
-            update_progress(i / max(1.0, float(iters-1)), 'ERA both', i, self.error_mod[-1], self.error_sup[-1])
+            update_progress(i / float(iters-1), 'ERA Probe', i, self.error_mod[-1], self.error_sup[-1])
 
     def HIO_sample(self, iters=1, beta=1):
         print 'i \t\t eMod \t\t eSup'
@@ -189,7 +171,7 @@ class Ptychography(object):
             self.exits = exits - makeExits(self.sample, self.probe, self.coords)
             self.error_sup.append(np.sum(np.real(np.conj(self.exits)*self.exits))/self.diffNorm)
             #
-            update_progress(i / max(1.0, float(iters-1)), 'HIO sample', i, self.error_mod[-1], self.error_sup[-1])
+            update_progress(i / float(iters-1), 'HIO sample', i, self.error_mod[-1], self.error_sup[-1])
             #
             self.exits = exits
 
@@ -207,7 +189,7 @@ class Ptychography(object):
             self.exits = exits - makeExits(self.sample, self.probe, self.coords)
             self.error_sup.append(np.sum(np.real(np.conj(self.exits)*self.exits))/self.diffNorm)
             #
-            update_progress(i / max(1.0, float(iters-1)), 'HIO probe', i, self.error_mod[-1], self.error_sup[-1])
+            update_progress(i / float(iters-1), 'HIO probe', i, self.error_mod[-1], self.error_sup[-1])
             #
             self.exits = exits
 
@@ -222,7 +204,8 @@ class Ptychography(object):
             self.error_mod.append(None)
             self.exits = exits
             #
-            update_progress(i / max(1.0, float(iters-1)), 'Thibault sample', i, self.error_conv[-1], self.error_sup[-1])
+            update_progress(i / float(iters-1), 'Thibault sample', i, self.error_conv[-1], self.error_sup[-1])
+            #
 
     def Thibault_probe(self, iters=1):
         print 'i \t\t eConv \t\t eSup'
@@ -240,7 +223,8 @@ class Ptychography(object):
 
             self.exits = exits
             #
-            update_progress(i / max(1.0, float(iters-1)), 'Thibault probe', i, self.error_conv[-1], self.error_sup[-1])
+            update_progress(i / float(iters-1), 'Thibault probe', i, self.error_conv[-1], self.error_sup[-1])
+            #
 
     def Thibault_both(self, iters=1):
         print 'i \t\t eMod \t\t eSup'
@@ -261,22 +245,7 @@ class Ptychography(object):
 
             self.exits = exits
             #
-            update_progress(i / max(1.0, float(iters-1)), 'Thibault sample / probe', i, self.error_conv[-1], self.error_sup[-1])
-
-    def Huang(self, iters=None):
-        """This is the algorithm used in "11 nm Hard X-ray focus from a large-aperture multilayer Laue lens" (2013) nature"""
-        def randsample():
-            array = np.random.random(self.sample.shape) + 1J * np.random.random(self.sample.shape) 
-            return array
-        #
-        for i in range(3):
-            self.sample     = randsample()
-            self.sample_sum = None
-            self.exits = makeExits(self.sample, self.probe, self.coords)
-            #
-            self.Thibault_sample(iters=5)
-            #
-            self.Thibault_both(iters=10)
+            update_progress(i / float(iters-1), 'Thibault sample / probe', i, self.error_conv[-1], self.error_sup[-1])
             #
             probes = []
             for j in range(10):
