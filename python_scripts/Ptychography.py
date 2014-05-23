@@ -23,7 +23,7 @@ def update_progress(progress, algorithm, i, emod, esup):
         progress = 1
         status = "Done...\r\n"
     block = int(round(barLength*progress))
-    text = "\r{0}: [{1}] {2}% {3} {4} {5} {6}".format(algorithm, "#"*block + "-"*(barLength-block), int(progress*100), i, emod, esup, status)
+    text = "\r{0}: [{1}] {2}% {3} {4} {5} {6} {7}".format(algorithm, "#"*block + "-"*(barLength-block), int(progress*100), i, emod, esup, status, " " * 5) # this last bit clears the line
     sys.stdout.write(text)
     sys.stdout.flush()
 
@@ -121,7 +121,7 @@ class Ptychography(object):
             exits     -= self.exits
             self.error_sup.append(np.sum(np.real(np.conj(exits)*exits))/self.diffNorm)
             #
-            print i, '\t\t', self.error_mod[-1], '\t\t', self.error_sup[-1], '\t ERA probe'
+            update_progress(i / float(iters-1), 'ERA Probe', i, self.error_mod[-1], self.error_sup[-1])
 
     def HIO_sample(self, iters=1, beta=1):
         print 'i \t\t eMod \t\t eSup'
@@ -137,7 +137,7 @@ class Ptychography(object):
             self.exits = exits - makeExits(self.sample, self.probe, self.coords)
             self.error_sup.append(np.sum(np.real(np.conj(self.exits)*self.exits))/self.diffNorm)
             #
-            print i, '\t\t', self.error_mod[-1], '\t\t', self.error_sup[-1], '\t HIO sample'
+            update_progress(i / float(iters-1), 'HIO sample', i, self.error_mod[-1], self.error_sup[-1])
             #
             self.exits = exits
 
@@ -155,7 +155,7 @@ class Ptychography(object):
             self.exits = exits - makeExits(self.sample, self.probe, self.coords)
             self.error_sup.append(np.sum(np.real(np.conj(self.exits)*self.exits))/self.diffNorm)
             #
-            print i, '\t\t', self.error_mod[-1], '\t\t', self.error_sup[-1], '\t HIO probe'
+            update_progress(i / float(iters-1), 'HIO probe', i, self.error_mod[-1], self.error_sup[-1])
             #
             self.exits = exits
 
@@ -170,7 +170,7 @@ class Ptychography(object):
             self.error_mod.append(None)
             self.exits = exits
             #
-            print i, '\t\t', self.error_conv[-1], '\t\t', self.error_sup[-1], '\t Thibault sample'
+            update_progress(i / float(iters-1), 'Thibault sample', i, self.error_conv[-1], self.error_sup[-1])
             #
 
     def Thibault_probe(self, iters=1):
@@ -189,7 +189,7 @@ class Ptychography(object):
 
             self.exits = exits
             #
-            print i, '\t\t', self.error_conv[-1], '\t\t', self.error_sup[-1], '\t Thibault probe'
+            update_progress(i / float(iters-1), 'Thibault probe', i, self.error_conv[-1], self.error_sup[-1])
             #
 
     def Thibault_both(self, iters=1):
@@ -211,7 +211,7 @@ class Ptychography(object):
 
             self.exits = exits
             #
-            print i, '\t\t', self.error_conv[-1], '\t\t', self.error_sup[-1], '\t Thibault sample/probe'
+            update_progress(i / float(iters-1), 'Thibault sample / probe', i, self.error_conv[-1], self.error_sup[-1])
             #
 
     def Pmod(self, exits):
