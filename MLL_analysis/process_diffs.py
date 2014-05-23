@@ -5,6 +5,7 @@
 import os, sys, getopt, inspect
 import numpy as np
 import h5py
+import scipy as sp
 
 currentdir = os.path.dirname(os.path.abspath(inspect.getfile(inspect.currentframe())))
 parentdir = os.path.dirname(currentdir)
@@ -14,22 +15,31 @@ from python_scripts import bagOfns as bg
 def main(argv):
     scan = ''
     run = ''
+    gratingSim = False
+    sample1d = False
+    samplesupport = False
     try :
-        opts, args = getopt.getopt(argv,"hs:r:o:",["scan=","run=","outputdir="])
+        opts, args = getopt.getopt(argv,"hs:r:o:g:s1:ss",["scan=","run=","outputdir=","gratingSim=","sample1d=","samplesupport="])
     except getopt.GetoptError:
-      print 'process_diffs.py -s <scan> -r <run> -o <outputdir>'
-      sys.exit(2)
+        print 'process_diffs.py -s <scan> -r <run> -o <outputdir> -g <gratingSim=True/False> -s1 <sample1d=True/False> -ss <samplesupport=True/False>'
+        sys.exit(2)
     for opt, arg in opts:
-      if opt == '-h':
-         print 'process_diffs.py -s <scan> -r <run> -o <outputdir>'
-         sys.exit()
-      elif opt in ("-s", "--scan"):
-         scan = arg
-      elif opt in ("-r", "--run"):
-         run = arg
-      elif opt in ("-o", "--outputdir"):
-         outputdir = arg
-    return scan, run, outputdir
+        if opt == '-h':
+            print 'process_diffs.py -s <scan> -r <run> -o <outputdir> -g <gratingSim=True/False> -s1 <sample1d=True/False> -ss <samplesupport=True/False>'
+            sys.exit()
+        elif opt in ("-s", "--scan"):
+            scan = arg
+        elif opt in ("-r", "--run"):
+            run = arg
+        elif opt in ("-o", "--outputdir"):
+            outputdir = arg
+        elif opt in ("-g", "--gratingSim"):
+            gratingSim = bool(arg)
+        elif opt in ("-s1", "--sample1d"):
+            sample1d = bool(arg)
+        elif opt in ("-ss", "--samplesupport"):
+            samplesupport = bool(arg)
+    return scan, run, outputdir, gratingSim, sample1d, samplesupport
 
 def memoize(f):
     """ Memoization decorator for functions taking one or more arguments. """
@@ -432,10 +442,78 @@ def make_probe(mask, lamb, dq, scan = '0181'):
     probe = bg.ifft2(np.sqrt(aperture)*exp)
     return probe
 
-def make_sample(probe, coords):
+def makeGrating_tilt(shape, dx, phi_zx=0.0, phi_xy=0.0, lamb=5.635645115141718e-11, d = 4.0e-6):
+    period    = 94.91e-9  # period of grating across beam in m
+    n_CSi = 1 - 1.37725374e-6 - 3.2830787e-9J
+    n_W   = 1 - 6.63917808e-6 - 4.15298643e-7J
+    n_Si  = 1 - 1.00010402e-6 - 3.26394844e-9J
+    V_CSi = (n_CSi - 1)
+    V_W   = (n_W - 1)
+    V_Si  = (n_Si - 1)
+    x_CSi = period / 2
+    x_W   = period / 2
+    xn_CSi = x_CSi / dx
+    xn_W   = x_W / dx
+    # 
+    # Vacuum (it was actually air...)
+    # place the grating in the centre so...
+    x_grating = 20 * (xn_CSi + xn_W)
+    vac_start = shape[1] / 2 - x_grating / 2
+    V = np.zeros(shape, dtype=np.complex128)
+    V[:, :vac_start] = 0
+    index = vac_start
+    # 
+    # Grating
+    for i in range(20):
+        # Silicon Carbide
+        V[:, index: index + xn_CSi] = V_CSi
+        index += xn_CSi
+        # Tungsten
+        V[:, index: index + xn_W] = V_W
+        index += xn_W
+    #
+    # Silicon substrate 
+    V[:, index:] = V_Si
+    # Stack the slices
+    V_profile = []
+    dz = dx
+    N  = int(d / dz)
+    for i in range(N):
+        V_profile.append(V * dz)
+    V_profile = np.array(V_profile)
+    # Rotate the potential
+    #!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!1
+    # below is not required as I have set dx = dz
+    #phi_kj = np.arctan(dx/dz * np.tan(phi_zx * 2.0 * np.pi / 360.0))
+    #phi_ij = np.arctan(dx/dz * np.tan(phi_zx * 2.0 * np.pi / 360.0))
+    if phi_zx != 0.0:
+        re   = sp.ndimage.interpolation.rotate(np.real(V_profile), phi_zx, axes=(0,2), order=5 )
+        im   = sp.ndimage.interpolation.rotate(np.imag(V_profile), phi_zx, axes=(0,2), order=5 )
+        V_profile = re + 1.0J*im
+    if phi_xy != 0.0:
+        re   = sp.ndimage.interpolation.rotate(np.real(V_profile), phi_xy, axes=(1,2), order=5 )
+        im   = sp.ndimage.interpolation.rotate(np.imag(V_profile), phi_xy, axes=(1,2), order=5 )
+        V_profile = re + 1.0J*im
+    # Project down optical axis
+    V = np.sum(V_profile, axis=0)
+    # Make the transmission function
+    sample = np.exp(-2J * np.pi * V / lamb)
+    # Truncate to the original array size
+    sample = bg.izero_pad(sample, shape)
+    return sample
+
+def make_sample(probe, coords, gratingSim=False):
     sample_shape = (probe.shape[0] + np.abs(coords[:, 0].max() - coords[:, 0].min()),  \
                     probe.shape[1] + np.abs(coords[:, 1].max() - coords[:, 1].min()))
     sample = np.ones(sample_shape, dtype=np.complex128)
+    #
+    # simulate a grating if gratingSim==True
+    if gratingSim:
+        X, lamb   = geometry()
+        sample_1d = makeGrating_tilt((1, sample.shape[1]), X/probe.shape[1], phi_zx=15.0, phi_xy=0.0, lamb=lamb, d = 4.0e-6)
+        # roll the array so that it is approximately alligned with the data
+        sample_1d = np.roll(sample_1d, -1080, 1)
+        sample[:] = sample_1d
     return sample
 
 def make_coords(zyx, spacing, shape):
@@ -471,10 +549,13 @@ if __name__ == "__main__":
     print '#########################################################'
     print 'Processing diffraction data'
     print '#########################################################'
-    scan, run, outputdir = main(sys.argv[1:])
+    scan, run, outputdir, gratingSim, sample1d, samplesupport = main(sys.argv[1:])
     print 'scan number is ', scan
     print 'run is ', run
     print 'output directory is ', outputdir
+    print 'gratingSim', gratingSim, type(gratingSim)
+    print 'sample1d', sample1d, type(sample1d)
+    print 'samplesupport', samplesupport, type(samplesupport)
     #
     print 'loading metadata...'
     zyxN_stack, fnams_stack = load_metadata(scan = scan)
@@ -507,30 +588,51 @@ if __name__ == "__main__":
     #
     # initialise the sample 
     print 'making the sample shape so that it fits the probe given the positions...'
-    sample = make_sample(probe, ij_coords)
+    if gratingSim:
+        print 'simulating the grating for the sample'
+    sample = make_sample(probe, ij_coords, gratingSim)
+    if samplesupport:
+        print 'making the sample support'
+        sample_support = np.zeros(sample.shape, dtype=np.bool)
+        sample_support[:, 1200:] = 1
+    if sample1d:
+        print 'Projecting the sample to a single slice'
+        sample_1d = sample[0, :]
+        sample = sample_1d.copy()
+        if samplesupport:
+            print 'Projecting the sample support to a single slice'
+            sample_1d = sample_support[0, :]
+            sample_support = sample_1d.copy()
     #
     # I want the probe to start at the "right". 0 --> sample.shape[1] - probe.shape[1]
     print 'I want the probe to start at the "right". 0 --> sample.shape[1] - probe.shape[1]'
-    ij_coords[:, 1] = ij_coords[:, 1] + (sample.shape[1] - probe.shape[1])
+    ij_coords[:, -1] = ij_coords[:, -1] + (sample.shape[-1] - probe.shape[-1])
     #
-    subset = 10
-    print 'taking a subset of', str(subset), 'diffraction patterns'
-    diffs = diffs[:subset]
-    ij_coords = ij_coords[:subset]
+    print 'taking a subset of the diffraction patterns'
+    diffs_sub = []
+    ij_coords_sub = []
+    idiffs = range(0, len(diffs), 12)
+    for i in idiffs:
+        diffs_sub.append(diffs[i])
+        ij_coords_sub.append(ij_coords[i])
+    diffs = np.array(diffs_sub)
+    ij_coords = np.array(ij_coords_sub)
     #
     # Output 
-    print """outputing:
-        the diffraction data 
-        the mask 
-        the ij coordinates of the sample
-        the probe 
-        and the sample
-        to""", os.path.abspath(outputdir)
+    print 'outputing to ', os.path.abspath(outputdir)
+    print 'outputing processed diffraction data...'
     bg.binary_out(diffs, outputdir + 'diffs', dt=np.float64, appendDim=True) 
+    print 'outputing the mask...'
     bg.binary_out(mask, outputdir + 'mask', dt=np.float64, appendDim=True) 
     #bg.binary_out(zyxN[:, : 3], outputdir + 'zyx', dt=np.float64, appendDim=True) 
+    print 'outputing the ij coords...'
     bg.binary_out(ij_coords, outputdir + 'coords', dt=np.float64, appendDim=True)
+    print 'outputing the initial sample...'
     bg.binary_out(sample, outputdir + 'sampleInit', dt=np.complex128, appendDim=True)
+    if samplesupport :
+        print 'outputing the sample support...'
+        bg.binary_out(sample_support, outputdir + 'sample_support', dt=np.float64, appendDim=True)
+    print 'outputing the initial probe...'
     bg.binary_out(probe, outputdir + 'probeInit', dt=np.complex128, appendDim=True)
     print 'done!'
 

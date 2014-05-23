@@ -299,7 +299,7 @@ class Ptychography_1dsample(Ptychography):
 
     def __init__(self, diffs, coords, mask, probe, sample_1d): 
         self.sample_1d = sample_1d
-        sample = np.array((probe.shape[0], sample_1d.shape[0]), dtype = sample_1d.dtype)
+        sample = np.zeros((probe.shape[0], sample_1d.shape[0]), dtype = sample_1d.dtype)
         sample[:] = sample_1d
         Ptychography.__init__(self, diffs, coords, mask, probe, sample)
 
@@ -329,7 +329,7 @@ class Ptychography_1dsample(Ptychography):
         sample_1d = np.sum(sample_out, axis=0)
         #
         # divide
-        sample_1d = sample_1d / (np.sum(probe_sum, axis=0) + self.alpha_div)
+        sample_1d = sample_1d / (np.sum(self.probe_sum, axis=0) + self.alpha_div)
         # 
         # expand
         sample_out[:] = sample_1d
@@ -373,6 +373,7 @@ def input_output(inputDir):
                                 # and so on
     """
     # Does the directory exist? Do the files exist? This will be handled by bg.binary_in...
+    print 'Loading the diffraction data...'
     diffs = bg.binary_in(inputDir + 'diffs', dt=np.float64, dimFnam=True)
     #
     shape = diffs.shape
@@ -407,6 +408,14 @@ def input_output(inputDir):
     else :
         print 'generating a random sample...'
         sample = np.random.random(shape) + 1J * np.random.random(shape) 
+    #
+    # load the sample support
+    if fnamBase_match(inputDir + 'sample_support'):
+        print 'Loading the sample support...'
+        sample_support = bg.binary_in(inputDir + 'sample_support', dt=np.float64, dimFnam=True)
+    else :
+        sample_support = np.ones_like(sample)
+    sample_support = np.array(sample_support, dtype=np.bool)
     #
     # load the sequence, cannot be a dict! This screws up the order
     print 'Loading the sequence file...'

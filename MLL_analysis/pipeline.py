@@ -22,6 +22,10 @@ tempdata_dir = '../../../tempdata/MLL_calc/'
 sequence = """
 ERA_sample = 10
 """
+
+gratingSim = True
+samplesupport = True
+sample1d = True
 ##########################################
 ##########################################
 
@@ -72,7 +76,7 @@ if __name__=='__main__':
         commands = []
         #
         # process the .h5 files
-        commands.append('python process_diffs.py -s0181 -r0 -o ' +tempdata_dir)
+        commands.append('python process_diffs.py --scan=0181 --run=0 --outputdir=' + tempdata_dir + ' --samplesupport='+str(samplesupport)+' --sample1d='+str(sample1d)+' --gratingSim='+str(gratingSim))
         #
         # Output the algorithm parameters
         print '#########################################################'
@@ -85,10 +89,11 @@ if __name__=='__main__':
         commands.append('python ../python_scripts/Ptychography.py -i ' +tempdata_dir+ ' -o ' +tempdata_dir)
         #
         # Process the results 
-        #commands.append('python ../python_scripts/process_results.py -i ../../../tempdata/MLL_calc/ -o ../../../tempdata/MLL_calc/')
+        #commands.append('python process_results.py -i ' +tempdata_dir+ ' -o ' +tempdata_dir)
         #
         # execute sequentially
         for command in commands:
+            print command
             subprocess.call(command, shell=True)
         #
         print 'I hope all went well!'
