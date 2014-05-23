@@ -391,21 +391,9 @@ class Ptychography_1dsample(Ptychography):
     def __init__(self, diffs, coords, mask, probe, sample_1d, sample_support_1d, pmod_int = False): 
         from cgls import cgls_nonlinear
         self.sample_1d = sample_1d
-        self.sample_support_1d = sample_support_1d
-        #
-        sample         = np.zeros((probe.shape[0], sample_1d.shape[0]), dtype = sample_1d.dtype)
-        sample_support = np.zeros((probe.shape[0], sample_1d.shape[0]), dtype = sample_1d.dtype)
-        sample[:]         = sample_1d.copy()
-        sample_support[:] = sample_support_1d.copy()
-        #
-        Ptychography.__init__(self, diffs, coords, mask, probe, sample, sample_support, pmod_int)
-        #
-        # nonlinear cgls update for coordinates in 1d
-        n  = len(self.coords) - 1
-        f  = lambda x   : self.f(x, n = n)
-        fd = lambda x, d: self.grad_f_dot_d(x, d, n = n)
-        df = lambda x   : self.grad_f(x, n = n)
-        self.cg = cgls_nonlinear.Cgls(self.coords_contract(self.coords, n = n), f, df, fd)
+        sample = np.zeros((probe.shape[0], sample_1d.shape[0]), dtype = sample_1d.dtype)
+        sample[:] = sample_1d
+        Ptychography.__init__(self, diffs, coords, mask, probe, sample)
 
     def Psup_sample(self, exits, thresh=False, inPlace=True):
         """ """
@@ -434,7 +422,6 @@ class Ptychography_1dsample(Ptychography):
         #
         # divide
         sample_1d = sample_1d / (np.sum(self.probe_sum, axis=0) + self.alpha_div)
-        sample_1d = sample_1d * self.sample_support_1d + ~self.sample_support_1d
         # 
         # expand
         sample_out[:] = sample_1d.copy()

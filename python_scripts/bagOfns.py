@@ -642,10 +642,7 @@ def izero_pad(arrayin, shape = (1024, 1024)):
         return arrayout
     shape0   = arrayin.shape
     arrayout = np.zeros(shape, dtype = arrayin.dtype)
-    if len(arrayin.shape) == 2 :
-        arrayout = arrayin[(shape0[0]-shape[0])//2 : (shape0[0]-shape[0])//2 + shape[0],(shape0[1]-shape[1])//2 : (shape0[1]-shape[1])//2 + shape[1]]
-    elif len(arrayin.shape) == 1 :
-        arrayout = arrayin[(shape0[0]-shape[0])//2 : (shape0[0]-shape[0])//2 + shape[0]]
+    arrayout = arrayin[(shape0[0]-shape[0])//2 : (shape0[0]-shape[0])//2 + shape[0],(shape0[1]-shape[1])//2 : (shape0[1]-shape[1])//2 + shape[1]]
     return arrayout
 
 def interpolate_bigger(arrayin,ny,nx=None):
@@ -726,42 +723,13 @@ def crop_to_nonzero(arrayin, mask=None):
             arrayout.append(i[top:bottom+1,left:right+1])
     return arrayout
     
-def roll(arrayin, shift = (0, 0), silent = True):
-    """np.roll arrayin by dy in dim -2 and dx in dim -1. If arrayin is 1d then just do that.
-    
-    If the shift coordinates are of type float then the Fourier shift theorem is used."""
+def roll(arrayin, shift = (0, 0)):
+    """np.roll arrayin by dy in dim 0 and dx in dim 1."""
     arrayout = arrayin.copy()
-    # if shift is integer valued then use np.roll
-    if (type(shift[0]) == int) or (type(shift[0]) == np.int) or (type(shift[0]) == np.int32) or (type(shift[0]) == np.int64):
-        if shift[-1] != 0 :
-            if silent == False :
-                print 'arrayout = np.roll(arrayout, shift[-1], -1)'
-            arrayout = np.roll(arrayout, shift[-1], -1)
-        # if shift is 1d then don't roll the other dim (if it even exists)
-        if len(arrayout.shape) >= 2 :
-            if shift[-2] != 0 :
-                if silent == False :
-                    print 'arrayout = np.roll(arrayout, shift[-2], -2)'
-                arrayout = np.roll(arrayout, shift[-2], -2)
-    # if shift is float valued then use the Fourier shift theorem
-    elif (type(shift[0]) == float) or (type(shift[0]) == np.float32) or (type(shift[0]) == np.float64):
-        # if shift is 1d
-        if len(shift) == 1 :
-            if silent == False :
-                print 'arrayout = fftn_1d(arrayout)'
-                print 'arrayout = arrayout * phase_ramp(arrayout.shape, shift, origin = (0, 0))'
-                print 'arrayout = ifftn_1d(arrayout)'
-            arrayout = fftn_1d(arrayout)
-            arrayout = arrayout * phase_ramp(arrayout.shape, shift, origin = (0, 0))
-            arrayout = ifftn_1d(arrayout)
-        elif len(shift) == 2 :
-            if silent == False :
-                print 'arrayout = fftn(arrayout)'
-                print 'arrayout = arrayout * phase_ramp(arrayout.shape, shift, origin = (0, 0))'
-                print 'arrayout = ifftn(arrayout)'
-            arrayout = fftn(arrayout)
-            arrayout = arrayout * phase_ramp(arrayout.shape, shift, origin = (0, 0))
-            arrayout = ifftn(arrayout)
+    if shift[-2] != 0 :
+        arrayout = np.roll(arrayout, shift[-2], -2)
+    if shift[-1] != 0 :
+        arrayout = np.roll(arrayout, shift[-1], -1)
     return arrayout
 
 def roll_to(arrayin, y = 0, x = 0, centre = 'middle'):
