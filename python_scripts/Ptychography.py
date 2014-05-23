@@ -8,6 +8,25 @@ from ctypes import *
 import bagOfns as bg
 import time
 
+def update_progress(progress, algorithm, i, emod, esup):
+    barLength = 15 # Modify this to change the length of the progress bar
+    status = ""
+    if isinstance(progress, int):
+        progress = float(progress)
+    if not isinstance(progress, float):
+        progress = 0
+        status = "error: progress var must be float\r\n"
+    if progress < 0:
+        progress = 0
+        status = "Halt...\r\n"
+    if progress >= 1:
+        progress = 1
+        status = "Done...\r\n"
+    block = int(round(barLength*progress))
+    text = "\r{0}: [{1}] {2}% {3} {4} {5} {6} {7}".format(algorithm, "#"*block + "-"*(barLength-block), int(progress*100), i, emod, esup, status, " " * 5) # this last bit clears the line
+    sys.stdout.write(text)
+    sys.stdout.flush()
+
 def main(argv):
     inpurtdir = './'
     outputdir = './'
@@ -77,7 +96,7 @@ class Ptychography(object):
         self.diffNorm   = np.sum(np.abs(self.diffAmps)**2)
 
     def ERA_sample(self, iters=1):
-        print 'i \t\t eMod \t\t eSup'
+        print 'i, eMod, eSup'
         for i in range(iters):
             exits = self.Pmod(self.exits)
             self.exits -= exits
@@ -88,7 +107,7 @@ class Ptychography(object):
             exits     -= self.exits
             self.error_sup.append(np.sum(np.real(np.conj(exits)*exits))/self.diffNorm)
             #
-            print i, '\t\t', self.error_mod[-1], '\t\t', self.error_sup[-1], '\t ERA sample'
+            update_progress(i / float(iters-1), 'ERA sample', i, self.error_mod[-1], self.error_sup[-1])
 
     def ERA_probe(self, iters=1):
         print 'i \t\t eMod \t\t eSup'
@@ -102,7 +121,7 @@ class Ptychography(object):
             exits     -= self.exits
             self.error_sup.append(np.sum(np.real(np.conj(exits)*exits))/self.diffNorm)
             #
-            print i, '\t\t', self.error_mod[-1], '\t\t', self.error_sup[-1], '\t ERA probe'
+            update_progress(i / float(iters-1), 'ERA Probe', i, self.error_mod[-1], self.error_sup[-1])
 
     def HIO_sample(self, iters=1, beta=1):
         print 'i \t\t eMod \t\t eSup'
@@ -118,7 +137,7 @@ class Ptychography(object):
             self.exits = exits - makeExits(self.sample, self.probe, self.coords)
             self.error_sup.append(np.sum(np.real(np.conj(self.exits)*self.exits))/self.diffNorm)
             #
-            print i, '\t\t', self.error_mod[-1], '\t\t', self.error_sup[-1], '\t HIO sample'
+            update_progress(i / float(iters-1), 'HIO sample', i, self.error_mod[-1], self.error_sup[-1])
             #
             self.exits = exits
 
@@ -136,7 +155,7 @@ class Ptychography(object):
             self.exits = exits - makeExits(self.sample, self.probe, self.coords)
             self.error_sup.append(np.sum(np.real(np.conj(self.exits)*self.exits))/self.diffNorm)
             #
-            print i, '\t\t', self.error_mod[-1], '\t\t', self.error_sup[-1], '\t HIO probe'
+            update_progress(i / float(iters-1), 'HIO probe', i, self.error_mod[-1], self.error_sup[-1])
             #
             self.exits = exits
 
@@ -151,7 +170,7 @@ class Ptychography(object):
             self.error_mod.append(None)
             self.exits = exits
             #
-            print i, '\t\t', self.error_conv[-1], '\t\t', self.error_sup[-1], '\t Thibault sample'
+            update_progress(i / float(iters-1), 'Thibault sample', i, self.error_conv[-1], self.error_sup[-1])
             #
 
     def Thibault_probe(self, iters=1):
@@ -170,7 +189,7 @@ class Ptychography(object):
 
             self.exits = exits
             #
-            print i, '\t\t', self.error_conv[-1], '\t\t', self.error_sup[-1], '\t Thibault probe'
+            update_progress(i / float(iters-1), 'Thibault probe', i, self.error_conv[-1], self.error_sup[-1])
             #
 
     def Thibault_both(self, iters=1):
@@ -192,7 +211,7 @@ class Ptychography(object):
 
             self.exits = exits
             #
-            print i, '\t\t', self.error_conv[-1], '\t\t', self.error_sup[-1], '\t Thibault sample/probe'
+            update_progress(i / float(iters-1), 'Thibault sample / probe', i, self.error_conv[-1], self.error_sup[-1])
             #
 
     def Pmod(self, exits):
@@ -359,30 +378,38 @@ def input_output(inputDir):
     shape = diffs.shape
     #
     # load the y,x pixel shift coordinates
+    print 'Loading the ij coordinates...'
     coords   = bg.binary_in(inputDir + 'coords', dt=np.float64, dimFnam=True)
     print 'warning: casting the coordinates from float to ints.'
     coords = np.array(coords, dtype=np.int32)
     #
     # load the mask
     if fnamBase_match(inputDir + 'mask'):
+        print 'Loading the mask...'
         mask = bg.binary_in(inputDir + 'mask', dt=np.float64, dimFnam=True)
         mask = np.array(mask, dtype=np.bool)
     else :
+        print 'no mask...'
         mask = np.ones_like(diffAmps[0], dtype=np.bool)
     #
     # load the probe
     if fnamBase_match(inputDir + 'probeInit'):
+        print 'Loading the probe...'
         probe = bg.binary_in(inputDir + 'probeInit', dt=np.complex128, dimFnam=True)
     else :
+        print 'generating a random probe...'
         probe = np.random.random(shape) + 1J * np.random.random(shape) 
     #
     # load the sample
     if fnamBase_match(inputDir + 'sampleInit'):
+        print 'Loading the sample...'
         sample = bg.binary_in(inputDir + 'sampleInit', dt=np.complex128, dimFnam=True)
     else :
+        print 'generating a random sample...'
         sample = np.random.random(shape) + 1J * np.random.random(shape) 
     #
     # load the sequence, cannot be a dict! This screws up the order
+    print 'Loading the sequence file...'
     f = open(inputDir + 'sequence.txt', 'r')
     sequence = []
     for line in f:
@@ -394,8 +421,10 @@ def input_output(inputDir):
     #
     # If the sample is 1d then do a 1d retrieval 
     if len(sample.shape) == 1 :
+        print '1d sample => 1d Ptychography'
         prob = Ptychography_1dsample(diffs, coords, mask, probe, sample)
     elif len(sample.shape) == 2 :
+        print '2d sample => 2d Ptychography'
         prob = Ptychography(diffs, coords, mask, probe, sample)
     return prob, sequence
 
@@ -434,6 +463,9 @@ def runSequence(prob, sequence):
     return prob
 
 if __name__ == '__main__':
+    print '#########################################################'
+    print 'Ptychography routine'
+    print '#########################################################'
     inputdir, outputdir = main(sys.argv[1:])
     print 'input directory is ', inputdir
     print 'output directory is ', outputdir
