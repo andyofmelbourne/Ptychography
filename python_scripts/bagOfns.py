@@ -1,13 +1,13 @@
 import numpy as np
 from scipy import ndimage
 from scipy import fftpack
-from random import *
+import scipy.misc as sm
 import scipy as sp
+from random import *
 import random
 import time
 import threading
 import sys, os, getopt
-import scipy.misc as sm
 from ctypes import *
 
 ####################################################################################
@@ -81,6 +81,16 @@ def get_fnams(start = '', dir_base = './', end = ''):
                     fnams_out.append(temp)
     return fnams_out
     
+def fnamBase_match(fnam):
+    fnam_base  = os.path.basename(fnam)
+    fnam_dir   = os.path.abspath(os.path.dirname(fnam))
+    onlyfiles  = [ f for f in os.listdir(fnam_dir) if os.path.isfile(os.path.join(fnam_dir,f)) ]
+    fnam_match = [ f for f in onlyfiles if f[:len(fnam_base)] == fnam_base ]
+    try : 
+        fnam_match[0]
+    except :
+        return False
+    return True
 ####################################################################################
 ####################################################################################
 def quadshift(a):
@@ -155,7 +165,7 @@ def ifft2(a, origin='centre'):
         return b
     if origin == 'centre' :
         b = iquadshift(b)
-    return np.divide(b, np.sqrt(b.size))
+    return np.multiply(b, np.sqrt(b.size))
 
 def fftn(a):
     """Norm preserving fft on the zero pixel 0,0 this is not in place."""
@@ -582,28 +592,40 @@ def threshExpand(arrayin,thresh=0.1e0,blur=8):
     #arrayout = unpadd(arrayout,arrayin.shape[0])
     return arrayout
 
-def padd(arrayin,ny,nx=None):
+
+def zero_pad(arrayin, shape = (1024, 1024)):
     """Padd arrayin with zeros until it is an ny*nx array, keeping the zero pixel at N/2-1
     
     only works when arrayin and arrayout have even domains."""
-    if nx == None :
-        nx = ny
+    if len(arrayin.shape) > 2 :
+        shape_out     = list(arrayin.shape)
+        shape_out[-1] = shape[1]
+        shape_out[-2] = shape[0]
+        arrayout = np.zeros(tuple(shape_out), dtype=arrayin.dtype)
+        for i in range(len(arrayin)):
+            arrayout[i] = zero_pad(arrayin[i], shape)
+        return arrayout
     nyo = arrayin.shape[0]
     nxo = arrayin.shape[1]
-    arrayout = np.zeros((ny,nx),dtype=arrayin.dtype)
-    arrayout[(ny-nyo)//2 : (ny-nyo)//2 + nyo,(nx-nxo)//2 : (nx-nxo)//2 + nxo] = arrayin
+    arrayout = np.zeros(shape, dtype = arrayin.dtype)
+    arrayout[(shape[0]-nyo)//2 : (shape[0]-nyo)//2 + nyo,(shape[1]-nxo)//2 : (shape[1]-nxo)//2 + nxo] = arrayin
     return arrayout
 
-def unpadd(arrayin,ny,nx=None):
-    """unpadd arrayin with zeros until it is an ny*nx array, keeping the zero pixel at N/2-1
+def izero_pad(arrayin, shape = (1024, 1024)):
+    """Strip arrayin until it is an (shape[0], shape[1]) array, keeping the zero pixel at N/2-1
     
     only works when arrayin and arrayout have even domains."""
-    if nx == None :
-        nx = ny
-    nyo = arrayin.shape[0]
-    nxo = arrayin.shape[1]
-    arrayout = np.zeros((ny,nx),dtype=arrayin.dtype)
-    arrayout = arrayin[(nyo-ny)//2 : (nyo-ny)//2 + ny,(nxo-nx)//2 : (nxo-nx)//2 + nx]
+    if len(arrayin.shape) > 2 :
+        shape_out     = list(arrayin.shape)
+        shape_out[-1] = shape[1]
+        shape_out[-2] = shape[0]
+        arrayout = np.zeros(tuple(shape_out), dtype=arrayin.dtype)
+        for i in range(len(arrayin)):
+            arrayout[i] = izero_pad(arrayin[i], shape)
+        return arrayout
+    shape0   = arrayin.shape
+    arrayout = np.zeros(shape, dtype = arrayin.dtype)
+    arrayout = arrayin[(shape0[0]-shape[0])//2 : (shape0[0]-shape[0])//2 + shape[0],(shape0[1]-shape[1])//2 : (shape0[1]-shape[1])//2 + shape[1]]
     return arrayout
 
 def interpolate_bigger(arrayin,ny,nx=None):
@@ -686,11 +708,11 @@ def crop_to_nonzero(arrayin, mask=None):
     
 def roll(arrayin, shift = (0, 0)):
     """np.roll arrayin by dy in dim 0 and dx in dim 1."""
-    if (shift[0] != 0) or (shift[1] != 0):
-        arrayout = np.roll(arrayin,shift[0],0)
-        arrayout = np.roll(arrayout,shift[1],1)
-    else :
-        arrayout = arrayin
+    arrayout = arrayin.copy()
+    if shift[-2] != 0 :
+        arrayout = np.roll(arrayout, shift[-2], -2)
+    if shift[-1] != 0 :
+        arrayout = np.roll(arrayout, shift[-1], -1)
     return arrayout
 
 def roll_to(arrayin, y = 0, x = 0, centre = 'middle'):
@@ -931,13 +953,19 @@ def conv_gaus(array, sigma = 1.0):
     arrayout = np.array(arrayout, dtype=array.dtype)
     return arrayout
 
-def rotate(arrayin, phi=90.0):
-    """Rotate arrayin by phi degrees. returns an array of the same dimensions."""
-    if arrayin.dtype == 'complex' :
-        arrayout = rotate(np.abs(arrayin), phi=phi) * np.exp(1.0J * rotate(np.angle(arrayin), phi=phi))
+def rotate(arrayin, phi = 0.0, order = 1):
+    """phi in degrees"""
+    if phi == 0 :
+        return arrayin
+    elif arrayin.dtype == 'complex':
+        amp      = rotate(np.abs(arrayin), phi, order)
+        phase    = rotate(np.angle(arrayin), phi, order)
+        arrayout = amp * np.exp(1J * phase)
     else :
-        arrayout = sp.ndimage.interpolation.rotate(arrayin,phi,reshape=False)
-    return arrayout
+        from scipy_hacs import rotate_scipy
+        #arrayout = ndimage.interpolation.rotate(arrayin, phi, order = 1, reshape=False, axes=(-2,-1))
+        arrayout = rotate_scipy(arrayin, phi, order = order, reshape=False, axes=(-2,-1))
+    return arrayout 
 
 def radial_average(array):
     """Radially average the input array. Returns two numpy arrays in a list representing the x,y values of the line plot."""
