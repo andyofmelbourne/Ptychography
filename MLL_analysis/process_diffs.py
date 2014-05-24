@@ -286,31 +286,37 @@ def bad_pixels(diff, window=2):
     errant_mask[errant[:, 0], errant[:, 1]] = False
     return errant_mask
 
-def padd_array(arrayin, zero_pixel = [144, 978]):
-    """ """
+def padd_array(arrayin, zero_pixel = [400, 1490]):
+    """This routine maps the data on the detector to a centred array with an equal number of positive and negative frequencies. It also deletes any of the positive frequencies. """
     #
     # I think we only need to keep the bottom half of the array
-    # and let's cut it short in the horizontal direction as well
-    arrayout = np.array(arrayin[256 :, 512 :])
+    arrayout = np.array(arrayin[256 :, :])
+    zero_pixel[0] -= 256
     #
     # Now we need to shift and padd, I think we need to have as many positive frequencies as negative?
-    # shift right until "zero" is at [0,0]
-    arrayout  = bg.roll(arrayout, shift = [-zero_pixel[0], -zero_pixel[1]])
-    # Now we double the array width 
-    arrayout2 = np.zeros((arrayout.shape[0], 2*arrayout.shape[1]), dtype=arrayout.dtype)
-    arrayout2[:, 1024 :] = arrayout 
-    return arrayout2
+    #
+    # I think the zero pixel is at (400, 1490) which is now (144, 1490)
+    # First I will truncate the array so that the zero pixel is at the right edge
+    arrayout = arrayout[:, : zero_pixel[1] + 1]
+    #
+    # make the domain even and keep the zero pixel at N/2 - 1
+    temp = np.zeros((arrayout.shape[0], arrayout.shape[1] * 2), dtype=arrayout.dtype)
+    temp[:arrayout.shape[0], :arrayout.shape[1]] = arrayout
+    arrayout = temp
+    # roll the diffs so that the zero pixel along the zero axis is at N/2 - 1
+    arrayout = np.roll(arrayout, -(zero_pixel[0] - arrayout.shape[0]/2 + 1), 0)
+    return arrayout
 
-def ipadd_array(arrayout2, zero_pixel = [144, 978]):
-    """ """
-    arrayout = np.zeros((arrayout2.shape[0], arrayout2.shape[1]/2), dtype=arrayout2.dtype)
-    arrayout = arrayout2[:, 1024 :] 
-    #
-    arrayout  = bg.roll(arrayout, zero_pixel)
-    #
-    arrayin = np.zeros((512, 1536), dtype=arrayout.dtype)
-    arrayin[256 :, 512 :] = np.array(arrayout)
-    return arrayin
+#   def ipadd_array(arrayout2, zero_pixel = [144, 978]):
+#       """ """
+#       arrayout = np.zeros((arrayout2.shape[0], arrayout2.shape[1]/2), dtype=arrayout2.dtype)
+#       arrayout = arrayout2[:, 1024 :] 
+#       #
+#       arrayout  = bg.roll(arrayout, zero_pixel)
+#       #
+#       arrayin = np.zeros((512, 1536), dtype=arrayout.dtype)
+#       arrayin[256 :, 512 :] = np.array(arrayout)
+#       return arrayin
 
 def process_diffs(diffs):
     """Process the diffraction data and return diffs, mask:
@@ -332,10 +338,6 @@ def process_diffs(diffs):
     #mask[:, 1490]  = 0     # mask the plate on the detector 1331 (1 pixel buffer)
     print 'Shifting, padding and deleting positive frequencies...'
     mask    = padd_array(mask)
-    # Do not allow positive frequencies in the reconstruction
-    mask = bg.quadshift(mask)
-    mask[:, mask.shape[1]/2 + 10 :] = 1
-    mask = bg.iquadshift(mask)
     #
     print 'Shifting, padding and deleting positive frequencies for the diffraction data...'
     diffs_out = []
@@ -390,7 +392,7 @@ def probe_z(probe, zyx_i, spacing, lamb):
 ############# #############
 
 def make_probe(mask, lamb, dq, scan = '0181'):
-    aperture = np.zeros((512, 1536), dtype=np.float64)
+    aperture = np.zeros((512, 1536), dtype=np.float64) # (512, 1536) is the original dimensions of the data
     index    = 0
     print 'averaging diffraction data without the grating in it (205, 251)'
     if scan == '0181':
@@ -403,7 +405,7 @@ def make_probe(mask, lamb, dq, scan = '0181'):
         for i in [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,201,202,203,204,205,206,207,208,209,210,211,212,213,214,215,216,217,218,219,220,221,222,223,224,225,226,227,228,229,230,231,232,233,234,235,402,403,404,405,406,407,408,409,410,411,412,413,414,415,416,417,418,419,420,421,422,423,424,425,426,427,428,429,430,431,432,433,434,435,436,603,604,605,606,607,608,609,610,611,612,613,614,615,616,617,618,619,620,621,622,623,624,625,626,627,628,629,630,631,632,633,634,635,636,637,638,639,804,805,806,807,808,809,810,811,812,813,814,815,816,817,818,819,820,821,822,823,824,825,826,827,828,829,830,831,832,833,834,835,836,837,838,839,840,841,842,843,844,845,846,847,848,849,850,851,1005,1006,1007,1008,1009,1010,1011,1012,1013,1014,1015,1016,1017,1018,1019,1020,1021,1022,1023,1024,1025,1026,1027,1028,1029,1030,1031,1032,1033,1034,1035,1036,1037,1038,1039,1040,1206,1207,1208,1209,1210,1211,1212,1213,1214,1215,1216,1217,1218,1219,1220,1221,1222,1223,1224,1225,1226,1227,1228,1229,1230,1231,1232,1233,1234,1235,1236,1237,1238,1239,1240,1241,1242,1243,1244,1245,1246,1247,1248,1407,1408,1409,1410,1411,1412,1413,1414,1415,1416,1417,1418,1419,1420,1421,1422,1423,1424,1425,1426,1427,1428,1429,1430,1431,1432,1433,1434,1435,1436,1437,1438,1439,1440,1441,1442,1443,1444,1445,1446,1447,1448,1608,1609,1610,1611,1612,1613,1614,1615,1616,1617,1618,1619,1620,1621,1622,1623,1624,1625,1626,1627,1628,1629,1630,1631,1632,1633,1634,1635,1636,1637,1809,1810,1811,1812,1813,1814,1815,1816,1817,1818,1819,1820,1821,1822,1823,1824,1825,1826,1827,1828,1829,1830,1831,1832,1833,1834,1835,1836,1837,1838,1839,1840,1841,1842,1843,1844,1845,1846,1847,1848,1849,1850,1851,1852,1853,1854,1855,1856,1857,1858,1859,2010,2011,2012,2013,2014,2015,2016,2017,2018,2019,2020,2021,2022,2023,2024,2025,2026,2027,2028,2029,2030,2031,2032,2033,2034,2035,2036,2037,2038,2039,2040,2041,2042,2043,2044,2045,2046,2047,2048]:
             aperture += array_from_h5(scan = scan, number = i)
             index    += 1
-    aperture = aperture / index
+    aperture = np.array(aperture, dtype=np.float64) / float(index)
     print 'reshaping...'
     aperture = padd_array(aperture)
     #
@@ -442,7 +444,8 @@ def make_probe(mask, lamb, dq, scan = '0181'):
     probe = bg.ifft2(np.sqrt(aperture)*exp)
     return probe
 
-def makeGrating_tilt(shape, dx, phi_zx=0.0, phi_xy=0.0, lamb=5.635645115141718e-11, d = 4.0e-6):
+def makeGrating_tilt(shape1, dx, phi_zx=0.0, phi_xy=0.0, lamb=5.635645115141718e-11, d = 4.0e-6):
+    shape = (1, 3000)
     period    = 94.91e-9  # period of grating across beam in m
     n_CSi = 1 - 1.37725374e-6 - 3.2830787e-9J
     n_W   = 1 - 6.63917808e-6 - 4.15298643e-7J
@@ -486,11 +489,11 @@ def makeGrating_tilt(shape, dx, phi_zx=0.0, phi_xy=0.0, lamb=5.635645115141718e-
     # below is not required as I have set dx = dz
     #phi_kj = np.arctan(dx/dz * np.tan(phi_zx * 2.0 * np.pi / 360.0))
     #phi_ij = np.arctan(dx/dz * np.tan(phi_zx * 2.0 * np.pi / 360.0))
-    if phi_zx != 0.0:
-        re   = sp.ndimage.interpolation.rotate(np.real(V_profile), phi_zx, axes=(0,2), order=5 )
-        im   = sp.ndimage.interpolation.rotate(np.imag(V_profile), phi_zx, axes=(0,2), order=5 )
+    if phi_zx != 0.0 :
+        re = sp.ndimage.interpolation.rotate(np.real(V_profile), phi_zx, axes=(0,2), order=5 ) 
+        im = sp.ndimage.interpolation.rotate(np.imag(V_profile), phi_zx, axes=(0,2), order=5 )
         V_profile = re + 1.0J*im
-    if phi_xy != 0.0:
+    if phi_xy != 0.0 :
         re   = sp.ndimage.interpolation.rotate(np.real(V_profile), phi_xy, axes=(1,2), order=5 )
         im   = sp.ndimage.interpolation.rotate(np.imag(V_profile), phi_xy, axes=(1,2), order=5 )
         V_profile = re + 1.0J*im
@@ -499,8 +502,13 @@ def makeGrating_tilt(shape, dx, phi_zx=0.0, phi_xy=0.0, lamb=5.635645115141718e-
     # Make the transmission function
     sample = np.exp(-2J * np.pi * V / lamb)
     # Truncate to the original array size
-    sample = bg.izero_pad(sample, shape)
-    return sample
+    if shape1[1] > sample.shape[1] :
+        sample_out = bg.zero_pad(sample, shape1)
+        sample_out[:, : (shape1[1] - shape[1]) / 2 + 1] = sample[0,0]
+        sample_out[:,  -(shape1[1] - shape[1]) / 2 - 1 : ] = sample[0,-1]
+    else :
+        sample_out = bg.izero_pad(sample, shape1)
+    return sample_out
 
 def make_sample(probe, coords, gratingSim=False):
     sample_shape = (probe.shape[0] + np.abs(coords[:, 0].max() - coords[:, 0].min()),  \
@@ -510,7 +518,7 @@ def make_sample(probe, coords, gratingSim=False):
     # simulate a grating if gratingSim==True
     if gratingSim:
         X, lamb   = geometry()
-        sample_1d = makeGrating_tilt((1, sample.shape[1]), X/probe.shape[1], phi_zx=15.0, phi_xy=0.0, lamb=lamb, d = 4.0e-6)
+        sample_1d = makeGrating_tilt((1, sample.shape[1]), X/float(probe.shape[1]), phi_zx=15.0, phi_xy=0.0, lamb=lamb, d = 4.0e-6)
         # roll the array so that it is approximately alligned with the data
         sample_1d = np.roll(sample_1d, -1080, 1)
         sample[:] = sample_1d
@@ -611,7 +619,7 @@ if __name__ == "__main__":
     print 'taking a subset of the diffraction patterns'
     diffs_sub = []
     ij_coords_sub = []
-    idiffs = range(0, len(diffs), 12)
+    idiffs = range(0, len(diffs), 15)
     for i in idiffs:
         diffs_sub.append(diffs[i])
         ij_coords_sub.append(ij_coords[i])
