@@ -94,9 +94,41 @@ if __name__=='__main__':
         # execute sequentially
         for command in commands:
             print command
-            subprocess.call(command, shell=True)
+            try :
+                retcode = subprocess.call(command, shell=True)
+                if retcode < 0:
+                    print >>sys.stderr, "Child was terminated by signal", -retcode
+            except OSError as e:
+                print >>sys.stderr, "Execution failed:", e
         #
         print 'I hope all went well!'
-        print 'Your results should be in ../../../tempdata/MLL_calc/'
+        print 'Your results should be in ' + tempdata_dir 
+        #
+    elif loc == 'cfelsgi':
+        # send ../Ptychography to cfelsgi 
+        # then run this script "locally" on cfelsgi by remotely sending the command over ssh
+        # then call in tempdata from cfelsgi to here
+        # This only works if the relative directory trees are the same
+        commands = []
+        #
+        # send the job over ssh
+        commands.append('rsync -e ssh --recursive --progress --delete ../../Ptychography/ amorgan@cfelsgi:/home/amorgan/analysis/Ptychography')
+        #
+        # Run this script
+        commands.append("ssh cfelsgi 'cd /home/amorgan/analysis/Ptychography/MLL_analysis/; python pipeline.py -l local'")
+        #
+        # retrieve the data
+        commands.append('rsync -e ssh --recursive --progress amorgan@cfelsgi:/home/amorgan/tempdata/ ../../../tempdata/')
+        #
+        # execute sequentially
+        for command in commands:
+            print command
+            try :
+                retcode = subprocess.call(command, shell=True)
+                if retcode < 0:
+                    print >>sys.stderr, "Child was terminated by signal", -retcode
+            except OSError as e:
+                print >>sys.stderr, "Execution failed:", e
+        # 
 
 
