@@ -89,7 +89,7 @@ if __name__=='__main__':
         commands.append('python ../python_scripts/Ptychography.py -i ' +tempdata_dir+ ' -o ' +tempdata_dir)
         #
         # Process the results 
-        #commands.append('python process_results.py -i ' +tempdata_dir+ ' -o ' +tempdata_dir)
+        commands.append('python process_results.py -i ' +tempdata_dir+ ' -o ' +tempdata_dir)
         #
         # execute sequentially
         for command in commands:

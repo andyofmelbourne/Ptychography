@@ -165,7 +165,7 @@ def ifft2(a, origin='centre'):
         return b
     if origin == 'centre' :
         b = iquadshift(b)
-    return np.divide(b, np.sqrt(b.size))
+    return np.multiply(b, np.sqrt(b.size))
 
 def fftn(a):
     """Norm preserving fft on the zero pixel 0,0 this is not in place."""

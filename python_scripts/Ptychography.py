@@ -72,15 +72,14 @@ class Ptychography(object):
                                     If not present then initialise with random numbers        
         """
         #
-        # This will save time later
-        diffs  = np.sqrt(diffs)
-        #
         # Get the shape
         shape  = diffs[0].shape
         #
         # Store these values
         self.exits      = makeExits(sample, probe, coords)
-        self.diffAmps   = diffs
+        #
+        # This will save time later
+        self.diffAmps   = bg.quadshift(np.sqrt(diffs))
         self.shape      = shape
         self.shape_sample = sample.shape
         self.coords     = coords
@@ -289,7 +288,7 @@ class Ptychography(object):
         Fill the masked area with the amplitude from the probe.
         iters is a dummy argument (for consistency with ERA_sample and such)
         """
-        probeF    = bg.fft2(self.probe)
+        probeF    = bg.fft2(self.probe, origin='zero')
         exits_out = np.zeros_like(self.exits)
         exits_out = probeF * (self.mask * self.diffAmps / (self.alpha_div + np.abs(probeF)) \
                        + (~self.mask) )
