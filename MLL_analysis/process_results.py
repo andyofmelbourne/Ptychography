@@ -5,7 +5,6 @@
 
 import os, sys, getopt, inspect
 import numpy as np
-import h5py
 import scipy as sp
 from matplotlib.gridspec import GridSpec
 import matplotlib.pyplot as plt
