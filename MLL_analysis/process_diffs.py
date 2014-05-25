@@ -127,10 +127,11 @@ def load_metadata(path_base = '../../../rawdata/PETRA3/P11/P11-201311/10010762/'
             fnams.append( file_n )
         except :
             pass
+    zxN        = np.array(zxN, dtype=np.float64)
     zyxN       = np.zeros((len(zxN), 4), dtype=np.float64)
-    zyxN[:, 0] = np.array(zxN)[:, 0]
-    zyxN[:, 2] = np.array(zxN)[:, 1]
-    zyxN[:, 3] = np.array(zxN)[:, 2]
+    zyxN[:, 0] = zxN[:, 0].copy()
+    zyxN[:, 2] = zxN[:, 1].copy()
+    zyxN[:, 3] = zxN[:, 2].copy()
     #
     # Now I think that z is in units of mm and pointing upstream of the beam
     zyxN[:, 0] -= zyxN[:, 0].min()
