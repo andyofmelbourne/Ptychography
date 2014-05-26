@@ -477,7 +477,7 @@ def make_xy(N, origin=None):
     if origin is None :
         origin_x, origin_y = nx // 2 - 1, ny // 2 - 1
     else :
-        origin_x, origin_y = origin
+        origin_y, origin_x = origin
     x, y = np.meshgrid(np.arange(nx), np.arange(ny))
     x -= origin_x
     y -= origin_y
