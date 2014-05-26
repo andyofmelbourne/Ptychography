@@ -35,6 +35,17 @@ def main(argv):
             outputdir = arg
     return inputdir, outputdir
 
+def fnamBase_match(fnam):
+    fnam_base  = os.path.basename(fnam)
+    fnam_dir   = os.path.abspath(os.path.dirname(fnam))
+    onlyfiles  = [ f for f in os.listdir(fnam_dir) if os.path.isfile(os.path.join(fnam_dir,f)) ]
+    fnam_match = [ f for f in onlyfiles if f[:len(fnam_base)] == fnam_base ]
+    try : 
+        fnam_match[0]
+    except :
+        return False
+    return True
+
 def update_progress(progress):
     barLength = 20 # Modify this to change the length of the progress bar
     status = ""
@@ -327,11 +338,16 @@ if __name__ == '__main__':
         sample_init = temp
     #
     print 'Loading the sample support...'
-    sample_support  = bg.binary_in(inputDir + 'sample_support', dt=np.float64, dimFnam=True)
+    if fnamBase_match(inputDir + 'sample_support'):
+        print 'Loading the sample support...'
+        sample_support = bg.binary_in(inputDir + 'sample_support', dt=np.float64, dimFnam=True)
+    else :
+        sample_support = np.ones_like(sample_init)
     if len(sample_support.shape) == 1 :
         temp = np.zeros_like(sample_ret, dtype=np.float64)
         temp[:] = sample_support
         sample_support = temp
+    sample_support = np.array(sample_support, dtype=np.bool)
     #
     print 'Loading the initial and retrieved probe ...'
     probe_ret  = bg.binary_in(inputDir + 'probe_retrieved', dt=np.complex128, dimFnam=True)

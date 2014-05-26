@@ -617,15 +617,15 @@ if __name__ == "__main__":
     print 'I want the probe to start at the "right". 0 --> sample.shape[1] - probe.shape[1]'
     ij_coords[:, -1] = ij_coords[:, -1] + (sample.shape[-1] - probe.shape[-1])
     #
-    print 'taking a subset of the diffraction patterns'
-    diffs_sub = []
-    ij_coords_sub = []
-    idiffs = range(0, len(diffs), 15)
-    for i in idiffs:
-        diffs_sub.append(diffs[i])
-        ij_coords_sub.append(ij_coords[i])
-    diffs = np.array(diffs_sub)
-    ij_coords = np.array(ij_coords_sub)
+    #print 'taking a subset of the diffraction patterns'
+    #diffs_sub = []
+    #ij_coords_sub = []
+    #idiffs = range(0, len(diffs), 15)
+    #for i in idiffs:
+    #    diffs_sub.append(diffs[i])
+    #    ij_coords_sub.append(ij_coords[i])
+    #diffs = np.array(diffs_sub)
+    #ij_coords = np.array(ij_coords_sub)
     #
     # Output 
     print 'outputing to ', os.path.abspath(outputdir)
