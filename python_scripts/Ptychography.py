@@ -141,7 +141,7 @@ class Ptychography(object):
             exits     -= self.exits
             self.error_sup.append(np.sum(np.real(np.conj(exits)*exits))/self.diffNorm)
             #
-            update_progress(i / float(iters-1), 'ERA sample', i, self.error_mod[-1], self.error_sup[-1])
+            update_progress(i / max(1.0, float(iters-1)), 'ERA sample', i, self.error_mod[-1], self.error_sup[-1])
 
     def ERA_probe(self, iters=1):
         print 'i \t\t eMod \t\t eSup'
@@ -155,7 +155,7 @@ class Ptychography(object):
             exits     -= self.exits
             self.error_sup.append(np.sum(np.real(np.conj(exits)*exits))/self.diffNorm)
             #
-            update_progress(i / float(iters-1), 'ERA Probe', i, self.error_mod[-1], self.error_sup[-1])
+            update_progress(i / max(1.0, float(iters-1)), 'ERA Probe', i, self.error_mod[-1], self.error_sup[-1])
 
     def HIO_sample(self, iters=1, beta=1):
         print 'i \t\t eMod \t\t eSup'
@@ -171,7 +171,7 @@ class Ptychography(object):
             self.exits = exits - makeExits(self.sample, self.probe, self.coords)
             self.error_sup.append(np.sum(np.real(np.conj(self.exits)*self.exits))/self.diffNorm)
             #
-            update_progress(i / float(iters-1), 'HIO sample', i, self.error_mod[-1], self.error_sup[-1])
+            update_progress(i / max(1.0, float(iters-1)), 'HIO sample', i, self.error_mod[-1], self.error_sup[-1])
             #
             self.exits = exits
 
@@ -189,7 +189,7 @@ class Ptychography(object):
             self.exits = exits - makeExits(self.sample, self.probe, self.coords)
             self.error_sup.append(np.sum(np.real(np.conj(self.exits)*self.exits))/self.diffNorm)
             #
-            update_progress(i / float(iters-1), 'HIO probe', i, self.error_mod[-1], self.error_sup[-1])
+            update_progress(i / max(1.0, float(iters-1)), 'HIO probe', i, self.error_mod[-1], self.error_sup[-1])
             #
             self.exits = exits
 
@@ -204,7 +204,7 @@ class Ptychography(object):
             self.error_mod.append(None)
             self.exits = exits
             #
-            update_progress(i / float(iters-1), 'Thibault sample', i, self.error_conv[-1], self.error_sup[-1])
+            update_progress(i / max(1.0, float(iters-1)), 'Thibault sample', i, self.error_conv[-1], self.error_sup[-1])
             #
 
     def Thibault_probe(self, iters=1):
@@ -223,7 +223,7 @@ class Ptychography(object):
 
             self.exits = exits
             #
-            update_progress(i / float(iters-1), 'Thibault probe', i, self.error_conv[-1], self.error_sup[-1])
+            update_progress(i / max(1.0, float(iters-1)), 'Thibault probe', i, self.error_conv[-1], self.error_sup[-1])
             #
 
     def Thibault_both(self, iters=1):
@@ -245,7 +245,7 @@ class Ptychography(object):
 
             self.exits = exits
             #
-            update_progress(i / float(iters-1), 'Thibault sample / probe', i, self.error_conv[-1], self.error_sup[-1])
+            update_progress(i / max(1.0, float(iters-1)), 'Thibault sample / probe', i, self.error_conv[-1], self.error_sup[-1])
             #
             probes = []
             for j in range(10):
