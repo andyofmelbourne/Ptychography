@@ -20,7 +20,7 @@ import subprocess
 tempdata_dir = '../../../tempdata/MLL_calc/'
 
 sequence = """
-ERA_sample = 10
+ERA_sample = 1
 """
 
 gratingSim = True
@@ -115,7 +115,7 @@ if __name__=='__main__':
         commands.append('rsync -e ssh --recursive --progress --delete ../../Ptychography/ amorgan@cfelsgi:/home/amorgan/analysis/Ptychography')
         #
         # Run this script
-        commands.append("ssh cfelsgi 'cd /home/amorgan/analysis/Ptychography/MLL_analysis/; python pipeline.py -l local'")
+        commands.append("ssh cfelsgi 'export LD_LIBRARY_PATH='/cfel/common/lib:$LD_LIBRARY_PATH'; cd /home/amorgan/analysis/Ptychography/MLL_analysis/; python pipeline.py -l local'")
         #
         # retrieve the data
         commands.append('rsync -e ssh --recursive --progress amorgan@cfelsgi:/home/amorgan/tempdata/ ../../../tempdata/')
