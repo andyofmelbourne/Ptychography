@@ -299,7 +299,7 @@ class Ptychography_1dsample(Ptychography):
     def __init__(self, diffs, coords, mask, probe, sample_1d): 
         self.sample_1d = sample_1d
         sample = np.zeros((probe.shape[0], sample_1d.shape[0]), dtype = sample_1d.dtype)
-        sample[:] = sample_1d
+        sample[:] = sample_1d.copy()
         Ptychography.__init__(self, diffs, coords, mask, probe, sample)
 
     def Psup_sample(self, exits, thresh=False, inPlace=True):
@@ -331,12 +331,13 @@ class Ptychography_1dsample(Ptychography):
         sample_1d = sample_1d / (np.sum(self.probe_sum, axis=0) + self.alpha_div)
         # 
         # expand
-        sample_out[:] = sample_1d
+        sample_out[:] = sample_1d.copy()
         #
         if thresh :
             sample_out = bg.threshold(sample_out, thresh=thresh)
         if inPlace :
-            self.sample = sample_out
+            self.sample    = sample_out
+            self.sample_1d = sample_1d
         self.sample_sum = None
         # 
         return sample_out
@@ -479,6 +480,7 @@ if __name__ == '__main__':
     print 'output directory is ', outputdir
     prob, sequence = input_output(inputdir)
     prob           = runSequence(prob, sequence)
+    print ''
     #
     # output the results
     bg.binary_out(prob.sample, outputdir + 'sample_retrieved', dt=np.complex128, appendDim=True)

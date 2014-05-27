@@ -97,42 +97,42 @@ def make_sample_fig(sample_init, sample_ret, sample_support, heatmap, outputDir)
     ax.imshow(sample_support, aspect='auto')
     ax.set_title('sample support', fontsize=18, position=(0.5, 1.01))
     ax = plt.subplot(gs[0,1])
-    ax.imshow(heatmap, aspect='auto', cmap='Greys_r')
+    ax.imshow(heatmap, aspect='auto', cmap='Greys_r', interpolation='nearest')
     ax.set_title('heatmap', fontsize=18, position=(0.5, 1.01))
     #
     ax = plt.subplot(gs[1,0])
     ax.imshow(np.abs(sample_ret), aspect='auto')#, vmin = np.abs(sample_init).min(), vmax = np.abs(sampleInit).max())
     ax.set_title('sample ret amp', fontsize=18, position=(0.5, 1.01))
     ax = plt.subplot(gs[2,0])
-    ax.imshow(np.abs(sample_init), aspect='auto', vmin = np.abs(sample_init).min(), vmax = np.abs(sample_init).max())
+    ax.imshow(np.abs(sample_init), aspect='auto')#, vmin = np.abs(sample_init).min(), vmax = np.abs(sample_init).max())
     ax.set_title('sample init amp', fontsize=18, position=(0.5, 1.01))
     #
     ax = plt.subplot(gs[1,1])
-    ax.imshow(np.angle(sample_ret), aspect='auto', vmin = np.angle(sample_init).min(), vmax = np.angle(sample_init).max())
+    ax.imshow(np.angle(sample_ret), aspect='auto')#, vmin = np.angle(sample_init).min(), vmax = np.angle(sample_init).max())
     ax.set_title('sample ret phase', fontsize=18, position=(0.5, 1.01))
     ax = plt.subplot(gs[2,1])
-    ax.imshow(np.angle(sample_init), aspect='auto', vmin = np.angle(sample_init).min(), vmax = np.angle(sample_init).max())
+    ax.imshow(np.angle(sample_init), aspect='auto')#, vmin = np.angle(sample_init).min(), vmax = np.angle(sample_init).max())
     ax.set_title('sample init phase', fontsize=18, position=(0.5, 1.01))
     #
     ax = plt.subplot(gs[3,0])
-    ax.plot(np.sum(np.abs(sample_ret)[50:200], axis=0)/150.0, linewidth=2, alpha=0.5)
+    ax.plot(np.sum(np.abs(sample_ret), axis=0)/float(sample_ret.shape[0]), linewidth=2, alpha=0.5)
     ax.set_title('sample ret amp', fontsize=18, position=(0.5, 1.01))
-    ax.set_ylim([0.90, 1.02])
+    #ax.set_ylim([0.90, 1.02])
     ax.set_xlim([0, sample_init.shape[1]])
     #
     ax = plt.subplot(gs[4,0])
-    ax.plot(np.sum(np.abs(sample_init)[50:200], axis=0)/150.0, linewidth=2, alpha=0.5)
+    ax.plot(np.sum(np.abs(sample_init), axis=0)/float(sample_init.shape[0]), linewidth=2, alpha=0.5)
     ax.set_title('sample init amp', fontsize=18, position=(0.5, 1.01))
     ax.set_xlim([0, sample_init.shape[1]])
     #
     ax = plt.subplot(gs[3,1])
-    ax.plot(np.sum(np.angle(sample_ret)[50:200], axis=0)/150.0, linewidth=2, alpha=0.5)
+    ax.plot(np.sum(np.angle(sample_ret), axis=0)/float(sample_ret.shape[0]), linewidth=2, alpha=0.5)
     ax.set_title('sample ret phase', fontsize=18, position=(0.5, 1.01))
-    ax.set_ylim([-0.5, 2.0])
+    #ax.set_ylim([-0.5, 2.0])
     ax.set_xlim([0, sample_init.shape[1]])
     #
     ax = plt.subplot(gs[4,1])
-    ax.plot(np.sum(np.angle(sample_init)[50:200], axis=0)/150.0, linewidth=2, alpha=0.5)
+    ax.plot(np.sum(np.angle(sample_init), axis=0)/float(sample_init.shape[0]), linewidth=2, alpha=0.5)
     ax.set_title('sample init phase', fontsize=18, position=(0.5, 1.01))
     ax.set_xlim([0, sample_init.shape[1]])
     #
@@ -177,14 +177,14 @@ def make_error_fig(ij_coords, mask, sample_init, sample_ret, sample_support, pro
     e_init    = []
     diffs_sum = []
     for i in range(len(diffs)):
-        update_progress(i / float(len(diffs)-1))
+        update_progress(i / max(1.0, float(len(diffs)-1)))
         diff       = np.array(diffs[i], dtype=np.float64)
         diff       = diff * mask
         diff_ret   = mask * makeDiff(sample_ret, probe_ret, ij_coords[i])
         diff_init  = mask * makeDiff(sample_init, probe_init, ij_coords[i])
-        diffs_sum.append(np.sum(diff**2))
-        e_ret.append(np.sum(np.abs(diff - diff_ret)**2))
-        e_init.append(np.sum(np.abs(diff - diff_init)**2))
+        diffs_sum.append(np.sum(diff))
+        e_ret.append(np.sum(np.abs(np.sqrt(diff) - np.sqrt(diff_ret))**2))
+        e_init.append(np.sum(np.abs(np.sqrt(diff) - np.sqrt(diff_init))**2))
         #
         lines_diff.append(np.sum(diff, axis=0))
         lines_ret.append(np.sum(diff_ret, axis=0))
@@ -194,8 +194,8 @@ def make_error_fig(ij_coords, mask, sample_init, sample_ret, sample_support, pro
     lines_ret  = np.array(lines_ret)
     lines_init = np.array(lines_init)
     diffs_sum  = np.array(diffs_sum)
-    e_ret      = np.array(e_ret)
-    e_init     = np.array(e_init)
+    e_ret      = np.array(e_ret) / diffs_sum
+    e_init     = np.array(e_init) / diffs_sum
     #
     #
     plt.clf()
@@ -206,7 +206,7 @@ def make_error_fig(ij_coords, mask, sample_init, sample_ret, sample_support, pro
     ax.plot(e_init, linewidth=5, alpha=0.5, label='initial')
     ax.plot(e_ret , linewidth=5, alpha=0.5, label='retrieved')
     ax.legend()  
-    ax.set_title('l2norm per diff -- Total(initial, final): '+str(np.sum(e_init))+','+str(np.sum(e_ret)), fontsize=18, position=(0.5, 1.01))
+    ax.set_title('eMod per diff -- Total(initial, final): '+str(np.sum(e_init)/np.sum(diffs_sum))+','+str(np.sum(e_ret)/np.sum(diffs_sum)), fontsize=18, position=(0.5, 1.01))
     #
     ax = plt.subplot(gs[: 2, 2 :])
     ax.plot(np.log10(eMod), linewidth=5, alpha=0.5, label='modulus')
@@ -337,7 +337,6 @@ if __name__ == '__main__':
         temp[:] = sample_init
         sample_init = temp
     #
-    print 'Loading the sample support...'
     if fnamBase_match(inputDir + 'sample_support'):
         print 'Loading the sample support...'
         sample_support = bg.binary_in(inputDir + 'sample_support', dt=np.float64, dimFnam=True)
