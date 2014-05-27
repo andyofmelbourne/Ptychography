@@ -23,37 +23,11 @@ sequence = """
 ERA_sample = 10
 """
 
-gratingSim = True
+gratingSim = False
 samplesupport = True
 sample1d = True
 ##########################################
 ##########################################
-
-# I think this is just for python files
-#subprocess.Popen([sys.executable, "eg.py", "--pos=0.0"])
-
-# send the job over ssh
-#send = 'rsync -e ssh --recursive --progress --verbose --delete /home/amorgan/Physics/arkive/PETRA_Ptych/scan0181_exploration/cfelsgi_0/ amorgan@cfelsgi:/home/amorgan/andrew_morgan_temp/Ptychography/cfelsgi_0'
-
-#try :
-#    retcode = call(send, shell=True)
-#    if retcode < 0:
-#        print >>sys.stderr, "Child was terminated by signal", -retcode
-#    else :
-#        print >>sys.stderr, "Child returned", retcode
-#except OSError as e:
-#    print >>sys.stderr, "Execution failed:", e
-
-
-#send = 'rsync -e ssh --recursive --progress --verbose --delete /home/amorgan/Physics/arkive/PETRA_Ptych/scan0181_exploration/cfelsgi_0/ amorgan@cfelsgi:/home/amorgan/andrew_morgan_temp/Ptychography/cfelsgi_0'
-#try :
-#    retcode = subprocess.call('ls', shell=True)
-#    if retcode < 0:
-#        print >>sys.stderr, "Child was terminated by signal", -retcode
-#    else :
-#        print >>sys.stderr, "Child returned", retcode
-#except OSError as e:
-#    print >>sys.stderr, "Execution failed:", e
 
 def main(argv):
     location = 'local'
