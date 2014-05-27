@@ -392,7 +392,7 @@ class Ptychography_1dsample(Ptychography):
         from cgls import cgls_nonlinear
         self.sample_1d = sample_1d
         sample = np.zeros((probe.shape[0], sample_1d.shape[0]), dtype = sample_1d.dtype)
-        sample[:] = sample_1d
+        sample[:] = sample_1d.copy()
         Ptychography.__init__(self, diffs, coords, mask, probe, sample)
 
     def Psup_sample(self, exits, thresh=False, inPlace=True):
