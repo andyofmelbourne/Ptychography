@@ -90,7 +90,7 @@ def fnamBase_match(fnam):
 
 
 class Ptychography(object):
-    def __init__(self, diffs, coords, mask, probe, sample, pmod_int = False): 
+    def __init__(self, diffs, coords, mask, probe, sample, sample_support, pmod_int = False): 
         """Initialise the Ptychography module with the data in 'inputDir' 
         
         Naming convention:
@@ -127,6 +127,7 @@ class Ptychography(object):
         self.sample_sum = None
         self.diffNorm   = np.sum(self.mask * (self.diffAmps)**2)
         self.pmod_int   = pmod_int
+        self.sample_support = sample_support
 
     def ERA_sample(self, iters=1):
         print 'i, eMod, eSup'
@@ -386,11 +387,16 @@ class Ptychography(object):
     
 
 
-    def __init__(self, diffs, coords, mask, probe, sample_1d, pmod_int = False): 
+    def __init__(self, diffs, coords, mask, probe, sample_1d, sample_support_1d, pmod_int = False): 
         self.sample_1d = sample_1d
-        sample = np.zeros((probe.shape[0], sample_1d.shape[0]), dtype = sample_1d.dtype)
-        sample[:] = sample_1d.copy()
-        Ptychography.__init__(self, diffs, coords, mask, probe, sample, pmod_int)
+        self.sample_support_1d = sample_support_1d
+        #
+        sample         = np.zeros((probe.shape[0], sample_1d.shape[0]), dtype = sample_1d.dtype)
+        sample_support = np.zeros((probe.shape[0], sample_1d.shape[0]), dtype = sample_1d.dtype)
+        sample[:]         = sample_1d.copy()
+        sample_support[:] = sample_support_1d.copy()
+        #
+        Ptychography.__init__(self, diffs, coords, mask, probe, sample, sample_support, pmod_int)
 
     def Psup_sample(self, exits, thresh=False, inPlace=True):
         """ """
@@ -419,6 +425,7 @@ class Ptychography(object):
         #
         # divide
         sample_1d = sample_1d / (np.sum(self.probe_sum, axis=0) + self.alpha_div)
+        sample_1d = sample_1d * self.sample_support_1d + ~self.sample_support_1d
         # 
         # expand
         sample_out[:] = sample_1d.copy()
@@ -1103,10 +1110,10 @@ def input_output(inputDir):
     # If the sample is 1d then do a 1d retrieval 
     if len(sample.shape) == 1 :
         print '1d sample => 1d Ptychography'
-        prob = Ptychography_1dsample(diffs, coords, mask, probe, sample)
+        prob = Ptychography_1dsample(diffs, coords, mask, probe, sample, sample_support)
     elif len(sample.shape) == 2 :
         print '2d sample => 2d Ptychography'
-        prob = Ptychography(diffs, coords, mask, probe, sample)
+        prob = Ptychography(diffs, coords, mask, probe, sample, sample_support)
     return prob, sequence
 
 def runSequence(prob, sequence):
