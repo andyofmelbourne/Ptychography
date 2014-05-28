@@ -179,7 +179,7 @@ def make_error_fig(ij_coords, mask, sample_init, sample_ret, sample_support, pro
     for i in range(len(diffs)):
         update_progress(i / max(1.0, float(len(diffs)-1)))
         diff       = np.array(diffs[i], dtype=np.float64)
-        diff       = diff * mask
+        diff       = mask * diff
         diff_ret   = mask * makeDiff(sample_ret, probe_ret, ij_coords[i])
         diff_init  = mask * makeDiff(sample_init, probe_init, ij_coords[i])
         diffs_sum.append(np.sum(diff))
@@ -194,8 +194,8 @@ def make_error_fig(ij_coords, mask, sample_init, sample_ret, sample_support, pro
     lines_ret  = np.array(lines_ret)
     lines_init = np.array(lines_init)
     diffs_sum  = np.array(diffs_sum)
-    e_ret      = np.array(e_ret) / diffs_sum
-    e_init     = np.array(e_init) / diffs_sum
+    e_ret_line      = np.array(e_ret) / diffs_sum
+    e_init_line     = np.array(e_init) / diffs_sum
     #
     #
     plt.clf()
@@ -203,8 +203,8 @@ def make_error_fig(ij_coords, mask, sample_init, sample_ret, sample_support, pro
     gs.update(hspace=0.5)
     #
     ax = plt.subplot(gs[: 2, : 2])
-    ax.plot(e_init, linewidth=5, alpha=0.5, label='initial')
-    ax.plot(e_ret , linewidth=5, alpha=0.5, label='retrieved')
+    ax.plot(e_init_line, linewidth=5, alpha=0.5, label='initial')
+    ax.plot(e_ret_line , linewidth=5, alpha=0.5, label='retrieved')
     ax.legend()  
     ax.set_title('eMod per diff -- Total(initial, final): '+str(np.sum(e_init)/np.sum(diffs_sum))+','+str(np.sum(e_ret)/np.sum(diffs_sum)), fontsize=18, position=(0.5, 1.01))
     #
