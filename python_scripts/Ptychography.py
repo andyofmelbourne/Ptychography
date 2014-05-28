@@ -90,7 +90,7 @@ def fnamBase_match(fnam):
 
 
 class Ptychography(object):
-    def __init__(self, diffs, coords, mask, probe, sample, sample_support, pmod_int = False): 
+    def __init__(self, diffs, coords, mask, probe, sample, pmod_int = False): 
         """Initialise the Ptychography module with the data in 'inputDir' 
         
         Naming convention:
@@ -127,7 +127,6 @@ class Ptychography(object):
         self.sample_sum = None
         self.diffNorm   = np.sum(self.mask * (self.diffAmps)**2)
         self.pmod_int   = pmod_int
-        self.sample_support = sample_support
 
     def ERA_sample(self, iters=1):
         print 'i, eMod, eSup'
@@ -287,15 +286,15 @@ class Ptychography(object):
         exits_out = bg.ifftn(exits_out)
         return exits_out
 
-    def Pmod_hat(self, exits_F, pmod_int = False):
-        exits_out = exits_F
+    def Pmod(self, exits, pmod_int = False):
+        exits_out = bg.fftn(exits)
         if self.pmod_int or pmod_int :
             exits_out = exits_out * (self.mask * self.diffAmps * (self.diffAmps > 0.99) /  np.clip(np.abs(exits_out), self.alpha_div, np.inf) \
                            + (~self.mask) )
         else :
             exits_out = exits_out * (self.mask * self.diffAmps / np.clip(np.abs(exits_out), self.alpha_div, np.inf) \
                            + (~self.mask) )
-            #exits_out = exits_out * self.diffAmps / (np.abs(exits_out) + self.alpha_div)
+        exits_out = bg.ifftn(exits_out)
         return exits_out
 
     def Pmod_integer(self, exits):
@@ -387,13 +386,11 @@ class Ptychography(object):
     
 
 
-class Ptychography_1dsample(Ptychography):
-    def __init__(self, diffs, coords, mask, probe, sample_1d, sample_support_1d, pmod_int = False): 
-        from cgls import cgls_nonlinear
+    def __init__(self, diffs, coords, mask, probe, sample_1d, pmod_int = False): 
         self.sample_1d = sample_1d
         sample = np.zeros((probe.shape[0], sample_1d.shape[0]), dtype = sample_1d.dtype)
         sample[:] = sample_1d.copy()
-        Ptychography.__init__(self, diffs, coords, mask, probe, sample)
+        Ptychography.__init__(self, diffs, coords, mask, probe, sample, pmod_int)
 
     def Psup_sample(self, exits, thresh=False, inPlace=True):
         """ """
@@ -1152,15 +1149,15 @@ def runSequence(prob, sequence):
                 run_seq.append(sequence[i] + [prob.coords_update_1d])
             #
             if sequence[i][0] == 'back_prop':
-                run_seq.append(sequence[i] + [prob.back_prop])
-            #
-            run_seq[-1][1] = int(sequence[i][1])
+                sequence[i].append(prob.back_prop)
+            sequence[i][1] = int(sequence[i][1])
 
         elif sequence[i][0] in ('pmod_int'):
             if sequence[i][0] == 'pmod_int':
                 if sequence[i][1] == 'True':
                     print 'exluding the values of sqrt(I) that fall in the range (0 --> 1)'
                     prob.pmod_int = True
+                    sequence.pop(0)
         else :
             raise NameError("What algorithm is this?! I\'ll tell you one thing, it is not part of : 'ERA_sample', 'ERA_probe', 'ERA_both', 'HIO_sample', 'HIO_probe', 'back_prop', 'Thibault_sample', 'Thibault_probe', 'Thibault_both', 'Huang' " + sequence[i][0])
     #
