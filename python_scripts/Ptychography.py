@@ -456,37 +456,45 @@ def runSequence(prob, sequence):
         raise ValueError('prob must be an instance of the class Ptychography')
     #
     # Check the sequence list
+    run_seq = []
     for i in range(len(sequence)):
         if sequence[i][0] in ('ERA_sample', 'ERA_probe', 'HIO_sample', 'HIO_probe', 'back_prop', 'Thibault_sample', 'Thibault_probe', 'Thibault_both'):
             # This will return an error if the string is not formatted properly (i.e. as an int)
             if sequence[i][0] == 'ERA_sample':
-                sequence[i].append(prob.ERA_sample)
+                run_seq.append(sequence[i] + [prob.ERA_sample])
+            #
             if sequence[i][0] == 'ERA_probe':
-                sequence[i].append(prob.ERA_probe)
+                run_seq.append(sequence[i] + [prob.ERA_probe])
+            #
             if sequence[i][0] == 'HIO_sample':
-                sequence[i].append(prob.HIO_sample)
+                run_seq.append(sequence[i] + [prob.HIO_sample])
+            #
             if sequence[i][0] == 'HIO_probe':
-                sequence[i].append(prob.HIO_probe)
+                run_seq.append(sequence[i] + [prob.HIO_probe])
+            #
             if sequence[i][0] == 'Thibault_sample':
-                sequence[i].append(prob.Thibault_sample)
+                run_seq.append(sequence[i] + [prob.Thibault_sample])
+            #
             if sequence[i][0] == 'Thibault_probe':
-                sequence[i].append(prob.Thibault_probe)
+                run_seq.append(sequence[i] + [prob.Thibault_probe])
+            #
             if sequence[i][0] == 'Thibault_both':
-                sequence[i].append(prob.Thibault_both)
+                run_seq.append(sequence[i] + [prob.Thibault_both])
+            #
             if sequence[i][0] == 'back_prop':
-                sequence[i].append(prob.back_prop)
-            sequence[i][1] = int(sequence[i][1])
+                run_seq.append(sequence[i] + [prob.back_prop])
+            #
+            run_seq[-1][1] = int(sequence[i][1])
 
         elif sequence[i][0] in ('pmod_int'):
             if sequence[i][0] == 'pmod_int':
                 if sequence[i][1] == 'True':
                     print 'exluding the values of sqrt(I) that fall in the range (0 --> 1)'
                     prob.pmod_int = True
-                    sequence.pop(0)
         else :
             raise NameError("What algorithm is this?! I\'ll tell you one thing, it is not part of 'ERA_sample', 'ERA_probe', 'HIO_sample', 'HIO_probe': " + sequence[i][0])
     #
-    for seq in sequence:
+    for seq in run_seq:
         print 'Running ', seq[0]
         seq[2](iters = seq[1])
     #
