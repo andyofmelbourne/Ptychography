@@ -1124,9 +1124,6 @@ def runSequence(prob, sequence):
             if sequence[i][0] == 'ERA_probe':
                 run_seq.append(sequence[i] + [prob.ERA_probe])
             #
-            if sequence[i][0] == 'ERA_both':
-                run_seq.append(sequence[i] + [prob.ERA_both])
-            #
             if sequence[i][0] == 'HIO_sample':
                 run_seq.append(sequence[i] + [prob.HIO_sample])
             #
@@ -1142,22 +1139,16 @@ def runSequence(prob, sequence):
             if sequence[i][0] == 'Thibault_both':
                 run_seq.append(sequence[i] + [prob.Thibault_both])
             #
-            if sequence[i][0] == 'Huang':
-                run_seq.append(sequence[i] + [prob.Huang])
-            #
-            if sequence[i][0] == 'coords_update_1d':
-                run_seq.append(sequence[i] + [prob.coords_update_1d])
-            #
             if sequence[i][0] == 'back_prop':
-                sequence[i].append(prob.back_prop)
-            sequence[i][1] = int(sequence[i][1])
+                run_seq.append(sequence[i] + [prob.back_prop])
+            #
+            run_seq[-1][1] = int(sequence[i][1])
 
         elif sequence[i][0] in ('pmod_int'):
             if sequence[i][0] == 'pmod_int':
                 if sequence[i][1] == 'True':
                     print 'exluding the values of sqrt(I) that fall in the range (0 --> 1)'
                     prob.pmod_int = True
-                    sequence.pop(0)
         else :
             raise NameError("What algorithm is this?! I\'ll tell you one thing, it is not part of : 'ERA_sample', 'ERA_probe', 'ERA_both', 'HIO_sample', 'HIO_probe', 'back_prop', 'Thibault_sample', 'Thibault_probe', 'Thibault_both', 'Huang' " + sequence[i][0])
     #
