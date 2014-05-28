@@ -587,8 +587,18 @@ if __name__ == "__main__":
     zyx                     = zyxN[:, : 3]
     fnams                   = fnams_stack[int(run)]
     #
+    #print 'taking a subset of the diffraction patterns'
+    #zyx_sub = []
+    #fnams_sub = []
+    #idiffs = range(80, 101)
+    #for i in idiffs:
+    #    zyx_sub.append(zyx[i])
+    #    fnams_sub.append(fnams[i])
+    #zyx   = np.array(zyx_sub)
+    #fnams = list(fnams_sub)
+    #
     print 'loading diffraction data...'
-    diffs                = load_h5s(fnams)
+    diffs = load_h5s(fnams)
     #
     print 'Processing diffraction data and generating the diffraction mask...'
     diffs, mask = process_diffs(diffs)
@@ -631,16 +641,6 @@ if __name__ == "__main__":
     # I want the probe to start at the "right". 0 --> sample.shape[1] - probe.shape[1]
     print 'I want the probe to start at the "right". 0 --> sample.shape[1] - probe.shape[1]'
     ij_coords[:, -1] = ij_coords[:, -1] + (sample.shape[-1] - probe.shape[-1])
-    #
-    #print 'taking a subset of the diffraction patterns'
-    diffs_sub = []
-    ij_coords_sub = []
-    idiffs = range(80, 101)
-    for i in idiffs:
-        diffs_sub.append(diffs[i])
-        ij_coords_sub.append(ij_coords[i])
-    diffs = np.array(diffs_sub)
-    ij_coords = np.array(ij_coords_sub)
     #
     # Output 
     print 'outputing to ', os.path.abspath(outputdir)

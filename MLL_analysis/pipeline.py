@@ -20,7 +20,8 @@ import subprocess
 tempdata_dir = '../../../tempdata/MLL_calc/'
 
 sequence = """
-ERA_sample = 10
+pmod_int = True
+ERA_sample = 5
 """
 
 gratingSim = False

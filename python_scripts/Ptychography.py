@@ -57,7 +57,7 @@ def fnamBase_match(fnam):
     return True
 
 class Ptychography(object):
-    def __init__(self, diffs, coords, mask, probe, sample): 
+    def __init__(self, diffs, coords, mask, probe, sample, pmod_int = False): 
         """Initialise the Ptychography module with the data in 'inputDir' 
         
         Naming convention:
@@ -83,7 +83,7 @@ class Ptychography(object):
         self.shape      = shape
         self.shape_sample = sample.shape
         self.coords     = coords
-        self.mask       = mask
+        self.mask       = bg.quadshift(mask)
         self.probe      = probe
         self.sample     = sample
         self.alpha_div  = 1.0e-10
@@ -92,7 +92,8 @@ class Ptychography(object):
         self.error_conv = []
         self.probe_sum  = None
         self.sample_sum = None
-        self.diffNorm   = np.sum(np.abs(self.diffAmps)**2)
+        self.diffNorm   = np.sum(self.mask * (self.diffAmps)**2)
+        self.pmod_int   = pmod_int
 
     def ERA_sample(self, iters=1):
         print 'i, eMod, eSup'
@@ -213,10 +214,23 @@ class Ptychography(object):
             update_progress(i / max(1.0, float(iters-1)), 'Thibault sample / probe', i, self.error_conv[-1], self.error_sup[-1])
             #
 
-    def Pmod(self, exits):
+    def Pmod(self, exits, pmod_int = False):
         exits_out = bg.fftn(exits)
-        exits_out = exits_out * (self.mask * self.diffAmps / (self.alpha_div + np.abs(exits_out)) \
-                       + (~self.mask) )
+        if self.pmod_int or pmod_int :
+            exits_out = exits_out * (self.mask * self.diffAmps * (self.diffAmps > 0.99) /  np.clip(np.abs(exits_out), self.alpha_div, np.inf) \
+                           + (~self.mask) )
+        else :
+            exits_out = exits_out * (self.mask * self.diffAmps / np.clip(np.abs(exits_out), self.alpha_div, np.inf) \
+                           + (~self.mask) )
+        exits_out = bg.ifftn(exits_out)
+        return exits_out
+
+    def Pmod_integer(self, exits):
+        """If the diffraction data is in units of no. of particles then there should be no numbers in 
+        self.diffAmps in the range (0, 1). This can help us make the modulus substitution more robust.
+        """
+        exits_out = bg.fftn(exits)
+        exits_out = exits_out * (self.mask * self.diffAmps * (self.diffAmps > 0.99) /  np.abs(exits_out) + (~self.mask) )
         exits_out = bg.ifftn(exits_out)
         return exits_out
 
@@ -296,11 +310,11 @@ class Ptychography(object):
 
 class Ptychography_1dsample(Ptychography):
 
-    def __init__(self, diffs, coords, mask, probe, sample_1d): 
+    def __init__(self, diffs, coords, mask, probe, sample_1d, pmod_int = False): 
         self.sample_1d = sample_1d
         sample = np.zeros((probe.shape[0], sample_1d.shape[0]), dtype = sample_1d.dtype)
         sample[:] = sample_1d.copy()
-        Ptychography.__init__(self, diffs, coords, mask, probe, sample)
+        Ptychography.__init__(self, diffs, coords, mask, probe, sample, pmod_int)
 
     def Psup_sample(self, exits, thresh=False, inPlace=True):
         """ """
@@ -462,6 +476,13 @@ def runSequence(prob, sequence):
             if sequence[i][0] == 'back_prop':
                 sequence[i].append(prob.back_prop)
             sequence[i][1] = int(sequence[i][1])
+
+        elif sequence[i][0] in ('pmod_int'):
+            if sequence[i][0] == 'pmod_int':
+                if sequence[i][1] == 'True':
+                    print 'exluding the values of sqrt(I) that fall in the range (0 --> 1)'
+                    prob.pmod_int = True
+                    sequence.pop(0)
         else :
             raise NameError("What algorithm is this?! I\'ll tell you one thing, it is not part of 'ERA_sample', 'ERA_probe', 'HIO_sample', 'HIO_probe': " + sequence[i][0])
     #
