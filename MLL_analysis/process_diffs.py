@@ -19,7 +19,7 @@ def main(argv):
     sample1d = False
     samplesupport = False
     try :
-        opts, args = getopt.getopt(argv,"hs:r:o:g:s1:ss",["scan=","run=","outputdir=","gratingSim=","sample1d=","samplesupport="])
+        opts, args = getopt.getopt(argv,"h",["scan=","run=","outputdir=","gratingSim=","sample1d=","samplesupport="])
     except getopt.GetoptError:
         print 'process_diffs.py -s <scan> -r <run> -o <outputdir> -g <gratingSim=True/False> -s1 <sample1d=True/False> -ss <samplesupport=True/False>'
         sys.exit(2)
@@ -34,11 +34,26 @@ def main(argv):
         elif opt in ("-o", "--outputdir"):
             outputdir = arg
         elif opt in ("-g", "--gratingSim"):
-            gratingSim = bool(arg)
+            if arg == 'False':
+                gratingSim = False
+            elif arg == 'True':
+                gratingSim = True
+            else :
+                print 'gratingSim must be True or False'
         elif opt in ("-s1", "--sample1d"):
-            sample1d = bool(arg)
+            if arg == 'False':
+                sample1d = False
+            elif arg == 'True':
+                sample1d = True
+            else :
+                print 'sample1d must be True or False'
         elif opt in ("-ss", "--samplesupport"):
-            samplesupport = bool(arg)
+            if arg == 'False':
+                samplesupport = False
+            elif arg == 'True':
+                samplesupport = True
+            else :
+                print 'samplesupport must be True or False'
     return scan, run, outputdir, gratingSim, sample1d, samplesupport
 
 def memoize(f):
@@ -618,14 +633,14 @@ if __name__ == "__main__":
     ij_coords[:, -1] = ij_coords[:, -1] + (sample.shape[-1] - probe.shape[-1])
     #
     #print 'taking a subset of the diffraction patterns'
-    #diffs_sub = []
-    #ij_coords_sub = []
-    #idiffs = range(0, len(diffs), 15)
-    #for i in idiffs:
-    #    diffs_sub.append(diffs[i])
-    #    ij_coords_sub.append(ij_coords[i])
-    #diffs = np.array(diffs_sub)
-    #ij_coords = np.array(ij_coords_sub)
+    diffs_sub = []
+    ij_coords_sub = []
+    idiffs = range(80, 101)
+    for i in idiffs:
+        diffs_sub.append(diffs[i])
+        ij_coords_sub.append(ij_coords[i])
+    diffs = np.array(diffs_sub)
+    ij_coords = np.array(ij_coords_sub)
     #
     # Output 
     print 'outputing to ', os.path.abspath(outputdir)
