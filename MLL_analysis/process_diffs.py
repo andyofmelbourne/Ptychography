@@ -530,6 +530,7 @@ def make_sample(probe, coords, gratingSim=False):
     sample_shape = (probe.shape[0] + np.abs(coords[:, 0].max() - coords[:, 0].min()),  \
                     probe.shape[1] + np.abs(coords[:, 1].max() - coords[:, 1].min()))
     sample = np.ones(sample_shape, dtype=np.complex128)
+    sample = np.random.random(sample_shape) + 1J * np.random.random(sample_shape) 
     #
     # simulate a grating if gratingSim==True
     if gratingSim:
