@@ -84,7 +84,7 @@ for coord in coords:
     exitF = bg.fft2(makeExit(sample, probe, coord))
     diffs.append(np.abs(exitF)**2)
 
-sampleInit = np.random.random((shape_sample)) + 1J*np.random.random((shape_sample))
+sampleInit = np.random.random(sample_1d.shape) + 1J*np.random.random(sample_1d.shape)
 #sampleInit = sample
 #probeInit = np.random.random((shape_illum)) + 1J*np.random.random((shape_illum))
 #probeInit  = bg.circle_new(shape_illum, radius=0.3, origin=[shape_illum[0]/2-1, shape_illum[1]/2 - 1]) + 0J
@@ -119,6 +119,4 @@ print ''
 print 'Now run the test with:'
 print 'python Ptychography.py -i', outputdir, ' -o',outputdir
 
-
-# send the job over ssh
 subprocess.Popen([sys.executable, 'Ptychography.py', '-i', outputdir, '-o', outputdir])

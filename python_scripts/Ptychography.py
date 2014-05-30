@@ -57,7 +57,7 @@ def fnamBase_match(fnam):
     return True
 
 class Ptychography(object):
-    def __init__(self, diffs, coords, mask, probe, sample): 
+    def __init__(self, diffs, coords, mask, probe, sample, sample_support, pmod_int = False): 
         """Initialise the Ptychography module with the data in 'inputDir' 
         
         Naming convention:
@@ -83,7 +83,7 @@ class Ptychography(object):
         self.shape      = shape
         self.shape_sample = sample.shape
         self.coords     = coords
-        self.mask       = mask
+        self.mask       = bg.quadshift(mask)
         self.probe      = probe
         self.sample     = sample
         self.alpha_div  = 1.0e-10
@@ -92,7 +92,9 @@ class Ptychography(object):
         self.error_conv = []
         self.probe_sum  = None
         self.sample_sum = None
-        self.diffNorm   = np.sum(np.abs(self.diffAmps)**2)
+        self.diffNorm   = np.sum(self.mask * (self.diffAmps)**2)
+        self.pmod_int   = pmod_int
+        self.sample_support = sample_support
 
     def ERA_sample(self, iters=1):
         print 'i, eMod, eSup'
@@ -213,10 +215,23 @@ class Ptychography(object):
             update_progress(i / max(1.0, float(iters-1)), 'Thibault sample / probe', i, self.error_conv[-1], self.error_sup[-1])
             #
 
-    def Pmod(self, exits):
+    def Pmod(self, exits, pmod_int = False):
         exits_out = bg.fftn(exits)
-        exits_out = exits_out * (self.mask * self.diffAmps / (self.alpha_div + np.abs(exits_out)) \
-                       + (~self.mask) )
+        if self.pmod_int or pmod_int :
+            exits_out = exits_out * (self.mask * self.diffAmps * (self.diffAmps > 0.99) /  np.clip(np.abs(exits_out), self.alpha_div, np.inf) \
+                           + (~self.mask) )
+        else :
+            exits_out = exits_out * (self.mask * self.diffAmps / np.clip(np.abs(exits_out), self.alpha_div, np.inf) \
+                           + (~self.mask) )
+        exits_out = bg.ifftn(exits_out)
+        return exits_out
+
+    def Pmod_integer(self, exits):
+        """If the diffraction data is in units of no. of particles then there should be no numbers in 
+        self.diffAmps in the range (0, 1). This can help us make the modulus substitution more robust.
+        """
+        exits_out = bg.fftn(exits)
+        exits_out = exits_out * (self.mask * self.diffAmps * (self.diffAmps > 0.99) /  np.abs(exits_out) + (~self.mask) )
         exits_out = bg.ifftn(exits_out)
         return exits_out
 
@@ -244,8 +259,11 @@ class Ptychography(object):
         #
         # divide
         sample_out  = sample_out / (self.probe_sum + self.alpha_div)
+        sample_out  = sample_out * self.sample_support + ~self.sample_support
+        #
         if thresh :
             sample_out = bg.threshold(sample_out, thresh=thresh)
+        #
         if inPlace :
             self.sample = sample_out
         self.sample_sum = None
@@ -296,11 +314,16 @@ class Ptychography(object):
 
 class Ptychography_1dsample(Ptychography):
 
-    def __init__(self, diffs, coords, mask, probe, sample_1d): 
+    def __init__(self, diffs, coords, mask, probe, sample_1d, sample_support_1d, pmod_int = False): 
         self.sample_1d = sample_1d
-        sample = np.zeros((probe.shape[0], sample_1d.shape[0]), dtype = sample_1d.dtype)
-        sample[:] = sample_1d
-        Ptychography.__init__(self, diffs, coords, mask, probe, sample)
+        self.sample_support_1d = sample_support_1d
+        #
+        sample         = np.zeros((probe.shape[0], sample_1d.shape[0]), dtype = sample_1d.dtype)
+        sample_support = np.zeros((probe.shape[0], sample_1d.shape[0]), dtype = sample_1d.dtype)
+        sample[:]         = sample_1d.copy()
+        sample_support[:] = sample_support_1d.copy()
+        #
+        Ptychography.__init__(self, diffs, coords, mask, probe, sample, sample_support, pmod_int)
 
     def Psup_sample(self, exits, thresh=False, inPlace=True):
         """ """
@@ -329,14 +352,16 @@ class Ptychography_1dsample(Ptychography):
         #
         # divide
         sample_1d = sample_1d / (np.sum(self.probe_sum, axis=0) + self.alpha_div)
+        sample_1d = sample_1d * self.sample_support_1d + ~self.sample_support_1d
         # 
         # expand
-        sample_out[:] = sample_1d
+        sample_out[:] = sample_1d.copy()
         #
         if thresh :
             sample_out = bg.threshold(sample_out, thresh=thresh)
         if inPlace :
-            self.sample = sample_out
+            self.sample    = sample_out
+            self.sample_1d = sample_1d
         self.sample_sum = None
         # 
         return sample_out
@@ -430,10 +455,10 @@ def input_output(inputDir):
     # If the sample is 1d then do a 1d retrieval 
     if len(sample.shape) == 1 :
         print '1d sample => 1d Ptychography'
-        prob = Ptychography_1dsample(diffs, coords, mask, probe, sample)
+        prob = Ptychography_1dsample(diffs, coords, mask, probe, sample, sample_support)
     elif len(sample.shape) == 2 :
         print '2d sample => 2d Ptychography'
-        prob = Ptychography(diffs, coords, mask, probe, sample)
+        prob = Ptychography(diffs, coords, mask, probe, sample, sample_support)
     return prob, sequence
 
 def runSequence(prob, sequence):
@@ -441,30 +466,45 @@ def runSequence(prob, sequence):
         raise ValueError('prob must be an instance of the class Ptychography')
     #
     # Check the sequence list
+    run_seq = []
     for i in range(len(sequence)):
         if sequence[i][0] in ('ERA_sample', 'ERA_probe', 'HIO_sample', 'HIO_probe', 'back_prop', 'Thibault_sample', 'Thibault_probe', 'Thibault_both'):
             # This will return an error if the string is not formatted properly (i.e. as an int)
             if sequence[i][0] == 'ERA_sample':
-                sequence[i].append(prob.ERA_sample)
+                run_seq.append(sequence[i] + [prob.ERA_sample])
+            #
             if sequence[i][0] == 'ERA_probe':
-                sequence[i].append(prob.ERA_probe)
+                run_seq.append(sequence[i] + [prob.ERA_probe])
+            #
             if sequence[i][0] == 'HIO_sample':
-                sequence[i].append(prob.HIO_sample)
+                run_seq.append(sequence[i] + [prob.HIO_sample])
+            #
             if sequence[i][0] == 'HIO_probe':
-                sequence[i].append(prob.HIO_probe)
+                run_seq.append(sequence[i] + [prob.HIO_probe])
+            #
             if sequence[i][0] == 'Thibault_sample':
-                sequence[i].append(prob.Thibault_sample)
+                run_seq.append(sequence[i] + [prob.Thibault_sample])
+            #
             if sequence[i][0] == 'Thibault_probe':
-                sequence[i].append(prob.Thibault_probe)
+                run_seq.append(sequence[i] + [prob.Thibault_probe])
+            #
             if sequence[i][0] == 'Thibault_both':
-                sequence[i].append(prob.Thibault_both)
+                run_seq.append(sequence[i] + [prob.Thibault_both])
+            #
             if sequence[i][0] == 'back_prop':
-                sequence[i].append(prob.back_prop)
-            sequence[i][1] = int(sequence[i][1])
+                run_seq.append(sequence[i] + [prob.back_prop])
+            #
+            run_seq[-1][1] = int(sequence[i][1])
+
+        elif sequence[i][0] in ('pmod_int'):
+            if sequence[i][0] == 'pmod_int':
+                if sequence[i][1] == 'True':
+                    print 'exluding the values of sqrt(I) that fall in the range (0 --> 1)'
+                    prob.pmod_int = True
         else :
             raise NameError("What algorithm is this?! I\'ll tell you one thing, it is not part of 'ERA_sample', 'ERA_probe', 'HIO_sample', 'HIO_probe': " + sequence[i][0])
     #
-    for seq in sequence:
+    for seq in run_seq:
         print 'Running ', seq[0]
         seq[2](iters = seq[1])
     #
@@ -479,6 +519,7 @@ if __name__ == '__main__':
     print 'output directory is ', outputdir
     prob, sequence = input_output(inputdir)
     prob           = runSequence(prob, sequence)
+    print ''
     #
     # output the results
     bg.binary_out(prob.sample, outputdir + 'sample_retrieved', dt=np.complex128, appendDim=True)
