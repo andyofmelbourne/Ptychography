@@ -124,6 +124,24 @@ class Ptychography(object):
             #
             update_progress(i / max(1.0, float(iters-1)), 'ERA Probe', i, self.error_mod[-1], self.error_sup[-1])
 
+    def ERA_both(self, iters=1):
+        print 'i, eMod, eSup'
+        for i in range(iters):
+            exits = self.Pmod(self.exits)
+            #
+            self.exits -= exits
+            self.error_mod.append(np.sum(np.real(np.conj(self.exits)*self.exits))/self.diffNorm)
+            #
+            for j in range(5):
+                self.Psup_sample(exits, thresh=1.0)
+                self.Psup_probe(exits)
+            #
+            self.exits = makeExits(self.sample, self.probe, self.coords)
+            exits     -= self.exits
+            self.error_sup.append(np.sum(np.real(np.conj(exits)*exits))/self.diffNorm)
+            #
+            update_progress(i / max(1.0, float(iters-1)), 'ERA both', i, self.error_mod[-1], self.error_sup[-1])
+
     def HIO_sample(self, iters=1, beta=1):
         print 'i \t\t eMod \t\t eSup'
         for i in range(iters):
@@ -468,13 +486,16 @@ def runSequence(prob, sequence):
     # Check the sequence list
     run_seq = []
     for i in range(len(sequence)):
-        if sequence[i][0] in ('ERA_sample', 'ERA_probe', 'HIO_sample', 'HIO_probe', 'back_prop', 'Thibault_sample', 'Thibault_probe', 'Thibault_both'):
+        if sequence[i][0] in ('ERA_sample', 'ERA_probe', 'ERA_both', 'HIO_sample', 'HIO_probe', 'back_prop', 'Thibault_sample', 'Thibault_probe', 'Thibault_both'):
             # This will return an error if the string is not formatted properly (i.e. as an int)
             if sequence[i][0] == 'ERA_sample':
                 run_seq.append(sequence[i] + [prob.ERA_sample])
             #
             if sequence[i][0] == 'ERA_probe':
                 run_seq.append(sequence[i] + [prob.ERA_probe])
+            #
+            if sequence[i][0] == 'ERA_both':
+                run_seq.append(sequence[i] + [prob.ERA_both])
             #
             if sequence[i][0] == 'HIO_sample':
                 run_seq.append(sequence[i] + [prob.HIO_sample])
@@ -502,7 +523,7 @@ def runSequence(prob, sequence):
                     print 'exluding the values of sqrt(I) that fall in the range (0 --> 1)'
                     prob.pmod_int = True
         else :
-            raise NameError("What algorithm is this?! I\'ll tell you one thing, it is not part of 'ERA_sample', 'ERA_probe', 'HIO_sample', 'HIO_probe': " + sequence[i][0])
+            raise NameError("What algorithm is this?! I\'ll tell you one thing, it is not part of : 'ERA_sample', 'ERA_probe', 'ERA_both', 'HIO_sample', 'HIO_probe', 'back_prop', 'Thibault_sample', 'Thibault_probe', 'Thibault_both' " + sequence[i][0])
     #
     for seq in run_seq:
         print 'Running ', seq[0]

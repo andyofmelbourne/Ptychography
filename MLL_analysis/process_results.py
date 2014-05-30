@@ -18,7 +18,7 @@ from python_scripts import bagOfns as bg
 
 
 def main(argv):
-    inpurtdir = './'
+    inputdir = './'
     outputdir = './'
     try :
         opts, args = getopt.getopt(argv,"hi:o:",["inputdir=","outputdir="])
