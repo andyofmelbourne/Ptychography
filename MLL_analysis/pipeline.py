@@ -21,7 +21,7 @@ tempdata_dir = '../../../tempdata/MLL_calc/'
 
 sequence = """
 pmod_int = True
-ERA_sample = 10
+ERA_sample = 5
 """
 
 gratingSim = False

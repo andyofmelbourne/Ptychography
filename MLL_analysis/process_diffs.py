@@ -352,8 +352,10 @@ def process_diffs(diffs):
     mask[: , 785] = 0    # this is a bad pixel that occurs often
     mask[:, 1330 :]  = 0     # mask the plate on the detector 1331 (1 pixel buffer)
     #mask[:, 1490]  = 0     # mask the plate on the detector 1331 (1 pixel buffer)
-    print 'Shifting, padding and deleting positive frequencies...'
+    print 'Shifting, padding and deleting positive frequencies (in q_x)...'
     mask    = padd_array(mask)
+    print 'Mask is now True for positive frequencies (in q_x). That is, zero counts will be enforced for q_x > 0' 
+    mask[:, mask.shape[1]/2 :] = True 
     #
     print 'Shifting, padding and deleting positive frequencies for the diffraction data...'
     diffs_out = []
