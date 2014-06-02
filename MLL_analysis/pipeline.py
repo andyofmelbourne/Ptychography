@@ -17,23 +17,24 @@ import subprocess
 # Parameters
 ##########################################
 ##########################################
-tempdata_dir = '../../../tempdata/MLL_calc/'
-
 sequence = """
 pmod_int = True
-Thibault_sample = 20
+Thibault_sample = 50
+ERA_both = 50
 """
 
 gratingSim = False
-samplesupport = True
+samplesupport = False
 sample1d = True
 ##########################################
 ##########################################
 
 def main(argv):
     location = 'local'
+    tempdata_dir = '../../../tempdata/MLL_calc/'
+    run = 0
     try :
-        opts, args = getopt.getopt(argv,"hl:",["location="])
+        opts, args = getopt.getopt(argv,"hl:dr",["location=","tempdata_dir=","run="])
     except getopt.GetoptError:
         print 'python pipeline -l <location>'
         sys.exit(2)
@@ -43,15 +44,19 @@ def main(argv):
             sys.exit()
         elif opt in ("-l", "--location"):
             location = arg
-    return location
+        elif opt in ("-d", "--tempdata_dir"):
+            tempdata_dir = arg
+        elif opt in ("-r", "--run"):
+            run = int(arg)
+    return location, tempdata_dir, run
 
 if __name__=='__main__':
-    loc = main(sys.argv[1:])
+    loc, tempdata_dir, run = main(sys.argv[1:])
     if loc == 'local':
         commands = []
         #
         # process the .h5 files
-        commands.append('python process_diffs.py --scan=0181 --run=0 --outputdir=' + tempdata_dir + ' --samplesupport='+str(samplesupport)+' --sample1d='+str(sample1d)+' --gratingSim='+str(gratingSim))
+        commands.append('python process_diffs.py --scan=0181 --run='+str(run)+' --outputdir=' + tempdata_dir + ' --samplesupport='+str(samplesupport)+' --sample1d='+str(sample1d)+' --gratingSim='+str(gratingSim))
         #
         # Output the algorithm parameters
         print '#########################################################'
@@ -90,7 +95,7 @@ if __name__=='__main__':
         commands.append('rsync -qe ssh --recursive --progress --delete ../../Ptychography/ amorgan@cfelsgi:/home/amorgan/analysis/Ptychography')
         #
         # Run this script
-        commands.append("ssh cfelsgi 'export LD_LIBRARY_PATH='/cfel/common/lib:$LD_LIBRARY_PATH'; export PYTHONPATH='/nfs/cfel/cxi/common/cfelsgi/gcc_4_4_7/python-hdf5/2.3.0/lib64/python2.6/site-packages:$PYTHONPATH'; cd /home/amorgan/analysis/Ptychography/MLL_analysis/; python pipeline.py -l local'")
+        commands.append("ssh cfelsgi 'export LD_LIBRARY_PATH='/cfel/common/lib:$LD_LIBRARY_PATH'; export PYTHONPATH='/nfs/cfel/cxi/common/cfelsgi/gcc_4_4_7/python-hdf5/2.3.0/lib64/python2.6/site-packages:$PYTHONPATH'; cd /home/amorgan/analysis/Ptychography/MLL_analysis/; python pipeline.py --location=local --run="+str(run)   +" --tempdata_dir="+tempdata_dir   +" ' ")
         #
         # retrieve the data
         commands.append('rsync -qe ssh --recursive --progress amorgan@cfelsgi:/home/amorgan/tempdata/ ../../../tempdata/')
