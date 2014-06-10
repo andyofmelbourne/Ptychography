@@ -456,7 +456,7 @@ def make_probe(mask, lamb, dq, scan = '0181'):
     #gaus_mask = bg.blur(gaus_mask)
     #aperture  *= gaus_mask
     # Let's put some higher order aberrations in there
-    C3    = 0.0e-2 
+    C3    = 1.0e-2 
     x, y  = bg.make_xy(aperture.shape)
     exp   = np.exp(-1.0J * np.pi / lamb * C3 * (lamb*dq)**4 * (x**2 + y**2)**2)
     probe = bg.ifft2(np.sqrt(aperture)*exp)
