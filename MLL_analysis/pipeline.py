@@ -20,8 +20,7 @@ import subprocess
 sequence = """
 pmod_int = True
 Thibault_sample = 20
-Thibault_both = 50
-ERA_both = 50
+ERA_both = 100
 """
 
 gratingSim = False
