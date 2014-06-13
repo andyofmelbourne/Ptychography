@@ -382,7 +382,9 @@ def memoize(f):
 @memoize
 def _Fresnel_exp(Nx, Ny, Fx, Fy):
     x, y  = bg.make_xy((Nx, Ny))
-    exp   = np.exp(-1J * np.pi * (x**2 /(Nx**2*Fx) + y**2 / (Ny**2*Fy)))
+    x = np.array(x, dtype=np.float64)
+    y = np.array(y, dtype=np.float64)
+    exp   = np.exp(-1J * np.pi * (x**2 /(float(Nx)**2*Fx) + y**2 / (float(Ny)**2*Fy)))
     return exp
 
 def Fresnel_exp(shape, Fresnel):
@@ -456,8 +458,10 @@ def make_probe(mask, lamb, dq, scan = '0181'):
     #gaus_mask = bg.blur(gaus_mask)
     #aperture  *= gaus_mask
     # Let's put some higher order aberrations in there
-    C3    = 15.0e-2 
+    C3    = 1.0e-3 
     x, y  = bg.make_xy(aperture.shape)
+    x = np.array(x, dtype=np.float64)
+    y = np.array(y, dtype=np.float64)
     exp   = np.exp(-1.0J * np.pi / lamb * C3 * (lamb*dq)**4 * (x**2 + y**2)**2)
     probe = bg.ifft2(np.sqrt(aperture)*exp)
     return probe
