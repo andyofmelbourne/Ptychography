@@ -19,8 +19,9 @@ import subprocess
 ##########################################
 sequence = """
 pmod_int = True
-Thibault_sample = 20
-ERA_both = 100
+Thibault_sample = 10
+Thibault_both = 10
+ERA_both = 50
 """
 
 gratingSim = False
