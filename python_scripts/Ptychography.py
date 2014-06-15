@@ -233,6 +233,50 @@ class Ptychography(object):
             update_progress(i / max(1.0, float(iters-1)), 'Thibault sample / probe', i, self.error_conv[-1], self.error_sup[-1])
             #
 
+    def Huang(self, iters=None):
+        """This is the algorithm used in "11 nm Hard X-ray focus from a large-aperture multilayer Laue lens" (2013) nature"""
+        def randsample():
+            array = np.random.random(self.sample.shape) + 1J * np.random.random(self.sample.shape) 
+            return array
+        #
+        for i in range(3):
+            self.sample     = randsample()
+            self.sample_sum = None
+            self.exits = makeExits(self.sample, self.probe, self.coords)
+            #
+            self.Thibault_sample(iters=5)
+            #
+            self.Thibault_both(iters=5)
+            #
+            probes = []
+            for j in range(5):
+                self.Thibault_both(iters=1)
+                probes.append(self.probe.copy())
+            self.probe     = np.sum(np.array(probes), axis=0) / float(len(probes))
+            self.probe_sum = None
+        #
+        probe  = self.probe.copy()
+        probes  = []
+        samples = []
+        for i in range(3):
+            self.sample     = randsample()
+            self.sample_sum = None
+            self.probe      = probe.copy()
+            self.probe_sum  = None
+            self.exits = makeExits(self.sample, self.probe, self.coords)
+            #
+            self.Thibault_sample(iters=5)
+            #
+            self.Thibault_both(iters=5)
+            #
+            for j in range(5):
+                self.Thibault_both(iters=1)
+                probes.append(self.probe.copy())
+                samples.append(self.sample.copy())
+        self.probe = np.sum(np.array(probes), axis=0) / float(len(probes))
+        self.sample = np.sum(np.array(samples), axis=0) / float(len(samples))
+        
+
     def Pmod(self, exits, pmod_int = False):
         exits_out = bg.fftn(exits)
         if self.pmod_int or pmod_int :
@@ -486,7 +530,7 @@ def runSequence(prob, sequence):
     # Check the sequence list
     run_seq = []
     for i in range(len(sequence)):
-        if sequence[i][0] in ('ERA_sample', 'ERA_probe', 'ERA_both', 'HIO_sample', 'HIO_probe', 'back_prop', 'Thibault_sample', 'Thibault_probe', 'Thibault_both'):
+        if sequence[i][0] in ('ERA_sample', 'ERA_probe', 'ERA_both', 'HIO_sample', 'HIO_probe', 'back_prop', 'Thibault_sample', 'Thibault_probe', 'Thibault_both', 'Huang'):
             # This will return an error if the string is not formatted properly (i.e. as an int)
             if sequence[i][0] == 'ERA_sample':
                 run_seq.append(sequence[i] + [prob.ERA_sample])
@@ -512,6 +556,9 @@ def runSequence(prob, sequence):
             if sequence[i][0] == 'Thibault_both':
                 run_seq.append(sequence[i] + [prob.Thibault_both])
             #
+            if sequence[i][0] == 'Huang':
+                run_seq.append(sequence[i] + [prob.Huang])
+            #
             if sequence[i][0] == 'back_prop':
                 run_seq.append(sequence[i] + [prob.back_prop])
             #
@@ -523,7 +570,7 @@ def runSequence(prob, sequence):
                     print 'exluding the values of sqrt(I) that fall in the range (0 --> 1)'
                     prob.pmod_int = True
         else :
-            raise NameError("What algorithm is this?! I\'ll tell you one thing, it is not part of : 'ERA_sample', 'ERA_probe', 'ERA_both', 'HIO_sample', 'HIO_probe', 'back_prop', 'Thibault_sample', 'Thibault_probe', 'Thibault_both' " + sequence[i][0])
+            raise NameError("What algorithm is this?! I\'ll tell you one thing, it is not part of : 'ERA_sample', 'ERA_probe', 'ERA_both', 'HIO_sample', 'HIO_probe', 'back_prop', 'Thibault_sample', 'Thibault_probe', 'Thibault_both', 'Huang' " + sequence[i][0])
     #
     for seq in run_seq:
         print 'Running ', seq[0]
@@ -549,9 +596,10 @@ if __name__ == '__main__':
     #
     bg.binary_out(np.array(prob.error_mod), outputdir + 'error_mod', appendDim=True)
     bg.binary_out(np.array(prob.error_sup), outputdir + 'error_sup', appendDim=True)
+    if len(prob.error_conv) > 0 :
+        bg.binary_out(np.array(prob.error_conv), outputdir + 'error_conv', appendDim=True)
     #
     # do not output this because they can easily be generated from the retrieved sample, probe and coords
     # bg.binary_out(np.abs(bg.fftn(prob.exits))**2, outputDir + 'diffs_retrieved', appendDim=True)
-
 
     

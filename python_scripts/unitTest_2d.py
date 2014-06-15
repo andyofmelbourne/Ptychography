@@ -90,8 +90,7 @@ print 'outputputing files...'
 print 'output directory is ', outputdir
 
 sequence = """# This is a sequence file which determines the ptychography algorithm to use
-Thibault_both = 200
-ERA_both = 500
+Huang = 1
 """
 
 with open(outputdir + "sequence.txt", "w") as text_file:
