@@ -246,10 +246,10 @@ class Ptychography(object):
             #
             self.Thibault_sample(iters=5)
             #
-            self.Thibault_both(iters=5)
+            self.Thibault_both(iters=10)
             #
             probes = []
-            for j in range(5):
+            for j in range(10):
                 self.Thibault_both(iters=1)
                 probes.append(self.probe.copy())
             self.probe     = np.sum(np.array(probes), axis=0) / float(len(probes))
