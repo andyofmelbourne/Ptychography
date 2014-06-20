@@ -90,7 +90,7 @@ print 'outputputing files...'
 print 'output directory is ', outputdir
 
 sequence = """# This is a sequence file which determines the ptychography algorithm to use
-Huang = 1
+Thibault_both = 500
 """
 
 with open(outputdir + "sequence.txt", "w") as text_file:
@@ -114,4 +114,4 @@ print 'python Ptychography.py -i', outputdir, ' -o',outputdir
 
 
 # send the job over ssh
-subprocess.Popen([sys.executable, 'Ptychography.py', '-i', outputdir, '-o', outputdir])
+subprocess.call('time -v python Ptychography.py' + ' -i' + outputdir + ' -o' + outputdir, shell=True)
