@@ -81,8 +81,8 @@ for coord in coords:
 sampleInit = np.random.random((shape_sample)) + 1J*np.random.random((shape_sample))
 #sampleInit = sample
 #probeInit = np.random.random((shape_illum)) + 1J*np.random.random((shape_illum))
-#probeInit  = bg.circle_new(shape_illum, radius=0.3, origin=[shape_illum[0]/2-1, shape_illum[1]/2 - 1]) + 0J
-probeInit  = probe
+probeInit  = bg.circle_new(shape_illum, radius=0.3, origin=[shape_illum[0]/2-1, shape_illum[1]/2 - 1]) + 0J
+#probeInit  = probe
 
 # Output 
 outputdir = main(sys.argv[1:])
@@ -90,8 +90,7 @@ print 'outputputing files...'
 print 'output directory is ', outputdir
 
 sequence = """# This is a sequence file which determines the ptychography algorithm to use
-Thibault_sample = 200
-ERA_sample = 500
+Huang = 1
 """
 
 with open(outputdir + "sequence.txt", "w") as text_file:
