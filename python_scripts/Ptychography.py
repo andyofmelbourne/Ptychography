@@ -7,6 +7,16 @@ import os, sys, getopt
 from ctypes import *
 import bagOfns as bg
 import time
+#
+# GPU stuff 
+try :
+    import pycuda.gpuarray as gpuarray
+    import pycuda.cumath as cumath
+    from reikna.fft import FFT
+    import reikna.cluda as cluda
+    GPU_calc = True
+except :
+    GPU_calc = False
 
 def update_progress(progress, algorithm, i, emod, esup):
     barLength = 15 # Modify this to change the length of the progress bar
@@ -95,6 +105,13 @@ class Ptychography(object):
         self.diffNorm   = np.sum(self.mask * (self.diffAmps)**2)
         self.pmod_int   = pmod_int
         self.sample_support = sample_support
+        #
+        if GPU_calc :
+            api               = cluda.cuda_api()
+            self.thr          = api.Thread.create()
+            self.diffAmps_gpu = self.thr.to_device(self.diffAmps)
+            fft               = FFT(self.diffAmps_gpu.astype(np.complex128), axes=(1,2))
+            self.fftc         = fft.compile(self.thr, fast_math=True)
 
     def ERA_sample(self, iters=1):
         print 'i, eMod, eSup'
@@ -276,17 +293,30 @@ class Ptychography(object):
         self.probe = np.sum(np.array(probes), axis=0) / float(len(probes))
         self.sample = np.sum(np.array(samples), axis=0) / float(len(samples))
         
+    def Pmod_gpu(self, exits, pmod_int = False):
+        # send the exit waves and the diffraction patterns to the gpu
+        exits_gpu    = self.thr.to_device(exits)
+        #
+        self.fftc(exits_gpu, exits_gpu)
+        #
+        exits_gpu    = exits_gpu * self.diffAmps_gpu / abs(exits_gpu)
+        #
+        self.fftc(exits_gpu, exits_gpu, True)
+        return extis_gpu.get()
 
     def Pmod(self, exits, pmod_int = False):
-        exits_out = bg.fftn(exits)
-        if self.pmod_int or pmod_int :
-            exits_out = exits_out * (self.mask * self.diffAmps * (self.diffAmps > 0.99) /  np.clip(np.abs(exits_out), self.alpha_div, np.inf) \
-                           + (~self.mask) )
+        if GPU_calc :
+            return self.Pmod_gpu(exits, pmod_int = False)
         else :
-            exits_out = exits_out * (self.mask * self.diffAmps / np.clip(np.abs(exits_out), self.alpha_div, np.inf) \
-                           + (~self.mask) )
-        exits_out = bg.ifftn(exits_out)
-        return exits_out
+            exits_out = bg.fftn(exits)
+            if self.pmod_int or pmod_int :
+                exits_out = exits_out * (self.mask * self.diffAmps * (self.diffAmps > 0.99) /  np.clip(np.abs(exits_out), self.alpha_div, np.inf) \
+                               + (~self.mask) )
+            else :
+                exits_out = exits_out * (self.mask * self.diffAmps / np.clip(np.abs(exits_out), self.alpha_div, np.inf) \
+                               + (~self.mask) )
+            exits_out = bg.ifftn(exits_out)
+            return exits_out
 
     def Pmod_integer(self, exits):
         """If the diffraction data is in units of no. of particles then there should be no numbers in 
