@@ -29,13 +29,13 @@ def main(argv):
     return outputdir
 
 # Make a sample on a large grid
-shape_sample = (64, 128)
-amp   = bg.scale(bg.brog(shape_sample), 0.0, 1.0)
-phase = bg.scale(bg.twain(shape_sample), -np.pi, np.pi)
-sample = amp * np.exp(1J * phase)
+shape_sample = (128, 256)
+amp          = bg.scale(bg.brog(shape_sample), 0.0, 1.0)
+phase        = bg.scale(bg.twain(shape_sample), -np.pi, np.pi)
+sample       = amp * np.exp(1J * phase)
 
 # Make an illumination on the data grid
-shape_illum = (32, 64)
+shape_illum = (64, 128)
 probe       = bg.circle_new(shape_illum, radius=0.5, origin=[shape_illum[0]/2-1, shape_illum[1]/2 - 1]) + 0J
 
 # Make sample coordinates (y, x)
@@ -44,16 +44,17 @@ probe       = bg.circle_new(shape_illum, radius=0.5, origin=[shape_illum[0]/2-1,
 # so sample_shifted = sample(y - yi, x - xi)
 # These will be a list of [y, x]
 
-dx = dy = 10
-y, x    = np.meshgrid( range(0, shape_sample[0], dy), range(0, shape_sample[1], dx), indexing='ij' )
+dx = dy = 5
+x, y    = np.meshgrid(  range(3, shape_sample[1] - probe.shape[1] - 3, dx), range(3, shape_sample[0] - probe.shape[0] - 3, dy))
 coords0 = zip(y.flatten(), x.flatten())
-coords0 = np.array(coords0)
+coords0 = -np.array(coords0)
 print coords0.shape
 #
 # add a random offset of three pixels in x or y
 dcoords  = np.random.random(coords0.shape) * 6 - 3
 print dcoords.shape
 coords  = coords0 + np.array(dcoords, dtype=np.int32)
+print coords
 
 #coords = []
 #for y in range(0, shape_sample[0], dy):
@@ -74,15 +75,22 @@ mask = np.ones_like(probe, dtype=np.bool)
 print 'making diffraction patterns'
 diffs = []
 for coord in coords:
-    print 'processing coordinate', coord
     exitF = bg.fft2(makeExit(sample, probe, coord))
     diffs.append(np.abs(exitF)**2)
+
+print 'making heatmap'
+heatmap = np.zeros_like(sample)
+for coord in coords:
+    temp    = np.zeros_like(sample)
+    temp[:probe.shape[0], :probe.shape[1]] = makeExit(np.ones_like(sample), probe, coord)
+    temp = bg.roll(temp, -coord)
+    heatmap += np.abs(temp)**2
 
 sampleInit = np.random.random((shape_sample)) + 1J*np.random.random((shape_sample))
 #sampleInit = sample
 #probeInit = np.random.random((shape_illum)) + 1J*np.random.random((shape_illum))
-probeInit  = bg.circle_new(shape_illum, radius=0.3, origin=[shape_illum[0]/2-1, shape_illum[1]/2 - 1]) + 0J
-#probeInit  = probe
+#probeInit  = bg.circle_new(shape_illum, radius=0.3, origin=[shape_illum[0]/2-1, shape_illum[1]/2 - 1]) + 0J
+probeInit  = probe
 
 # Output 
 outputdir = main(sys.argv[1:])
@@ -90,7 +98,7 @@ print 'outputputing files...'
 print 'output directory is ', outputdir
 
 sequence = """# This is a sequence file which determines the ptychography algorithm to use
-Thibault_both = 500
+ERA_sample = 1000
 """
 
 with open(outputdir + "sequence.txt", "w") as text_file:
@@ -114,4 +122,10 @@ print 'python Ptychography.py -i', outputdir, ' -o',outputdir
 
 
 # send the job over ssh
-subprocess.call('time -v python Ptychography.py' + ' -i' + outputdir + ' -o' + outputdir, shell=True)
+subprocess.call('time python Ptychography.py' + ' -i' + outputdir + ' -o' + outputdir, shell=True)
+
+sample_ret = bg.binary_in(outputdir + 'sample_retrieved', dt=np.complex128, dimFnam=True)
+print 'sample error', bg.l2norm(np.abs(sample), np.abs(sample_ret))
+mask = (heatmap > 1.0e-1 * heatmap.max())
+print 'mask area' , np.sum(mask)
+print 'sample error masked', bg.l2norm(np.abs(sample) * mask, np.abs(sample_ret) * mask)
