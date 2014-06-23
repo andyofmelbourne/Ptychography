@@ -29,7 +29,7 @@ def main(argv):
     return outputdir
 
 # Make a sample on a large grid
-shape_sample = (32, 128)
+shape_sample = (256, 7258)
 amp          = bg.scale(bg.brog(shape_sample), 0.0, 1.0)
 phase        = bg.scale(bg.twain(shape_sample), -np.pi, np.pi)
 sample       = amp * np.exp(1J * phase)
@@ -41,7 +41,7 @@ sample_1d = sample[sample.shape[0]/2, :]
 sample[:] = sample_1d
 
 # Make an illumination on the data grid
-shape_illum = (32, 64)
+shape_illum = (256, 2982)
 probe       = bg.circle_new(shape_illum, radius=0.5, origin=[shape_illum[0]/2-1, shape_illum[1]/2 - 1]) + 0J
 
 # Make sample coordinates (y, x)
@@ -50,9 +50,11 @@ probe       = bg.circle_new(shape_illum, radius=0.5, origin=[shape_illum[0]/2-1,
 # so sample_shifted = sample(y - yi, x - xi)
 # These will be a list of [y, x]
 
-dx = 5
+N = 30
+dx = 10
 dy = shape_sample[0]
-x, y    = np.meshgrid(  range(3, shape_sample[1] - probe.shape[1] - 3, dx), range(0, shape_sample[0], dy))
+#x, y    = np.meshgrid(  range(3, shape_sample[1] - probe.shape[1] - 3, dx), range(0, shape_sample[0], dy))
+x, y    = np.meshgrid(  range(3, dx * N, dx), range(0, shape_sample[0], dy))
 coords0 = zip(y.flatten(), x.flatten())
 coords0 = np.array(coords0)
 coords0 = -np.array(coords0)
@@ -72,10 +74,10 @@ def makeExit(sample, probe, shift = [0,0]):
     return exit
 
 # Make a detector mask
-# mask = np.array(bg.circle_new(shape_illum, radius=0.1), dtype=np.bool)
+mask = np.array(bg.circle_new(shape_illum, radius=0.05), dtype=np.bool)
 # mask = ~mask
 # Just ones for now
-mask = np.ones_like(probe, dtype=np.bool)
+#mask = np.ones_like(probe, dtype=np.bool)
 
 print 'making diffraction patterns'
 diffs = []
@@ -104,7 +106,7 @@ print 'outputputing files...'
 print 'output directory is ', outputdir
 
 sequence = """# This is a sequence file which determines the ptychography algorithm to use
-ERA_sample = 1000
+ERA_sample = 100
 """
 #Thibault_both = 300
 

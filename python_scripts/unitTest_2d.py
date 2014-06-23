@@ -29,13 +29,13 @@ def main(argv):
     return outputdir
 
 # Make a sample on a large grid
-shape_sample = (128, 256)
+shape_sample = (256, 512)
 amp          = bg.scale(bg.brog(shape_sample), 0.0, 1.0)
 phase        = bg.scale(bg.twain(shape_sample), -np.pi, np.pi)
 sample       = amp * np.exp(1J * phase)
 
 # Make an illumination on the data grid
-shape_illum = (64, 128)
+shape_illum = (128, 256)
 probe       = bg.circle_new(shape_illum, radius=0.5, origin=[shape_illum[0]/2-1, shape_illum[1]/2 - 1]) + 0J
 
 # Make sample coordinates (y, x)
@@ -98,7 +98,7 @@ print 'outputputing files...'
 print 'output directory is ', outputdir
 
 sequence = """# This is a sequence file which determines the ptychography algorithm to use
-ERA_sample = 500
+ERA_sample = 20
 """
 
 with open(outputdir + "sequence.txt", "w") as text_file:
