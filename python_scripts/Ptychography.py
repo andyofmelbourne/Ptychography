@@ -441,7 +441,7 @@ class Ptychography_1dsample(Ptychography):
         return sample_out
 
 class Ptychography_gpu(object):
-    def __init__(self, diffs, coords, mask, probe, sample, sample_support, pmod_int = False): 
+    def __init__(self, diffs, coords, mask, probe, sample, sample_support, pmod_int = False, gpus = 1): 
         """Initialise the Ptychography module with the data in 'inputDir' 
         
         Naming convention:
@@ -479,37 +479,71 @@ class Ptychography_gpu(object):
         self.diffNorm   = np.sum(self.mask * (self.diffAmps)**2)
         self.pmod_int   = pmod_int
         self.sample_support = sample_support
-        api               = cluda.cuda_api()
-        self.thr          = api.Thread.create()
-        self.diffAmps_gpu = self.thr.to_device(self.diffAmps) * np.sqrt(float(self.diffAmps.shape[1]) * float(self.diffAmps.shape[2]))
-        fft               = FFT(self.diffAmps_gpu.astype(np.complex128), axes=(1,2))
-        self.fftc         = fft.compile(self.thr, fast_math=True)
-        self.exits_gpu    = self.thr.to_device(self.exits)
+        #
+        # Make 2 threads (one for each gpu) 
+        # Unfortunately this part is interactive
+        # So a list of threads, exits, diffraction amplitudes and FFTs 
+        self.thrs         = []
+        self.diffAmps_gpu = []
+        self.exits_gpu    = []
+        self.fftcs        = []
+        self.gpus         = gpus
+        dom               = np.linspace(0, diffs.shape[0], self.gpus + 1).astype(np.int)
+        self.dom          = dom
+        for gpu in range(self.gpus):
+            api           = cluda.cuda_api()
+            thr           = api.Thread.create(1)
+            self.thrs.append(thr)
+            d             = self.diffAmps[dom[gpu]:dom[gpu+1]]
+            d             = thr.to_device(d) * np.sqrt(float(d.shape[1]) * float(d.shape[2]))
+            self.diffAmps_gpu.append(d)
+            #
+            e             = self.exits[dom[gpu]:dom[gpu+1]]  
+            e             = thr.to_device(e)
+            self.exits_gpu.append(e)
+            #
+            fft               = FFT(e, axes=(1,2))
+            self.fftcs.append(fft.compile(thr, fast_math=True))
 
     def ERA_sample(self, iters=1):
-        exits2_gpu = self.exits_gpu.copy()
+        exits2_gpu = []
+        for i in range(self.gpus):
+            exits2_gpu.append(self.thrs[i].empty_like(self.exits_gpu[i]))
         print 'i, eMod, eSup'
         for i in range(iters):
             exits2_gpu = self.Pmod(self.exits_gpu)
             #
-            self.error_mod.append(gpuarray.sum(abs(self.exits_gpu - exits2_gpu)**2).get()/self.diffNorm)
+            error_mod = 0.0
+            for i in range(self.gpus):
+                error_mod += gpuarray.sum(abs(self.exits_gpu[i] - exits2_gpu[i])**2).get()
+            self.error_mod.append(error_mod/self.diffNorm)
             #
-            exits = exits2_gpu.get()
+            exits = []
+            for i in range(self.gpus):
+                exits.append(exits2_gpu[i].get())
+            exits = np.concatenate(exits)
             self.Psup_sample(exits)
             #
-            self.exits_gpu = self.thr.to_device(makeExits2(self.sample, self.probe, self.coords, exits))
+            exits = makeExits2(self.sample, self.probe, self.coords, exits)
+            for i in range(self.gpus):
+                self.exits_gpu.append(self.thrs[i].to_device(exits[i][self.dom[i]:self.dom[i+1]]))
             #
-            self.error_sup.append(gpuarray.sum(abs(self.exits_gpu - exits2_gpu)**2).get()/self.diffNorm)
+            error_sup = 0.0
+            for i in range(self.gpus):
+                error_sup += gpuarray.sum(abs(self.exits_gpu[i] - exits2_gpu[i])**2).get()
+            self.error_sup.append(error_sup/self.diffNorm)
             #
             update_progress(i / max(1.0, float(iters-1)), 'ERA sample', i, self.error_mod[-1], self.error_sup[-1])
         
     def Pmod(self, exits_gpu):
-        exits2_gpu = self.thr.empty_like(exits_gpu)
-        self.fftc(exits2_gpu, exits_gpu)
-        #
-        exits2_gpu    = exits2_gpu * self.diffAmps_gpu / (abs(exits2_gpu) + self.alpha_div)
-        #
-        self.fftc(exits2_gpu, exits2_gpu, True)
+        exits2_gpu = []
+        for i in range(self.gpus):
+            exits2_gpu.append(self.thrs[i].empty_like(exits_gpu[i]))
+            self.fftcs[i](exits2_gpu[i], exits_gpu[i])
+            #
+            exits2_gpu[i] = exits_gpu[i] * self.diffAmps_gpu[i] / (abs(exits2_gpu[i]) + self.alpha_div)
+            #
+            self.fftcs[i](exits2_gpu[i], exits_gpu[i], True)
         return exits2_gpu
 
     def Psup_sample(self, exits, thresh=False, inPlace=True):
