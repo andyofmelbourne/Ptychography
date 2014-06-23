@@ -29,7 +29,7 @@ def main(argv):
     return outputdir
 
 # Make a sample on a large grid
-shape_sample = (256, 7258)
+shape_sample = (128, 7258)
 amp          = bg.scale(bg.brog(shape_sample), 0.0, 1.0)
 phase        = bg.scale(bg.twain(shape_sample), -np.pi, np.pi)
 sample       = amp * np.exp(1J * phase)
@@ -41,7 +41,7 @@ sample_1d = sample[sample.shape[0]/2, :]
 sample[:] = sample_1d
 
 # Make an illumination on the data grid
-shape_illum = (256, 2982)
+shape_illum = (128, 2982)
 probe       = bg.circle_new(shape_illum, radius=0.5, origin=[shape_illum[0]/2-1, shape_illum[1]/2 - 1]) + 0J
 
 # Make sample coordinates (y, x)
@@ -74,10 +74,10 @@ def makeExit(sample, probe, shift = [0,0]):
     return exit
 
 # Make a detector mask
-mask = np.array(bg.circle_new(shape_illum, radius=0.05), dtype=np.bool)
+mask = np.array(bg.circle_new(shape_illum, radius=0.02), dtype=np.bool)
 # mask = ~mask
 # Just ones for now
-#mask = np.ones_like(probe, dtype=np.bool)
+mask = np.ones_like(probe, dtype=np.bool)
 
 print 'making diffraction patterns'
 diffs = []

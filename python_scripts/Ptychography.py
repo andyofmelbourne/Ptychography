@@ -485,7 +485,9 @@ class Ptychography_gpu(object):
         fft               = FFT(self.diffAmps_gpu.astype(np.complex128), axes=(1,2))
         self.fftc         = fft.compile(self.thr, fast_math=True)
         self.exits_gpu    = self.thr.to_device(self.exits)
-        self.mask_gpu     = self.thr.to_device(self.mask)
+        mask2             = np.zeros_like(diffs, dtype=np.complex128)
+        mask2[:]          = self.mask.astype(np.complex128)
+        self.mask_gpu     = self.thr.to_device(mask2)
 
     def ERA_sample(self, iters=1):
         exits2_gpu = self.thr.empty_like(self.exits_gpu)
@@ -508,7 +510,7 @@ class Ptychography_gpu(object):
         exits2_gpu = self.thr.empty_like(exits_gpu)
         self.fftc(exits2_gpu, exits_gpu)
         #
-        exits2_gpu    = exits2_gpu * (self.mask_gpu * self.diffAmps_gpu / (abs(exits2_gpu) + self.alpha_div) + ~self.mask_gpu)
+        exits2_gpu    = exits2_gpu * (self.mask_gpu * self.diffAmps_gpu / (abs(exits2_gpu) + self.alpha_div) + (1.0 - self.mask_gpu))
         #
         self.fftc(exits2_gpu, exits2_gpu, True)
         return exits2_gpu
