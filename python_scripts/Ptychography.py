@@ -544,6 +544,56 @@ class Ptychography_gpu(object):
         else :
             return sample_out
     
+class Ptychography_1dsample_gpu(Ptychography_gpu):
+    def __init__(self, diffs, coords, mask, probe, sample_1d, sample_support_1d, pmod_int = False): 
+        self.sample_1d = sample_1d
+        self.sample_support_1d = sample_support_1d
+        #
+        sample         = np.zeros((probe.shape[0], sample_1d.shape[0]), dtype = sample_1d.dtype)
+        sample_support = np.zeros((probe.shape[0], sample_1d.shape[0]), dtype = sample_1d.dtype)
+        sample[:]         = sample_1d.copy()
+        sample_support[:] = sample_support_1d.copy()
+        #
+        Ptychography_gpu.__init__(self, diffs, coords, mask, probe, sample, sample_support, pmod_int)
+
+    def Psup_sample(self, exits, thresh=False, inPlace=True):
+        """ """
+        sample_out  = np.zeros_like(self.sample)
+        # 
+        # Calculate denominator
+        # but only do this if it hasn't been done already
+        # (we must set self.probe_sum = None when the probe/coords has changed)
+        if self.probe_sum is None :
+            probe_sum   = np.zeros_like(self.sample, dtype=np.float64)
+            probe_s     = np.real(np.conj(self.probe) * self.probe)
+            for coord in self.coords:
+                probe_sum[-coord[0]:self.shape[0]-coord[0], -coord[1]:self.shape[1]-coord[1]] += probe_s
+            self.probe_sum = probe_sum
+        # 
+        # Calculate numerator
+        exits     = np.conj(self.probe) * exits
+        for coord, exit in zip(self.coords, exits):
+            sample_out[-coord[0]:self.shape[0]-coord[0], -coord[1]:self.shape[1]-coord[1]] += exit
+        # 
+        # project to 1d
+        sample_1d = np.sum(sample_out, axis=0)
+        #
+        # divide
+        sample_1d = sample_1d / (np.sum(self.probe_sum, axis=0) + self.alpha_div)
+        sample_1d = sample_1d * self.sample_support_1d + ~self.sample_support_1d
+        # 
+        # expand
+        sample_out[:] = sample_1d.copy()
+        #
+        if thresh :
+            sample_out = bg.threshold(sample_out, thresh=thresh)
+        self.sample_sum = None
+        if inPlace :
+            self.sample    = sample_out
+            self.sample_1d = sample_1d
+        else : 
+            return sample_out
+
 def makeExits2(sample, probe, coords, exits):
     for i, coord in enumerate(coords):
         exits[i] = sample[-coord[0]:probe.shape[0]-coord[0], -coord[1]:probe.shape[1]-coord[1]]
@@ -648,6 +698,11 @@ def input_output(inputDir):
         print 'Performing calculations on GPU'
         print '2d sample => 2d Ptychography'
         prob = Ptychography_gpu(diffs, coords, mask, probe, sample, sample_support)
+    elif len(sample.shape) == 1 and GPU_calc == True :
+        print 'Performing calculations on GPU'
+        print '1d sample => 1d Ptychography'
+        prob = Ptychography_1dsample_gpu(diffs, coords, mask, probe, sample, sample_support)
+        #
     return prob, sequence
 
 def runSequence(prob, sequence):

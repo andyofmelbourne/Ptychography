@@ -98,7 +98,7 @@ print 'outputputing files...'
 print 'output directory is ', outputdir
 
 sequence = """# This is a sequence file which determines the ptychography algorithm to use
-ERA_sample = 1000
+ERA_sample = 500
 """
 
 with open(outputdir + "sequence.txt", "w") as text_file:
@@ -121,11 +121,17 @@ print 'Now run the test with:'
 print 'python Ptychography.py -i', outputdir, ' -o',outputdir
 
 
-# send the job over ssh
+# run Ptychography and time it using the bash command "time"
 subprocess.call('time python Ptychography.py' + ' -i' + outputdir + ' -o' + outputdir, shell=True)
 
 sample_ret = bg.binary_in(outputdir + 'sample_retrieved', dt=np.complex128, dimFnam=True)
-print 'sample error', bg.l2norm(np.abs(sample), np.abs(sample_ret))
+c = np.sum(np.conj(sample_ret) * sample) / np.sum(np.abs(sample_ret)**2 + 1.0e-10)
+print 'sample error', bg.l2norm(c * sample_ret, sample)
+
 mask = (heatmap > 1.0e-1 * heatmap.max())
 print 'mask area' , np.sum(mask)
-print 'sample error masked', bg.l2norm(np.abs(sample) * mask, np.abs(sample_ret) * mask)
+
+sample_ret_m = sample_ret * mask
+sample_m = sample * mask
+c = np.sum(np.conj(sample_ret_m) * sample_m) / np.sum(np.abs(sample_ret_m)**2 + 1.0e-10)
+print 'sample error', bg.l2norm(c * sample_ret_m, sample_m)
