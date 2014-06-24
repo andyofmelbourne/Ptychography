@@ -505,7 +505,25 @@ class Ptychography_gpu(object):
             self.error_sup.append(gpuarray.sum(abs(self.exits_gpu - exits2_gpu)**2).get()/self.diffNorm)
             #
             update_progress(i / max(1.0, float(iters-1)), 'ERA sample', i, self.error_mod[-1], self.error_sup[-1])
+
+    def ERA_probe(self, iters=1):
+        exits2_gpu = self.thr.empty_like(self.exits_gpu)
+        print 'i, eMod, eSup'
+        for i in range(iters):
+            exits2_gpu = self.Pmod(self.exits_gpu)
+            #
+            self.error_mod.append(gpuarray.sum(abs(self.exits_gpu - exits2_gpu)**2).get()/self.diffNorm)
+            #
+            exits = exits2_gpu.get()
+            self.Psup_probe(exits)
+            #
+            self.thr.to_device(makeExits2(self.sample, self.probe, self.coords, exits), dest=self.exits_gpu)
+            #
+            self.error_sup.append(gpuarray.sum(abs(self.exits_gpu - exits2_gpu)**2).get()/self.diffNorm)
+            #
+            update_progress(i / max(1.0, float(iters-1)), 'ERA sample', i, self.error_mod[-1], self.error_sup[-1])
         
+
     def Pmod(self, exits_gpu):
         exits2_gpu = self.thr.empty_like(exits_gpu)
         self.fftc(exits2_gpu, exits_gpu)
@@ -547,6 +565,35 @@ class Ptychography_gpu(object):
         else :
             return sample_out
     
+    def Psup_probe(self, exits, inPlace=True):
+        """ """
+        probe_out  = np.zeros_like(self.probe)
+        # 
+        # Calculate denominator
+        # but only do this if it hasn't been done already
+        # (we must set self.probe_sum = None when the probe/coords has changed)
+        if self.sample_sum is None :
+            sample_sum  = np.zeros_like(self.probe, dtype=np.float64)
+            temp        = np.real(self.sample * np.conj(self.sample))
+            for coord in self.coords:
+                sample_sum  += temp[-coord[0]:self.shape[0]-coord[0], -coord[1]:self.shape[1]-coord[1]]
+            self.sample_sum = sample_sum + self.alpha_div
+        # 
+        # Calculate numerator
+        # probe = sample * [sum np.conj(sample_shifted) * exit_shifted] / sum |sample_shifted|^2 
+        sample_conj = np.conj(self.sample)
+        for exit, coord in zip(exits, self.coords):
+            probe_out += exit * sample_conj[-coord[0]:self.shape[0]-coord[0], -coord[1]:self.shape[1]-coord[1]]
+        #
+        # divide
+        probe_out   = probe_out / self.sample_sum 
+        #
+        self.probe_sum = None
+        if inPlace:
+            self.probe = probe_out
+        else : 
+            return probe_out
+
 class Ptychography_1dsample_gpu(Ptychography_gpu):
     def __init__(self, diffs, coords, mask, probe, sample_1d, sample_support_1d, pmod_int = False): 
         self.sample_1d = sample_1d
@@ -596,6 +643,37 @@ class Ptychography_1dsample_gpu(Ptychography_gpu):
             self.sample_1d = sample_1d
         else : 
             return sample_out
+
+    def Psup_probe_test(self, exits, inPlace=True):
+        """ """
+        probe_out  = np.zeros_like(self.probe)
+        # 
+        # Calculate denominator
+        # but only do this if it hasn't been done already
+        # (we must set self.probe_sum = None when the probe/coords has changed)
+        if self.sample_sum is None :
+            sample_sum     = np.zeros_like(self.probe, dtype=np.float64)
+            sample_sum_1d  = np.zeros(self.probe.shape, dtype=np.float64)
+            temp           = np.real(self.sample_1d * np.conj(self.sample_1d))
+            for coord in self.coords:
+                sample_sum_1d  += temp[-coord[1]:self.shape[1]-coord[1]]
+            sample_sum[:] = sample_sum_1d
+            self.sample_sum = sample_sum + self.alpha_div
+        # 
+        # Calculate numerator
+        # probe = sample * [sum np.conj(sample_shifted) * exit_shifted] / sum |sample_shifted|^2 
+        sample_conj = np.conj(self.sample_1d)
+        for exit, coord in zip(exits, self.coords):
+            probe_out += exit * sample_conj[-coord[1]:self.shape[1]-coord[1]]
+        #
+        # divide
+        probe_out   = probe_out / self.sample_sum 
+        #
+        self.probe_sum = None
+        if inPlace:
+            self.probe = probe_out
+        else : 
+            return probe_out
 
 def makeExits2(sample, probe, coords, exits):
     for i, coord in enumerate(coords):

@@ -44,7 +44,7 @@ probe       = bg.circle_new(shape_illum, radius=0.5, origin=[shape_illum[0]/2-1,
 # so sample_shifted = sample(y - yi, x - xi)
 # These will be a list of [y, x]
 
-dx = dy = 5
+dx = dy = 10
 x, y    = np.meshgrid(  range(3, shape_sample[1] - probe.shape[1] - 3, dx), range(3, shape_sample[0] - probe.shape[0] - 3, dy))
 coords0 = zip(y.flatten(), x.flatten())
 coords0 = -np.array(coords0)
@@ -86,11 +86,11 @@ for coord in coords:
     temp = bg.roll(temp, -coord)
     heatmap += np.abs(temp)**2
 
-sampleInit = np.random.random((shape_sample)) + 1J*np.random.random((shape_sample))
-#sampleInit = sample
-#probeInit = np.random.random((shape_illum)) + 1J*np.random.random((shape_illum))
+#sampleInit = np.random.random((shape_sample)) + 1J*np.random.random((shape_sample))
+sampleInit = sample
+probeInit = np.random.random((shape_illum)) + 1J*np.random.random((shape_illum))
 #probeInit  = bg.circle_new(shape_illum, radius=0.3, origin=[shape_illum[0]/2-1, shape_illum[1]/2 - 1]) + 0J
-probeInit  = probe
+#probeInit  = probe
 
 # Output 
 outputdir = main(sys.argv[1:])
@@ -98,7 +98,7 @@ print 'outputputing files...'
 print 'output directory is ', outputdir
 
 sequence = """# This is a sequence file which determines the ptychography algorithm to use
-ERA_sample = 20
+ERA_probe = 100
 """
 
 with open(outputdir + "sequence.txt", "w") as text_file:
@@ -135,3 +135,9 @@ sample_ret_m = sample_ret * mask
 sample_m = sample * mask
 c = np.sum(np.conj(sample_ret_m) * sample_m) / np.sum(np.abs(sample_ret_m)**2 + 1.0e-10)
 print 'sample error', bg.l2norm(c * sample_ret_m, sample_m)
+
+
+
+probe_ret = bg.binary_in(outputdir + 'probe_retrieved', dt=np.complex128, dimFnam=True)
+c = np.sum(np.conj(probe_ret) * probe) / np.sum(np.abs(probe_ret)**2 + 1.0e-10)
+print 'probe error', bg.l2norm(c * probe_ret, probe)
