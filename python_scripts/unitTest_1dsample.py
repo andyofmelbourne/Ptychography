@@ -29,7 +29,7 @@ def main(argv):
     return outputdir
 
 # Make a sample on a large grid
-shape_sample = (128, 7258)
+shape_sample = (128, 256)
 amp          = bg.scale(bg.brog(shape_sample), 0.0, 1.0)
 phase        = bg.scale(bg.twain(shape_sample), -np.pi, np.pi)
 sample       = amp * np.exp(1J * phase)
@@ -41,7 +41,7 @@ sample_1d = sample[sample.shape[0]/2, :]
 sample[:] = sample_1d
 
 # Make an illumination on the data grid
-shape_illum = (128, 2982)
+shape_illum = (128, 128)
 probe       = bg.circle_new(shape_illum, radius=0.5, origin=[shape_illum[0]/2-1, shape_illum[1]/2 - 1]) + 0J
 
 # Make sample coordinates (y, x)
@@ -51,9 +51,11 @@ probe       = bg.circle_new(shape_illum, radius=0.5, origin=[shape_illum[0]/2-1,
 # These will be a list of [y, x]
 
 N = 30
-dx = 10
+dx = 3
 dy = shape_sample[0]
 #x, y    = np.meshgrid(  range(3, shape_sample[1] - probe.shape[1] - 3, dx), range(0, shape_sample[0], dy))
+if dx * N > (sample.shape[1] - probe.shape[1] - 3) :
+    print 'warning sample shift is causing wrapping'
 x, y    = np.meshgrid(  range(3, dx * N, dx), range(0, shape_sample[0], dy))
 coords0 = zip(y.flatten(), x.flatten())
 coords0 = np.array(coords0)
@@ -94,8 +96,8 @@ for coord in coords:
     temp = bg.roll(temp, -coord)
     heatmap += np.abs(temp)**2
 
-#sampleInit = np.random.random(sample_1d.shape) + 1J*np.random.random(sample_1d.shape)
-sampleInit = sample
+sampleInit = np.random.random(sample_1d.shape) + 1J*np.random.random(sample_1d.shape)
+#sampleInit = sample
 #probeInit = np.random.random((shape_illum)) + 1J*np.random.random((shape_illum))
 probeInit  = bg.circle_new(shape_illum, radius=0.3, origin=[shape_illum[0]/2-1, shape_illum[1]/2 - 1]) + 0J
 #probeInit  = probe
@@ -106,7 +108,7 @@ print 'outputputing files...'
 print 'output directory is ', outputdir
 
 sequence = """# This is a sequence file which determines the ptychography algorithm to use
-ERA_probe = 100
+ERA_both = 1000
 """
 #Thibault_both = 300
 

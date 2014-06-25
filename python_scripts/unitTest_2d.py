@@ -89,8 +89,8 @@ for coord in coords:
 sampleInit = np.random.random((shape_sample)) + 1J*np.random.random((shape_sample))
 #sampleInit = sample
 #probeInit = np.random.random((shape_illum)) + 1J*np.random.random((shape_illum))
-#probeInit  = bg.circle_new(shape_illum, radius=0.3, origin=[shape_illum[0]/2-1, shape_illum[1]/2 - 1]) + 0J
-probeInit  = probe
+probeInit  = bg.circle_new(shape_illum, radius=0.3, origin=[shape_illum[0]/2-1, shape_illum[1]/2 - 1]) + 0J
+#probeInit  = probe
 
 # Output 
 outputdir = main(sys.argv[1:])
@@ -153,7 +153,7 @@ def fidelity_shift_cons_mask(o1, masko1, o2):
         for j in range(o1.shape[1]):
             o_shift = bg.roll(o1, [i, j])
             m_shift = bg.roll(masko1, [i, j])
-            errors.append(fidelity_cons(o_shift, o2 * m_shift)) 
+            errors.append(fidelity_cons(o_shift * m_shift, o2 * m_shift)) 
     return np.array(errors).min()
 
 

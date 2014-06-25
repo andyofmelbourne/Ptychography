@@ -521,8 +521,26 @@ class Ptychography_gpu(object):
             #
             self.error_sup.append(gpuarray.sum(abs(self.exits_gpu - exits2_gpu)**2).get()/self.diffNorm)
             #
-            update_progress(i / max(1.0, float(iters-1)), 'ERA sample', i, self.error_mod[-1], self.error_sup[-1])
+            update_progress(i / max(1.0, float(iters-1)), 'ERA probe', i, self.error_mod[-1], self.error_sup[-1])
         
+    def ERA_both(self, iters=1):
+        exits2_gpu = self.thr.empty_like(self.exits_gpu)
+        print 'i, eMod, eSup'
+        for i in range(iters):
+            exits2_gpu = self.Pmod(self.exits_gpu)
+            #
+            self.error_mod.append(gpuarray.sum(abs(self.exits_gpu - exits2_gpu)**2).get()/self.diffNorm)
+            #
+            exits = exits2_gpu.get()
+            for j in range(5):
+                self.Psup_sample(exits, thresh=1.0)
+                self.Psup_probe(exits)
+            #
+            self.thr.to_device(makeExits2(self.sample, self.probe, self.coords, exits), dest=self.exits_gpu)
+            #
+            self.error_sup.append(gpuarray.sum(abs(self.exits_gpu - exits2_gpu)**2).get()/self.diffNorm)
+            #
+            update_progress(i / max(1.0, float(iters-1)), 'ERA both', i, self.error_mod[-1], self.error_sup[-1])
 
     def Pmod(self, exits_gpu):
         exits2_gpu = self.thr.empty_like(exits_gpu)
