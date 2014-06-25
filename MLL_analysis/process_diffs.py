@@ -321,6 +321,8 @@ def padd_array(arrayin, zero_pixel = [400, 1490]):
     arrayout = temp
     # roll the diffs so that the zero pixel along the zero axis is at N/2 - 1
     arrayout = np.roll(arrayout, -(zero_pixel[0] - arrayout.shape[0]/2 + 1), 0)
+    # truncate to 128x ?
+    arrayout = bg.izero_pad(arrayout, (128, arrayout.shape[1]))
     return arrayout
 
 #   def ipadd_array(arrayout2, zero_pixel = [144, 978]):
@@ -594,15 +596,15 @@ if __name__ == "__main__":
     zyx                     = zyxN[:, : 3]
     fnams                   = fnams_stack[int(run)]
     #
-    #print 'taking a subset of the diffraction patterns'
-    #zyx_sub = []
-    #fnams_sub = []
-    #idiffs = range(80, 101)
-    #for i in idiffs:
-    #    zyx_sub.append(zyx[i])
-    #    fnams_sub.append(fnams[i])
-    #zyx   = np.array(zyx_sub)
-    #fnams = list(fnams_sub)
+    print 'taking a subset of the diffraction patterns'
+    zyx_sub = []
+    fnams_sub = []
+    idiffs = range(80, 101)
+    for i in idiffs:
+        zyx_sub.append(zyx[i])
+        fnams_sub.append(fnams[i])
+    zyx   = np.array(zyx_sub)
+    fnams = list(fnams_sub)
     #
     print 'loading diffraction data...'
     diffs = load_h5s(fnams)
