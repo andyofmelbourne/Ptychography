@@ -7,6 +7,18 @@ import os, sys, getopt
 from ctypes import *
 import bagOfns as bg
 import time
+#
+# GPU stuff 
+try :
+    import pycuda.gpuarray as gpuarray
+    import pycuda.cumath as cumath
+    from reikna.fft import FFT
+    import reikna.cluda as cluda
+    GPU_calc = True
+except :
+    GPU_calc = False
+
+print 'GPU_calc', GPU_calc
 
 def update_progress(progress, algorithm, i, emod, esup):
     barLength = 15 # Modify this to change the length of the progress bar
@@ -276,15 +288,15 @@ class Ptychography(object):
         self.probe = np.sum(np.array(probes), axis=0) / float(len(probes))
         self.sample = np.sum(np.array(samples), axis=0) / float(len(samples))
         
-
     def Pmod(self, exits, pmod_int = False):
         exits_out = bg.fftn(exits)
         if self.pmod_int or pmod_int :
             exits_out = exits_out * (self.mask * self.diffAmps * (self.diffAmps > 0.99) /  np.clip(np.abs(exits_out), self.alpha_div, np.inf) \
                            + (~self.mask) )
         else :
-            exits_out = exits_out * (self.mask * self.diffAmps / np.clip(np.abs(exits_out), self.alpha_div, np.inf) \
-                           + (~self.mask) )
+            #exits_out = exits_out * (self.mask * self.diffAmps / np.clip(np.abs(exits_out), self.alpha_div, np.inf) \
+            #               + (~self.mask) )
+            exits_out = exits_out * self.diffAmps / (np.abs(exits_out) + self.alpha_div)
         exits_out = bg.ifftn(exits_out)
         return exits_out
 
@@ -316,6 +328,7 @@ class Ptychography(object):
         exits2     = np.conj(self.probe) * exits 
         temp       = np.zeros_like(self.sample)
         for i in range(len(self.coords)):
+            temp.fill(0.0)
             temp[:self.shape[0], :self.shape[1]] = exits2[i]
             sample_out += bg.roll(temp, [-self.coords[i][0], -self.coords[i][1]])
         #
@@ -375,7 +388,6 @@ class Ptychography(object):
         self.exits = bg.ifftn(exits_out)
 
 class Ptychography_1dsample(Ptychography):
-
     def __init__(self, diffs, coords, mask, probe, sample_1d, sample_support_1d, pmod_int = False): 
         self.sample_1d = sample_1d
         self.sample_support_1d = sample_support_1d
@@ -428,13 +440,338 @@ class Ptychography_1dsample(Ptychography):
         # 
         return sample_out
 
+
+class Ptychography_gpu(object):
+    def __init__(self, diffs, coords, mask, probe, sample, sample_support, pmod_int = False): 
+        """Initialise the Ptychography module with the data in 'inputDir' 
+        
+        Naming convention:
+        coords_100x2.raw            list of y, x coordinates in np.float64 pixel units
+        diffs_322x256x512.raw       322 (256,512) diffraction patterns in np.float64
+                                    The zero pixel must be at [0, 0] and there must 
+                                    be an equal no. of postive and negative frequencies
+        mask_256x512.raw            (optional) mask for the diffraction data np.float64
+        probeInit_256x512           (optional) Initial estimate for the probe np.complex128
+        sampleInit_1024x2048        (optional) initial estimate for the sample np.complex128
+                                    also sets the field of view
+                                    If not present then initialise with random numbers        
+        """
+        #
+        # Get the shape
+        shape  = diffs[0].shape
+        #
+        # Store these values
+        self.exits      = makeExits(sample, probe, coords)
+        #
+        # This will save time later
+        self.diffAmps   = bg.quadshift(np.sqrt(diffs))
+        self.shape      = shape
+        self.shape_sample = sample.shape
+        self.coords     = coords
+        self.mask       = bg.quadshift(mask)
+        self.probe      = probe
+        self.sample     = sample
+        self.alpha_div  = 1.0e-10
+        self.error_mod  = []
+        self.error_sup  = []
+        self.error_conv = []
+        self.probe_sum  = None
+        self.sample_sum = None
+        self.diffNorm   = np.sum(self.mask * (self.diffAmps)**2)
+        self.pmod_int   = pmod_int
+        self.sample_support = sample_support
+        api               = cluda.cuda_api()
+        self.thr          = api.Thread.create()
+        self.diffAmps_gpu = self.thr.to_device(self.diffAmps) * np.sqrt(float(self.diffAmps.shape[1]) * float(self.diffAmps.shape[2]))
+        fft               = FFT(self.diffAmps_gpu.astype(np.complex128), axes=(1,2))
+        self.fftc         = fft.compile(self.thr, fast_math=True)
+        self.exits_gpu    = self.thr.to_device(self.exits)
+        mask2             = np.zeros_like(diffs, dtype=np.complex128)
+        mask2[:]          = self.mask.astype(np.complex128)
+        self.mask_gpu     = self.thr.to_device(mask2)
+
+    def Thibault_sample(self, iters=1):
+        exits2_gpu = self.thr.empty_like(self.exits_gpu)
+        print 'i \t\t eConv \t\t eSup'
+        for i in range(iters):
+            exits = self.exits_gpu.get()
+            self.Psup_sample(exits)
+            #
+            self.thr.to_device(makeExits2(self.sample, self.probe, self.coords, exits), dest=exits2_gpu)
+            #
+            self.error_sup.append(gpuarray.sum(abs(self.exits_gpu - exits2_gpu)**2).get()/self.diffNorm)
+            #
+            exits2_gpu = self.exits_gpu + self.Pmod(2*exits2_gpu - self.exits_gpu) - exits2_gpu
+            #
+            self.error_conv.append(gpuarray.sum(abs(self.exits_gpu - exits2_gpu)**2).get()/self.diffNorm)
+            #
+            self.error_mod.append(None)
+            #
+            self.exits_gpu = exits2_gpu.copy()
+            #
+            update_progress(i / max(1.0, float(iters-1)), 'Thibault sample', i, self.error_conv[-1], self.error_sup[-1])
+            #
+
+    def Thibault_probe(self, iters=1):
+        exits2_gpu = self.thr.empty_like(self.exits_gpu)
+        print 'i \t\t eConv \t\t eSup'
+        for i in range(iters):
+            exits = self.exits_gpu.get()
+            self.Psup_probe(exits)
+            #
+            self.thr.to_device(makeExits2(self.sample, self.probe, self.coords, exits), dest=exits2_gpu)
+            #
+            self.error_sup.append(gpuarray.sum(abs(self.exits_gpu - exits2_gpu)**2).get()/self.diffNorm)
+            #
+            exits2_gpu = self.exits_gpu + self.Pmod(2*exits2_gpu - self.exits_gpu) - exits2_gpu
+            #
+            self.error_conv.append(gpuarray.sum(abs(self.exits_gpu - exits2_gpu)**2).get()/self.diffNorm)
+            #
+            self.error_mod.append(None)
+            #
+            self.exits_gpu = exits2_gpu.copy()
+            #
+            update_progress(i / max(1.0, float(iters-1)), 'Thibault probe', i, self.error_conv[-1], self.error_sup[-1])
+            #
+
+    def Thibault_both(self, iters=1):
+        exits2_gpu = self.thr.empty_like(self.exits_gpu)
+        print 'i \t\t eMod \t\t eSup'
+        for i in range(iters):
+            exits = self.exits_gpu.get()
+            self.Psup_sample(exits, thresh=1.0)
+            self.Psup_probe(exits)
+            #
+            self.thr.to_device(makeExits2(self.sample, self.probe, self.coords, exits), dest=exits2_gpu)
+            #
+            self.error_sup.append(gpuarray.sum(abs(self.exits_gpu - exits2_gpu)**2).get()/self.diffNorm)
+            #
+            exits2_gpu = self.exits_gpu + self.Pmod(2*exits2_gpu - self.exits_gpu) - exits2_gpu
+            #
+            self.error_conv.append(gpuarray.sum(abs(self.exits_gpu - exits2_gpu)**2).get()/self.diffNorm)
+            #
+            self.error_mod.append(None)
+            #
+            self.exits_gpu = exits2_gpu.copy()
+            #
+            update_progress(i / max(1.0, float(iters-1)), 'Thibault sample', i, self.error_conv[-1], self.error_sup[-1])
+
+    def ERA_sample(self, iters=1):
+        exits2_gpu = self.thr.empty_like(self.exits_gpu)
+        print 'i, eMod, eSup'
+        for i in range(iters):
+            exits2_gpu = self.Pmod(self.exits_gpu)
+            #
+            self.error_mod.append(gpuarray.sum(abs(self.exits_gpu - exits2_gpu)**2).get()/self.diffNorm)
+            #
+            exits = exits2_gpu.get()
+            self.Psup_sample(exits)
+            #
+            self.thr.to_device(makeExits2(self.sample, self.probe, self.coords, exits), dest=self.exits_gpu)
+            #
+            self.error_sup.append(gpuarray.sum(abs(self.exits_gpu - exits2_gpu)**2).get()/self.diffNorm)
+            #
+            update_progress(i / max(1.0, float(iters-1)), 'ERA sample', i, self.error_mod[-1], self.error_sup[-1])
+
+    def ERA_probe(self, iters=1):
+        exits2_gpu = self.thr.empty_like(self.exits_gpu)
+        print 'i, eMod, eSup'
+        for i in range(iters):
+            exits2_gpu = self.Pmod(self.exits_gpu)
+            #
+            self.error_mod.append(gpuarray.sum(abs(self.exits_gpu - exits2_gpu)**2).get()/self.diffNorm)
+            #
+            exits = exits2_gpu.get()
+            self.Psup_probe(exits)
+            #
+            self.thr.to_device(makeExits2(self.sample, self.probe, self.coords, exits), dest=self.exits_gpu)
+            #
+            self.error_sup.append(gpuarray.sum(abs(self.exits_gpu - exits2_gpu)**2).get()/self.diffNorm)
+            #
+            update_progress(i / max(1.0, float(iters-1)), 'ERA probe', i, self.error_mod[-1], self.error_sup[-1])
+        
+    def ERA_both(self, iters=1):
+        exits2_gpu = self.thr.empty_like(self.exits_gpu)
+        print 'i, eMod, eSup'
+        for i in range(iters):
+            exits2_gpu = self.Pmod(self.exits_gpu)
+            #
+            self.error_mod.append(gpuarray.sum(abs(self.exits_gpu - exits2_gpu)**2).get()/self.diffNorm)
+            #
+            exits = exits2_gpu.get()
+            for j in range(5):
+                self.Psup_sample(exits, thresh=1.0)
+                self.Psup_probe(exits)
+            #
+            self.thr.to_device(makeExits2(self.sample, self.probe, self.coords, exits), dest=self.exits_gpu)
+            #
+            self.error_sup.append(gpuarray.sum(abs(self.exits_gpu - exits2_gpu)**2).get()/self.diffNorm)
+            #
+            update_progress(i / max(1.0, float(iters-1)), 'ERA both', i, self.error_mod[-1], self.error_sup[-1])
+
+    def Pmod(self, exits_gpu):
+        exits2_gpu = self.thr.empty_like(exits_gpu)
+        self.fftc(exits2_gpu, exits_gpu)
+        #
+        exits2_gpu    = exits2_gpu * (self.mask_gpu * self.diffAmps_gpu / (abs(exits2_gpu) + self.alpha_div) + (1.0 - self.mask_gpu))
+        #
+        self.fftc(exits2_gpu, exits2_gpu, True)
+        return exits2_gpu
+
+    def Psup_sample(self, exits, thresh=False, inPlace=True):
+        """ """
+        sample_out  = np.zeros_like(self.sample)
+        # 
+        # Calculate denominator
+        # but only do this if it hasn't been done already
+        # (we must set self.probe_sum = None when the probe/coords has changed)
+        if self.probe_sum is None :
+            probe_sum   = np.zeros_like(self.sample, dtype=np.float64)
+            probe_s     = np.real(np.conj(self.probe) * self.probe)
+            for coord in self.coords:
+                probe_sum[-coord[0]:self.shape[0]-coord[0], -coord[1]:self.shape[1]-coord[1]] += probe_s
+            self.probe_sum = probe_sum
+        # 
+        # Calculate numerator
+        exits     = np.conj(self.probe) * exits
+        for coord, exit in zip(self.coords, exits):
+            sample_out[-coord[0]:self.shape[0]-coord[0], -coord[1]:self.shape[1]-coord[1]] += exit
+        #
+        # divide
+        sample_out  = sample_out / (self.probe_sum + self.alpha_div)
+        sample_out  = sample_out * self.sample_support + ~self.sample_support
+        #
+        if thresh :
+            sample_out = bg.threshold(sample_out, thresh=thresh)
+        #
+        self.sample_sum = None
+        if inPlace :
+            self.sample = sample_out
+        else :
+            return sample_out
+
+    def Psup_probe(self, exits, inPlace=True):
+        """ """
+        probe_out  = np.zeros_like(self.probe)
+        # 
+        # Calculate denominator
+        # but only do this if it hasn't been done already
+        # (we must set self.probe_sum = None when the probe/coords has changed)
+        if self.sample_sum is None :
+            sample_sum  = np.zeros_like(self.probe, dtype=np.float64)
+            temp        = np.real(self.sample * np.conj(self.sample))
+            for coord in self.coords:
+                sample_sum  += temp[-coord[0]:self.shape[0]-coord[0], -coord[1]:self.shape[1]-coord[1]]
+            self.sample_sum = sample_sum + self.alpha_div
+        # 
+        # Calculate numerator
+        # probe = sample * [sum np.conj(sample_shifted) * exit_shifted] / sum |sample_shifted|^2 
+        sample_conj = np.conj(self.sample)
+        for exit, coord in zip(exits, self.coords):
+            probe_out += exit * sample_conj[-coord[0]:self.shape[0]-coord[0], -coord[1]:self.shape[1]-coord[1]]
+        #
+        # divide
+        probe_out   = probe_out / self.sample_sum 
+        #
+        self.probe_sum = None
+        if inPlace:
+            self.probe = probe_out
+        else : 
+            return probe_out
+
+class Ptychography_1dsample_gpu(Ptychography_gpu):
+    def __init__(self, diffs, coords, mask, probe, sample_1d, sample_support_1d, pmod_int = False): 
+        self.sample_1d = sample_1d
+        self.sample_support_1d = sample_support_1d
+        #
+        sample         = np.zeros((probe.shape[0], sample_1d.shape[0]), dtype = sample_1d.dtype)
+        sample_support = np.zeros((probe.shape[0], sample_1d.shape[0]), dtype = sample_1d.dtype)
+        sample[:]         = sample_1d.copy()
+        sample_support[:] = sample_support_1d.copy()
+        #
+        Ptychography_gpu.__init__(self, diffs, coords, mask, probe, sample, sample_support, pmod_int)
+
+    def Psup_sample(self, exits, thresh=False, inPlace=True):
+        """ """
+        sample_out  = np.zeros_like(self.sample)
+        # 
+        # Calculate denominator
+        # but only do this if it hasn't been done already
+        # (we must set self.probe_sum = None when the probe/coords has changed)
+        if self.probe_sum is None :
+            probe_sum   = np.zeros_like(self.sample_1d, dtype=np.float64)
+            probe_s     = np.real(np.conj(self.probe) * self.probe)
+            probe_s     = np.sum(probe_s, axis=0)
+            for coord in self.coords:
+                probe_sum[-coord[1]:self.shape[1]-coord[1]] += probe_s
+            self.probe_sum = probe_sum + self.alpha_div
+        # 
+        # Calculate numerator
+        exits     = np.conj(self.probe) * exits
+        exits     = np.sum(exits, axis=1)
+        sample_1d = np.zeros_like(self.sample_1d)
+        for coord, exit in zip(self.coords, exits):
+            sample_1d[-coord[1]:self.shape[1]-coord[1]] += exit
+        #
+        # divide
+        sample_1d = sample_1d / self.probe_sum
+        sample_1d = sample_1d * self.sample_support_1d + ~self.sample_support_1d
+        # 
+        # expand
+        sample_out[:] = sample_1d
+        #
+        if thresh :
+            sample_out = bg.threshold(sample_out, thresh=thresh)
+        self.sample_sum = None
+        if inPlace :
+            self.sample    = sample_out
+            self.sample_1d = sample_1d
+        else : 
+            return sample_out
+
+    def Psup_probe_test(self, exits, inPlace=True):
+        """ """
+        probe_out  = np.zeros_like(self.probe)
+        # 
+        # Calculate denominator
+        # but only do this if it hasn't been done already
+        # (we must set self.probe_sum = None when the probe/coords has changed)
+        if self.sample_sum is None :
+            sample_sum     = np.zeros_like(self.probe, dtype=np.float64)
+            sample_sum_1d  = np.zeros(self.probe.shape, dtype=np.float64)
+            temp           = np.real(self.sample_1d * np.conj(self.sample_1d))
+            for coord in self.coords:
+                sample_sum_1d  += temp[-coord[1]:self.shape[1]-coord[1]]
+            sample_sum[:] = sample_sum_1d
+            self.sample_sum = sample_sum + self.alpha_div
+        # 
+        # Calculate numerator
+        # probe = sample * [sum np.conj(sample_shifted) * exit_shifted] / sum |sample_shifted|^2 
+        sample_conj = np.conj(self.sample_1d)
+        for exit, coord in zip(exits, self.coords):
+            probe_out += exit * sample_conj[-coord[1]:self.shape[1]-coord[1]]
+        #
+        # divide
+        probe_out   = probe_out / self.sample_sum 
+        #
+        self.probe_sum = None
+        if inPlace:
+            self.probe = probe_out
+        else : 
+            return probe_out
+
+def makeExits2(sample, probe, coords, exits):
+    for i, coord in enumerate(coords):
+        exits[i] = sample[-coord[0]:probe.shape[0]-coord[0], -coord[1]:probe.shape[1]-coord[1]]
+    exits *= probe 
+    return exits
+
 def makeExits(sample, probe, coords):
     exits = np.zeros((len(coords), probe.shape[0], probe.shape[1]), dtype=np.complex128)
     for i in range(len(coords)):
         exits[i] = bg.roll(sample, coords[i])[:probe.shape[0], :probe.shape[1]]
     exits *= probe 
     return exits
-
 
 
 def input_output(inputDir):
@@ -515,16 +852,27 @@ def input_output(inputDir):
                     sequence.append([temp[0], temp[2]])
     #
     # If the sample is 1d then do a 1d retrieval 
-    if len(sample.shape) == 1 :
+    if len(sample.shape) == 1 and GPU_calc == False :
         print '1d sample => 1d Ptychography'
         prob = Ptychography_1dsample(diffs, coords, mask, probe, sample, sample_support)
-    elif len(sample.shape) == 2 :
+        #
+    elif len(sample.shape) == 2 and GPU_calc == False :
         print '2d sample => 2d Ptychography'
         prob = Ptychography(diffs, coords, mask, probe, sample, sample_support)
+        #
+    elif len(sample.shape) == 2 and GPU_calc == True :
+        print 'Performing calculations on GPU'
+        print '2d sample => 2d Ptychography'
+        prob = Ptychography_gpu(diffs, coords, mask, probe, sample, sample_support)
+    elif len(sample.shape) == 1 and GPU_calc == True :
+        print 'Performing calculations on GPU'
+        print '1d sample => 1d Ptychography'
+        prob = Ptychography_1dsample_gpu(diffs, coords, mask, probe, sample, sample_support)
+        #
     return prob, sequence
 
 def runSequence(prob, sequence):
-    if not isinstance(prob, Ptychography):
+    if isinstance(prob, Ptychography)==False and isinstance(prob, Ptychography_gpu)==False :
         raise ValueError('prob must be an instance of the class Ptychography')
     #
     # Check the sequence list
