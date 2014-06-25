@@ -98,7 +98,8 @@ print 'outputputing files...'
 print 'output directory is ', outputdir
 
 sequence = """# This is a sequence file which determines the ptychography algorithm to use
-ERA_both = 1000
+Thibault_both = 500
+ERA_both = 100
 """
 
 with open(outputdir + "sequence.txt", "w") as text_file:
@@ -124,44 +125,45 @@ print 'python Ptychography.py -i', outputdir, ' -o',outputdir
 # run Ptychography and time it using the bash command "time"
 subprocess.call('time python Ptychography.py' + ' -i' + outputdir + ' -o' + outputdir, shell=True)
 
-def fidelity(o1 , o2):
-    return np.sqrt(np.sum(np.abs(o1 - o2)**2) / np.sum(np.abs(o1)**2))
+if False :
+    def fidelity(o1 , o2):
+        return np.sqrt(np.sum(np.abs(o1 - o2)**2) / np.sum(np.abs(o1)**2))
 
-def fidelity_cons(o1 , o2):
-    c = np.sum(np.conj(o1) * o2) / np.sum(np.abs(o1)**2)
-    return fidelity(c * o1, o2)
+    def fidelity_cons(o1 , o2):
+        c = np.sum(np.conj(o1) * o2) / np.sum(np.abs(o1)**2)
+        return fidelity(c * o1, o2)
 
-def fidelity_shift(o1 , o2):
-    errors = []
-    for i in range(o1.shape[0]):
-        for j in range(o1.shape[1]):
-            o_shift = bg.roll(o1, [i, j])
-            errors.append(fidelity(o_shift, o2))
-    return np.array(errors).min()
+    def fidelity_shift(o1 , o2):
+        errors = []
+        for i in range(o1.shape[0]):
+            for j in range(o1.shape[1]):
+                o_shift = bg.roll(o1, [i, j])
+                errors.append(fidelity(o_shift, o2))
+        return np.array(errors).min()
 
-def fidelity_shift_cons(o1 , o2):
-    errors = []
-    for i in range(o1.shape[0]):
-        for j in range(o1.shape[1]):
-            o_shift = bg.roll(o1, [i, j])
-            errors.append(fidelity_cons(o_shift, o2))
-    return np.array(errors).min()
+    def fidelity_shift_cons(o1 , o2):
+        errors = []
+        for i in range(o1.shape[0]):
+            for j in range(o1.shape[1]):
+                o_shift = bg.roll(o1, [i, j])
+                errors.append(fidelity_cons(o_shift, o2))
+        return np.array(errors).min()
 
-def fidelity_shift_cons_mask(o1, masko1, o2):
-    errors = []
-    for i in range(o1.shape[0]):
-        for j in range(o1.shape[1]):
-            o_shift = bg.roll(o1, [i, j])
-            m_shift = bg.roll(masko1, [i, j])
-            errors.append(fidelity_cons(o_shift * m_shift, o2 * m_shift)) 
-    return np.array(errors).min()
+    def fidelity_shift_cons_mask(o1, masko1, o2):
+        errors = []
+        for i in range(o1.shape[0]):
+            for j in range(o1.shape[1]):
+                o_shift = bg.roll(o1, [i, j])
+                m_shift = bg.roll(masko1, [i, j])
+                errors.append(fidelity_cons(o_shift * m_shift, o2 * m_shift)) 
+        return np.array(errors).min()
 
 
-sample_ret = bg.binary_in(outputdir + 'sample_retrieved', dt=np.complex128, dimFnam=True)
-probe_ret  = bg.binary_in(outputdir + 'probe_retrieved', dt=np.complex128, dimFnam=True)
+    sample_ret = bg.binary_in(outputdir + 'sample_retrieved', dt=np.complex128, dimFnam=True)
+    probe_ret  = bg.binary_in(outputdir + 'probe_retrieved', dt=np.complex128, dimFnam=True)
 
-mask = (heatmap > 1.0e-1 * heatmap.max())
-print 'mask area' , np.sum(mask)
+    mask = (heatmap > 1.0e-1 * heatmap.max())
+    print 'mask area' , np.sum(mask)
 
-print 'sample error shift and constant corrected:', fidelity_shift_cons_mask(sample, mask, sample_ret)
-print 'probe  error shift and constant corrected:', fidelity_shift_cons(probe, probe_ret)
+    print 'sample error shift and constant corrected:', fidelity_shift_cons_mask(sample, mask, sample_ret)
+    print 'probe  error shift and constant corrected:', fidelity_shift_cons(probe, probe_ret)

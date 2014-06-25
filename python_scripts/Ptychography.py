@@ -440,6 +440,7 @@ class Ptychography_1dsample(Ptychography):
         # 
         return sample_out
 
+
 class Ptychography_gpu(object):
     def __init__(self, diffs, coords, mask, probe, sample, sample_support, pmod_int = False): 
         """Initialise the Ptychography module with the data in 'inputDir' 
@@ -488,6 +489,72 @@ class Ptychography_gpu(object):
         mask2             = np.zeros_like(diffs, dtype=np.complex128)
         mask2[:]          = self.mask.astype(np.complex128)
         self.mask_gpu     = self.thr.to_device(mask2)
+
+    def Thibault_sample(self, iters=1):
+        exits2_gpu = self.thr.empty_like(self.exits_gpu)
+        print 'i \t\t eConv \t\t eSup'
+        for i in range(iters):
+            exits = self.exits_gpu.get()
+            self.Psup_sample(exits)
+            #
+            self.thr.to_device(makeExits2(self.sample, self.probe, self.coords, exits), dest=exits2_gpu)
+            #
+            self.error_sup.append(gpuarray.sum(abs(self.exits_gpu - exits2_gpu)**2).get()/self.diffNorm)
+            #
+            exits2_gpu = self.exits_gpu + self.Pmod(2*exits2_gpu - self.exits_gpu) - exits2_gpu
+            #
+            self.error_conv.append(gpuarray.sum(abs(self.exits_gpu - exits2_gpu)**2).get()/self.diffNorm)
+            #
+            self.error_mod.append(None)
+            #
+            self.exits_gpu = exits2_gpu.copy()
+            #
+            update_progress(i / max(1.0, float(iters-1)), 'Thibault sample', i, self.error_conv[-1], self.error_sup[-1])
+            #
+
+    def Thibault_probe(self, iters=1):
+        exits2_gpu = self.thr.empty_like(self.exits_gpu)
+        print 'i \t\t eConv \t\t eSup'
+        for i in range(iters):
+            exits = self.exits_gpu.get()
+            self.Psup_probe(exits)
+            #
+            self.thr.to_device(makeExits2(self.sample, self.probe, self.coords, exits), dest=exits2_gpu)
+            #
+            self.error_sup.append(gpuarray.sum(abs(self.exits_gpu - exits2_gpu)**2).get()/self.diffNorm)
+            #
+            exits2_gpu = self.exits_gpu + self.Pmod(2*exits2_gpu - self.exits_gpu) - exits2_gpu
+            #
+            self.error_conv.append(gpuarray.sum(abs(self.exits_gpu - exits2_gpu)**2).get()/self.diffNorm)
+            #
+            self.error_mod.append(None)
+            #
+            self.exits_gpu = exits2_gpu.copy()
+            #
+            update_progress(i / max(1.0, float(iters-1)), 'Thibault probe', i, self.error_conv[-1], self.error_sup[-1])
+            #
+
+    def Thibault_both(self, iters=1):
+        exits2_gpu = self.thr.empty_like(self.exits_gpu)
+        print 'i \t\t eMod \t\t eSup'
+        for i in range(iters):
+            exits = self.exits_gpu.get()
+            self.Psup_sample(exits, thresh=1.0)
+            self.Psup_probe(exits)
+            #
+            self.thr.to_device(makeExits2(self.sample, self.probe, self.coords, exits), dest=exits2_gpu)
+            #
+            self.error_sup.append(gpuarray.sum(abs(self.exits_gpu - exits2_gpu)**2).get()/self.diffNorm)
+            #
+            exits2_gpu = self.exits_gpu + self.Pmod(2*exits2_gpu - self.exits_gpu) - exits2_gpu
+            #
+            self.error_conv.append(gpuarray.sum(abs(self.exits_gpu - exits2_gpu)**2).get()/self.diffNorm)
+            #
+            self.error_mod.append(None)
+            #
+            self.exits_gpu = exits2_gpu.copy()
+            #
+            update_progress(i / max(1.0, float(iters-1)), 'Thibault sample', i, self.error_conv[-1], self.error_sup[-1])
 
     def ERA_sample(self, iters=1):
         exits2_gpu = self.thr.empty_like(self.exits_gpu)
@@ -582,7 +649,7 @@ class Ptychography_gpu(object):
             self.sample = sample_out
         else :
             return sample_out
-    
+
     def Psup_probe(self, exits, inPlace=True):
         """ """
         probe_out  = np.zeros_like(self.probe)
