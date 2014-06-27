@@ -160,7 +160,7 @@ def load_metadata(path_base = '../../../rawdata/PETRA3/P11/P11-201311/10010762/'
     #
     # and I think that x is in units of um
     zyxN[:, 2] *= 1.0e-6
-    zyxN[:, 2] -= zyxN[:, 2].min()
+    zyxN[:, 2] -= zyxN[:, 2].max()
     #
     # Replace the file names with the filenames of the associated h5 files
     path     = path_base + 'lambda/'
@@ -459,6 +459,9 @@ def make_probe(mask, lamb, dq, scan = '0181'):
     #gaus_mask = np.array(bg.blurthresh_mask(aperture, std=10), dtype=np.float64)
     #gaus_mask = bg.blur(gaus_mask)
     #aperture  *= gaus_mask
+    #
+    # unfortunately I am hard coding this...
+    aperture[:, 1330 :] = 0
     # Let's put some higher order aberrations in there
     C3    = 1.0e-3 
     x, y  = bg.make_xy(aperture.shape)
@@ -597,9 +600,10 @@ if __name__ == "__main__":
     fnams                   = fnams_stack[int(run)]
     #
     print 'taking a subset of the diffraction patterns'
+    zyx_old = zyx
     zyx_sub = []
     fnams_sub = []
-    idiffs = range(80, 101)
+    idiffs = range(50, 250, 3)
     for i in idiffs:
         zyx_sub.append(zyx[i])
         fnams_sub.append(fnams[i])
@@ -627,13 +631,14 @@ if __name__ == "__main__":
     #
     # Convert zyx --> ij coords
     print 'making the ij coordinates...'
-    ij_coords = make_coords(zyx, spacing, probe.shape)
+    ij_coords     = make_coords(zyx, spacing, probe.shape)
+    ij_coords_old = make_coords(zyx_old, spacing, probe.shape)
     #
     # initialise the sample 
     print 'making the sample shape so that it fits the probe given the positions...'
     if gratingSim:
         print 'simulating the grating for the sample'
-    sample = make_sample(probe, ij_coords, gratingSim)
+    sample = make_sample(probe, ij_coords_old, gratingSim)
     if samplesupport:
         print 'making the sample support'
         sample_support = np.zeros(sample.shape, dtype=np.bool)
@@ -649,7 +654,7 @@ if __name__ == "__main__":
     #
     # I want the probe to start at the "right". 0 --> sample.shape[1] - probe.shape[1]
     print 'I want the probe to start at the "right". 0 --> sample.shape[1] - probe.shape[1]'
-    ij_coords[:, -1] = ij_coords[:, -1] + (sample.shape[-1] - probe.shape[-1])
+    print 'and scan the sample to the left. so coords[:, 1] -ve --> 0'
     #
     # Output 
     print 'outputing to ', os.path.abspath(outputdir)

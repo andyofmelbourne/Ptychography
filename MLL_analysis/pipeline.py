@@ -18,7 +18,11 @@ import subprocess
 ##########################################
 ##########################################
 sequence = """
-ERA_both = 10
+Thibault_sample = 100
+ERA_both = 100
+Pmod_probe = 1
+ERA_probe = 10
+ERA_both = 20
 """
 
 gratingSim = False
@@ -111,6 +115,22 @@ if __name__=='__main__':
         # Run the retrieval on the data 
         commands.append('python ../python_scripts/Ptychography.py -i ' +tempdata_dir+ ' -o ' +tempdata_dir)
         #
+        # execute sequentially
+        for command in commands:
+            print command
+            try :
+                retcode = subprocess.call(command, shell=True)
+                if retcode < 0:
+                    print >>sys.stderr, "Child was terminated by signal", -retcode
+            except OSError as e:
+                print >>sys.stderr, "Execution failed:", e
+        #
+        print 'I hope all went well!'
+        print 'Your results should be in ' + tempdata_dir 
+        #
+    elif loc == 'process_results':
+        commands = []
+        #
         # Process the results 
         commands.append('python process_results.py -i ' +tempdata_dir+ ' -o ' +tempdata_dir)
         #
@@ -163,11 +183,14 @@ if __name__=='__main__':
         # send the job over ssh
         commands.append('rsync -e ssh --recursive --progress --delete ../../Ptychography/ amorgan@it-hpc-gpu06:/nfs/cfel/cxi/home/amorgan/analysis/Ptychography')
         #
-        # process the results using cfelsgi (which can access the data)
+        # process the diffs using cfelsgi (which can access the data)
         commands.append("ssh cfelsgi 'export LD_LIBRARY_PATH='/cfel/common/lib:$LD_LIBRARY_PATH'; export PYTHONPATH='/nfs/cfel/cxi/common/cfelsgi/gcc_4_4_7/python-hdf5/2.3.0/lib64/python2.6/site-packages:$PYTHONPATH'; cd /home/amorgan/analysis/Ptychography/MLL_analysis/; python pipeline.py --location=process --run="+str(run)   +" --tempdata_dir="+tempdata_dir   +" ' ")
         #
         # run the results 
         commands.append("ssh it-hpc-gpu06 'eval $(./export_python.sh); cd /nfs/cfel/cxi/home/amorgan/analysis/Ptychography/MLL_analysis/; python pipeline.py --location=run --run="+str(run)   +" --tempdata_dir="+tempdata_dir   +" ' ")
+        #
+        # process the results using cfelsgi (which can access the data)
+        commands.append("ssh cfelsgi 'export LD_LIBRARY_PATH='/cfel/common/lib:$LD_LIBRARY_PATH'; export PYTHONPATH='/nfs/cfel/cxi/common/cfelsgi/gcc_4_4_7/python-hdf5/2.3.0/lib64/python2.6/site-packages:$PYTHONPATH'; cd /home/amorgan/analysis/Ptychography/MLL_analysis/; python pipeline.py --location=process_results --run="+str(run)   +" --tempdata_dir="+tempdata_dir   +" ' ")
         #
         # retrieve the data
         commands.append('rsync -e ssh --recursive --progress amorgan@it-hpc-gpu06:/nfs/cfel/cxi/home/amorgan/tempdata/ ../../../tempdata/')

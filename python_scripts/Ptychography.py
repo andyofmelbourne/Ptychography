@@ -251,17 +251,17 @@ class Ptychography(object):
             array = np.random.random(self.sample.shape) + 1J * np.random.random(self.sample.shape) 
             return array
         #
-        for i in range(3):
+        for i in range(5):
             self.sample     = randsample()
             self.sample_sum = None
             self.exits = makeExits(self.sample, self.probe, self.coords)
             #
             self.Thibault_sample(iters=5)
             #
-            self.Thibault_both(iters=10)
+            self.Thibault_both(iters=75)
             #
             probes = []
-            for j in range(10):
+            for j in range(20):
                 self.Thibault_both(iters=1)
                 probes.append(self.probe.copy())
             self.probe     = np.sum(np.array(probes), axis=0) / float(len(probes))
@@ -270,7 +270,7 @@ class Ptychography(object):
         probe  = self.probe.copy()
         probes  = []
         samples = []
-        for i in range(3):
+        for i in range(10):
             self.sample     = randsample()
             self.sample_sum = None
             self.probe      = probe.copy()
@@ -279,9 +279,9 @@ class Ptychography(object):
             #
             self.Thibault_sample(iters=5)
             #
-            self.Thibault_both(iters=5)
+            self.Thibault_both(iters=75)
             #
-            for j in range(5):
+            for j in range(20):
                 self.Thibault_both(iters=1)
                 probes.append(self.probe.copy())
                 samples.append(self.sample.copy())
@@ -470,6 +470,7 @@ class Ptychography_gpu(object):
         self.coords     = coords
         self.mask       = bg.quadshift(mask)
         self.probe      = probe
+        self.probeInit  = probe.copy()
         self.sample     = sample
         self.alpha_div  = 1.0e-10
         self.error_mod  = []
@@ -510,7 +511,6 @@ class Ptychography_gpu(object):
             self.exits_gpu = exits2_gpu.copy()
             #
             update_progress(i / max(1.0, float(iters-1)), 'Thibault sample', i, self.error_conv[-1], self.error_sup[-1])
-            #
 
     def Thibault_probe(self, iters=1):
         exits2_gpu = self.thr.empty_like(self.exits_gpu)
@@ -532,7 +532,6 @@ class Ptychography_gpu(object):
             self.exits_gpu = exits2_gpu.copy()
             #
             update_progress(i / max(1.0, float(iters-1)), 'Thibault probe', i, self.error_conv[-1], self.error_sup[-1])
-            #
 
     def Thibault_both(self, iters=1):
         exits2_gpu = self.thr.empty_like(self.exits_gpu)
@@ -554,7 +553,40 @@ class Ptychography_gpu(object):
             #
             self.exits_gpu = exits2_gpu.copy()
             #
-            update_progress(i / max(1.0, float(iters-1)), 'Thibault sample', i, self.error_conv[-1], self.error_sup[-1])
+            update_progress(i / max(1.0, float(iters-1)), 'Thibault both', i, self.error_conv[-1], self.error_sup[-1])
+
+    def Thibault_both_av(self, iters=1):
+        """Average the output sample and probe from each iteration to reduce high frequency artefacts."""
+        exits2_gpu = self.thr.empty_like(self.exits_gpu)
+        samples = []
+        probes = []
+        print 'i \t\t eMod \t\t eSup'
+        for i in range(iters):
+            exits = self.exits_gpu.get()
+            self.Psup_sample(exits, thresh=1.0)
+            self.Psup_probe(exits)
+            #
+            self.thr.to_device(makeExits2(self.sample, self.probe, self.coords, exits), dest=exits2_gpu)
+            #
+            self.error_sup.append(gpuarray.sum(abs(self.exits_gpu - exits2_gpu)**2).get()/self.diffNorm)
+            #
+            exits2_gpu = self.exits_gpu + self.Pmod(2*exits2_gpu - self.exits_gpu) - exits2_gpu
+            #
+            self.error_conv.append(gpuarray.sum(abs(self.exits_gpu - exits2_gpu)**2).get()/self.diffNorm)
+            #
+            self.error_mod.append(None)
+            #
+            self.exits_gpu = exits2_gpu.copy()
+            #
+            update_progress(i / max(1.0, float(iters-1)), 'Thibault both averaging', i, self.error_conv[-1], self.error_sup[-1])
+            #
+            samples.append(self.sample.copy())
+            probes.append(self.probe.copy())
+        #
+        self.sample     = np.sum(np.array(samples), axis=0) / float(iters)
+        self.probe      = np.sum(np.array(probes), axis=0) / float(iters)
+        self.sample_sum = None
+        self.probe_sum  = None
 
     def ERA_sample(self, iters=1):
         exits2_gpu = self.thr.empty_like(self.exits_gpu)
@@ -599,7 +631,7 @@ class Ptychography_gpu(object):
             self.error_mod.append(gpuarray.sum(abs(self.exits_gpu - exits2_gpu)**2).get()/self.diffNorm)
             #
             exits = exits2_gpu.get()
-            for j in range(5):
+            for j in range(1):
                 self.Psup_sample(exits, thresh=1.0)
                 self.Psup_probe(exits)
             #
@@ -679,6 +711,72 @@ class Ptychography_gpu(object):
         else : 
             return probe_out
 
+    def Pmod_probe(self, iters = 1, inPlace=True, mask = False):
+        """ """
+        print 'applying the modulus constraint to the probe...'
+        probe_out  = bg.fftn(self.probe)
+        if mask :
+            probe_out  = probe_out * (self.mask * np.abs(bg.fftn(self.probeInit)) / np.clip(np.abs(probe_out), self.alpha_div, np.inf) + (~self.mask) )
+        else :
+            probe_out  = probe_out * np.abs(bg.fftn(self.probeInit)) / np.clip(np.abs(probe_out), self.alpha_div, np.inf) 
+        probe_out  = bg.ifftn(probe_out)
+        #
+        self.probe_sum = None
+        if inPlace:
+            self.probe = probe_out
+        else : 
+            return probe_out
+
+    def randsample(self):
+        array = np.random.random(self.sample.shape) + 1J * np.random.random(self.sample.shape) 
+        return array
+
+    def Huang(self, iters=None):
+        """This is the algorithm used in "11 nm Hard X-ray focus from a large-aperture multilayer Laue lens" (2013) nature"""
+        #
+        for i in range(0):
+            self.sample     = self.randsample()
+            self.sample_sum = None
+            self.thr.to_device(makeExits2(self.sample, self.probe, self.coords, self.exits), dest=self.exits_gpu)
+            #
+            self.Thibault_sample(iters=20)
+            self.ERA_sample(30)
+            #
+            self.Thibault_both(iters=5)
+            self.Pmod_probe()
+            #
+            probes = []
+            for j in range(5):
+                self.Thibault_both(iters=1)
+                self.Pmod_probe()
+                probes.append(self.probe.copy())
+            self.probe     = np.sum(np.array(probes), axis=0) / float(len(probes))
+            self.probe_sum = None
+        #
+        probe  = self.probe.copy()
+        probes  = []
+        samples = []
+        for i in range(10):
+            self.sample     = self.randsample()
+            self.sample_sum = None
+            self.probe      = probe.copy()
+            self.probe_sum  = None
+            self.thr.to_device(makeExits2(self.sample, self.probe, self.coords, self.exits), dest=self.exits_gpu)
+            #
+            self.Thibault_sample(iters=50)
+            #
+            self.Thibault_both(iters=5)
+            self.Pmod_probe()
+            #
+            self.ERA_both(100)
+            #
+            for j in range(1):
+                #self.Thibault_both(iters=1)
+                probes.append(self.probe.copy())
+                samples.append(self.sample.copy())
+        self.probe = np.sum(np.array(probes), axis=0) / float(len(probes))
+        self.sample = np.sum(np.array(samples), axis=0) / float(len(samples))
+
 class Ptychography_1dsample_gpu(Ptychography_gpu):
     def __init__(self, diffs, coords, mask, probe, sample_1d, sample_support_1d, pmod_int = False): 
         self.sample_1d = sample_1d
@@ -729,7 +827,7 @@ class Ptychography_1dsample_gpu(Ptychography_gpu):
         else : 
             return sample_out
 
-    def Psup_probe_test(self, exits, inPlace=True):
+    def Psup_probe(self, exits, inPlace=True):
         """ """
         probe_out  = np.zeros_like(self.probe)
         # 
@@ -738,8 +836,8 @@ class Ptychography_1dsample_gpu(Ptychography_gpu):
         # (we must set self.probe_sum = None when the probe/coords has changed)
         if self.sample_sum is None :
             sample_sum     = np.zeros_like(self.probe, dtype=np.float64)
-            sample_sum_1d  = np.zeros(self.probe.shape, dtype=np.float64)
-            temp           = np.real(self.sample_1d * np.conj(self.sample_1d))
+            sample_sum_1d  = np.zeros(self.probe.shape[1], dtype=np.float64)
+            temp           = np.real(self.sample[0,:] * np.conj(self.sample[0,:]))
             for coord in self.coords:
                 sample_sum_1d  += temp[-coord[1]:self.shape[1]-coord[1]]
             sample_sum[:] = sample_sum_1d
@@ -747,7 +845,7 @@ class Ptychography_1dsample_gpu(Ptychography_gpu):
         # 
         # Calculate numerator
         # probe = sample * [sum np.conj(sample_shifted) * exit_shifted] / sum |sample_shifted|^2 
-        sample_conj = np.conj(self.sample_1d)
+        sample_conj = np.conj(self.sample[0,:])
         for exit, coord in zip(exits, self.coords):
             probe_out += exit * sample_conj[-coord[1]:self.shape[1]-coord[1]]
         #
@@ -759,6 +857,11 @@ class Ptychography_1dsample_gpu(Ptychography_gpu):
             self.probe = probe_out
         else : 
             return probe_out
+
+    def randsample(self):
+        array    = np.zeros_like(self.sample)
+        array[:] = np.random.random(self.sample_1d.shape) + 1J * np.random.random(self.sample_1d.shape) 
+        return array
 
 def makeExits2(sample, probe, coords, exits):
     for i, coord in enumerate(coords):
@@ -878,10 +981,13 @@ def runSequence(prob, sequence):
     # Check the sequence list
     run_seq = []
     for i in range(len(sequence)):
-        if sequence[i][0] in ('ERA_sample', 'ERA_probe', 'ERA_both', 'HIO_sample', 'HIO_probe', 'back_prop', 'Thibault_sample', 'Thibault_probe', 'Thibault_both', 'Huang'):
+        if sequence[i][0] in ('Pmod_probe', 'ERA_sample', 'ERA_probe', 'ERA_both', 'HIO_sample', 'HIO_probe', 'back_prop', 'Thibault_sample', 'Thibault_probe', 'Thibault_both', 'Thibault_both_av', 'Huang'):
             # This will return an error if the string is not formatted properly (i.e. as an int)
             if sequence[i][0] == 'ERA_sample':
                 run_seq.append(sequence[i] + [prob.ERA_sample])
+            #
+            if sequence[i][0] == 'Pmod_probe':
+                run_seq.append(sequence[i] + [prob.Pmod_probe])
             #
             if sequence[i][0] == 'ERA_probe':
                 run_seq.append(sequence[i] + [prob.ERA_probe])
@@ -903,6 +1009,9 @@ def runSequence(prob, sequence):
             #
             if sequence[i][0] == 'Thibault_both':
                 run_seq.append(sequence[i] + [prob.Thibault_both])
+            #
+            if sequence[i][0] == 'Thibault_both_av':
+                run_seq.append(sequence[i] + [prob.Thibault_both_av])
             #
             if sequence[i][0] == 'Huang':
                 run_seq.append(sequence[i] + [prob.Huang])
