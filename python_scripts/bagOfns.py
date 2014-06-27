@@ -197,7 +197,7 @@ def threshold(arrayin, thresh = 1.0):
     else :
         arrayout = arrayin
     mask     = np.array(1.0 * (arrayout > thresh),dtype=np.bool)  
-    arrayout = (~mask) * arrayout + mask 
+    arrayout = (~mask) * arrayout + mask * thresh
     if arrayin.dtype == 'complex' :
         arrayout = arrayout * np.exp(1J*np.angle(arrayin))
     return arrayout
