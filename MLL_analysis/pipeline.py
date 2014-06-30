@@ -18,11 +18,8 @@ import subprocess
 ##########################################
 ##########################################
 sequence = """
-Thibault_sample = 100
-ERA_both = 100
-Pmod_probe = 1
-ERA_probe = 10
-ERA_both = 20
+Thibault_sample = 50
+ERA_both = 200
 """
 
 gratingSim = False
@@ -71,7 +68,7 @@ if __name__=='__main__':
         commands.append('python ../python_scripts/Ptychography.py -i ' +tempdata_dir+ ' -o ' +tempdata_dir)
         #
         # Process the results 
-        commands.append('python process_results.py -i ' +tempdata_dir+ ' -o ' +tempdata_dir)
+        commands.append('python process_results.py -i ' +tempdata_dir+ ' -o ' +tempdata_dir + ' --scan=0181 --run='+str(run))
         #
         # execute sequentially
         for command in commands:
@@ -132,7 +129,7 @@ if __name__=='__main__':
         commands = []
         #
         # Process the results 
-        commands.append('python process_results.py -i ' +tempdata_dir+ ' -o ' +tempdata_dir)
+        commands.append('python process_results.py -i ' +tempdata_dir+ ' -o ' +tempdata_dir + ' --scan=0181 --run='+str(run))
         #
         # execute sequentially
         for command in commands:

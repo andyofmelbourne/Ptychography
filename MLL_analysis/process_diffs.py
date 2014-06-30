@@ -112,7 +112,7 @@ def update_progress(progress):
     sys.stdout.write(text)
     sys.stdout.flush()
 
-def load_metadata(path_base = '../../../rawdata/PETRA3/P11/P11-201311/10010762/', scan = '0181'):
+def load_metadata(path_base = '../../../rawdata/PETRA3/PETRA-2013-Stellato-Nov-P11/10010762/', scan = '0181'):
     """Returns a list of numpy arrays of z, y, x and N (a unique identifier) coordinates in loaded from the path metadata dir. where each item in the list is a different z-plane along the optical axis. 
     
     In addition to the filename (absolute path) associated with each coordinate set. 
@@ -204,7 +204,7 @@ def load_metadata(path_base = '../../../rawdata/PETRA3/P11/P11-201311/10010762/'
     return zyxN_stack, fnams_h5_stack
 
 def getfnam_scan_pos(scan = None, number = 0, pos = None):
-    dir_fnam = get_fnams_faster('../../../rawdata/PETRA3/P11/P11-201311/10010762/lambda/')
+    dir_fnam = get_fnams_faster('../../../rawdata/PETRA3/PETRA-2013-Stellato-Nov-P11/10010762/lambda/')
     if pos is None :
         if number == len(dir_fnam[scan]):
             return False
@@ -603,7 +603,7 @@ if __name__ == "__main__":
     zyx_old = zyx
     zyx_sub = []
     fnams_sub = []
-    idiffs = range(50, 250, 3)
+    idiffs = range(100, 167, 1)
     for i in idiffs:
         zyx_sub.append(zyx[i])
         fnams_sub.append(fnams[i])

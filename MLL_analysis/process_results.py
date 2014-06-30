@@ -9,6 +9,7 @@ import scipy as sp
 from matplotlib.gridspec import GridSpec
 import matplotlib.pyplot as plt
 import process_diffs as pd
+import colorsys
 
 currentdir = os.path.dirname(os.path.abspath(inspect.getfile(inspect.currentframe())))
 parentdir = os.path.dirname(currentdir)
@@ -20,20 +21,73 @@ from python_scripts import bagOfns as bg
 def main(argv):
     inputdir = './'
     outputdir = './'
+    scan = '0181'
+    run = 0
     try :
-        opts, args = getopt.getopt(argv,"hi:o:",["inputdir=","outputdir="])
+        opts, args = getopt.getopt(argv,"hi:o:sr",["inputdir=","outputdir=","scan=","run="])
     except getopt.GetoptError:
         print 'process_diffs.py -i <inputdir> -o <outputdir>'
         sys.exit(2)
     for opt, arg in opts:
         if opt == '-h':
-            print 'process_diffs.py -i <inputdir> -o <outputdir>'
+            print 'process_diffs.py -i <inputdir> -o <outputdir> -s <scan> -r <run>'
             sys.exit()
         elif opt in ("-i", "--inputdir"):
             inputdir = arg
         elif opt in ("-o", "--outputdir"):
             outputdir = arg
-    return inputdir, outputdir
+        elif opt in ("-s", "--scan"):
+            scan = arg
+        elif opt in ("-r", "--run"):
+            run = int(arg)
+    return inputdir, outputdir, scan, run
+
+def hls_to_rgb2(hs, ls, ss):
+    h2 = hs.flatten()
+    l2 = ls.flatten()
+    s2 = ss.flatten()
+    array_rgb = []
+    for h, l, s in zip(h2, l2, s2):
+        array_rgb.append(colorsys.hls_to_rgb(h, l, s))
+    array_rgb = np.array(array_rgb)
+    return array_rgb.reshape((hs.shape[0], hs.shape[1], 3))
+
+def hvs_to_rgb2(hs, vs, ss):
+    h2 = hs.flatten()
+    v2 = vs.flatten()
+    s2 = ss.flatten()
+    array_rgb = []
+    for h, v, s in zip(h2, v2, s2):
+        array_rgb.append(colorsys.hsv_to_rgb(h, s, v))
+    array_rgb = np.array(array_rgb)
+    return array_rgb.reshape((hs.shape[0], hs.shape[1], 3))
+
+def complex_to_rgb(complex_data, invert=False, saturation = 1.0, rot = np.exp(1J * 0 * np.pi), scale=[0.0,1.0]):
+    phase = np.angle(complex_data * rot)
+    amplitude = np.abs(complex_data)
+    l = bg.scale(amplitude, scale[0], scale[1])
+    s = np.ones_like(l) * saturation
+    h = (phase + np.pi) / (2.0 * np.pi)
+    rgb = hvs_to_rgb2(h, l, s)
+    if(invert):
+        return 1-rgb
+    else:
+        return rgb
+    
+def colourwheel(pos = [0.35, 0.15, 0.2, 0.2]):
+    N = 512
+    x = np.linspace(-1, 1, N)
+    y = np.linspace(-1, 1, N)
+    X,Y = np.meshgrid(x,y)
+    R = np.sqrt(X*X + Y*Y)
+    PHI = np.arctan2(Y, X)
+    ax = plt.axes(pos, polar=True)
+    ax.imshow(complex_to_rgb(R*np.exp(1j*PHI)  * (R<1)))
+    ax.set_xticks([-0.5, 0, np.pi/2, np.pi, 3*np.pi/2])#-.5)
+    ax.set_yticks([0, N/3, 2*N/3, N])
+    ax.set_xticklabels([])#'', '$0$', r'$\pi/2$', r'$\pi$', r'$3\pi/2$'])
+    ax.set_yticklabels([])
+    return ax
 
 def fnamBase_match(fnam):
     fnam_base  = os.path.basename(fnam)
@@ -103,6 +157,7 @@ def make_sample_fig(sample_init, sample_ret, sample_support, heatmap, outputDir)
     ax = plt.subplot(gs[1,0])
     ax.imshow(np.abs(sample_ret), aspect='auto')#, vmin = np.abs(sample_init).min(), vmax = np.abs(sampleInit).max())
     ax.set_title('sample ret amp', fontsize=18, position=(0.5, 1.01))
+    ax.set_ylim([0.7, 1.0])
     ax = plt.subplot(gs[2,0])
     ax.imshow(np.abs(sample_init), aspect='auto')#, vmin = np.abs(sample_init).min(), vmax = np.abs(sample_init).max())
     ax.set_title('sample init amp', fontsize=18, position=(0.5, 1.01))
@@ -140,26 +195,161 @@ def make_sample_fig(sample_init, sample_ret, sample_support, heatmap, outputDir)
     #
     plt.savefig(outputDir + 'fig_sampleInit_Vs_sample_ret.png')
 
-def make_probe_fig(probe_init, probe_ret, outputDir):
+def make_probe_fig(probe_init, probe_ret, outputDir, scan = '0181', run = 0):
     plt.clf()
-    gs = GridSpec(5,2)
-    gs.update(hspace=0.5)
+    #------------------------------------
+    # Loading probe stuff
+    #------------------------------------
     #
+    print 'loading metadata...'
+    zyxN_stack, fnams_stack = pd.load_metadata(scan = scan)
+    #
+    # Calculate geometry
+    print 'calculating the geometry...'
+    X, lamb = pd.geometry()
+
+    spacing = [X / probe_init.shape[0], X / probe_init.shape[1]]
+
+
+    fontsize = 16
+
+    gs = GridSpec(6, 2)
+    gs.update(wspace=0.1, hspace=0.3)
+
+    #---------------------------------------
+    # 2d profile focus retrieved
+    #---------------------------------------
     ax = plt.subplot(gs[0,0])
-    ax.imshow(np.abs(probe_ret), aspect='auto')
-    ax.set_title('probe ret amp sample-plane', fontsize=18, position=(0.5, 1.01))
+    dy = 10
+    dx = 40
+    probe_0 = pd.probe_z(probe_ret, [- zyxN_stack[run][0][0]], spacing, lamb)
+    #
+    # take a slice
+    probe_0 = probe_0[probe_0.shape[0]/2 - 1 - dy: probe_0.shape[0]/2 - 1 + dy, probe_0.shape[1]/2 - 1 - dx: probe_0.shape[1]/2 - 1 + dx]
+    #
+    rgb = complex_to_rgb(probe_0.T)
+    #
+    ax.imshow(rgb, extent=(0, 1.0e9*X*dx/float(probe_ret.shape[1]), 0, 1.0e9*X*dy/float(probe_ret.shape[1])))#, interpolation='nearest')
+    ax.set_xticks([])
+    ax.set_ylabel(r'nm', fontsize=fontsize)
+    ax.set_title('probe amplitude focus profile to scale: run =' + str(run), fontsize=fontsize, position=(0.5, 1.01))
+    #---------------------------------------
+    # 2d profile focus for initial
+    #---------------------------------------
     ax = plt.subplot(gs[1,0])
+    probe_0 = pd.probe_z(probe_init, [- zyxN_stack[run][0][0]], spacing, lamb)
+    #
+    # take a slice
+    probe_0 = probe_0[probe_init.shape[0]/2 - 1 - dy: probe_init.shape[0]/2 - 1 + dy, probe_init.shape[1]/2 - 1 - dx: probe_init.shape[1]/2 - 1 + dx]
+    #
+    rgb = complex_to_rgb(probe_0.T)
+    #
+    ax.imshow(rgb, extent=(0, 1.0e9*X*dx/float(probe_init.shape[1]), 0, 1.0e9*X*dy/float(probe_init.shape[1])))#, interpolation='nearest')
+    ax.set_xlabel(r'nm', fontsize=fontsize)
+    ax.set_ylabel(r'nm', fontsize=fontsize)
+    ax.set_title('probe amplitude focus profile to scale: input', fontsize=fontsize, position=(0.5, 1.01))
+
+    #---------------------------------------
+    # line profiles
+    #---------------------------------------
+    ax = plt.subplot(gs[0:2, 1])
+    dx = 50
+    # propagate to focus
+    probe_0 = pd.probe_z(probe_ret, [- zyxN_stack[run][0][0]], spacing, lamb)
+    #
+    # take a line
+    probe_0 = probe_0[probe_ret.shape[0]/2 - 1, probe_ret.shape[1]/2 - 1 - dx: probe_ret.shape[1]/2 - 1 + dx]
+    #
+    x = np.linspace(- X / float(probe_init.shape[1]) * dx, X / float(probe_init.shape[1]) * dx, probe_0.shape[0]) * 1.0e9
+    ax.plot(x, (np.abs(probe_0)), label = 'run '+str(run), linewidth=2, alpha = 0.5)
+    ax.set_xlabel('nm', fontsize = fontsize)
+    ax.set_ylabel('amplitude', fontsize = fontsize)
+        
+    # propagate to focus
+    probe_0 = pd.probe_z(probe_init, [- zyxN_stack[run][0][0]], spacing, lamb)
+    #
+    # take a line
+    probe_0 = probe_0[probe_init.shape[0]/2 - 1, probe_init.shape[1]/2 - 1 - dx: probe_init.shape[1]/2 - 1 + dx]
+    #
+    ax.plot(x, (np.abs(probe_0)), label = 'input')
+    ax.legend()
+
+    #---------------------------------------
+    # In plane
+    #---------------------------------------
+    ax = plt.subplot(gs[2:4, 0:2])
+    #
+    ax = plt.subplot(gs[2,0])
+    ax.imshow(np.abs(probe_ret), aspect='auto')
+    ax.set_title('probe ret amp sample-plane', fontsize=fontsize, position=(0.5, 1.01))
+    #
+    ax = plt.subplot(gs[3,0])
     ax.imshow(np.abs(probe_init), aspect='auto')
-    ax.set_title('probe init amp sample-plane', fontsize=18, position=(0.5, 1.01))
+    ax.set_title('probe init amp sample-plane', fontsize=fontsize, position=(0.5, 1.01))
     #
-    ax = plt.subplot(gs[0,1])
+    ax = plt.subplot(gs[2,1])
     ax.imshow(np.log(1.0e-25+np.abs(bg.fft2(probe_ret))**2), aspect='auto')
-    ax.set_title('probe ret intensity detector (log scale)', fontsize=18, position=(0.5, 1.01))
-    ax = plt.subplot(gs[1,1])
-    ax.imshow(np.log(1.0e-25+np.abs(bg.fft2(probe_init))**2), aspect='auto')
-    ax.set_title('probe init intensity detector (log scale)', fontsize=18, position=(0.5, 1.01))
+    ax.set_title('probe ret intensity detector (log scale)', fontsize=fontsize, position=(0.5, 1.01))
     #
-    plt.gcf().set_size_inches(20,15)
+    ax = plt.subplot(gs[3,1])
+    ax.imshow(np.log(1.0e-25+np.abs(bg.fft2(probe_init))**2), aspect='auto')
+    ax.set_title('probe init intensity detector (log scale)', fontsize=fontsize, position=(0.5, 1.01))
+
+    #---------------------------------------
+    # farfield phase
+    #---------------------------------------
+    ax      = plt.subplot(gs[4:5, 0])
+    qx      = np.linspace(-probe_init.shape[1] / 2 + 1, probe_init.shape[1] / 2, probe_init.shape[1]) / X
+    mrads   = np.arctan( lamb * qx ) * 1.0e3
+    # 
+    # farfield phase and intensity
+    probe_0     = pd.probe_z(probe_ret, [- zyxN_stack[run][0][0]], spacing, lamb)
+    probeInit_0 = pd.probe_z(probe_init, [- zyxN_stack[run][0][0]], spacing, lamb)
+    phase     = np.angle(bg.fft2(probe_0))
+    phaseInit = np.angle(bg.fft2(probeInit_0))
+    intensity = np.abs(bg.fft2(probe_0))**2
+    #
+    # Find the most intense pixels
+    a = np.argmax(intensity, axis = 0)
+    #
+    # get their phase
+    line_phase = []
+    line_phaseInit = []
+    for x,y in enumerate(a):
+        line_phase.append(phase[y, x])
+        line_phaseInit.append(phaseInit[y, x])
+    #
+    # don't look at pixels with low intensity
+    line_phase     = np.array(line_phase) * (np.sum(intensity, axis=0) / np.max(np.sum(intensity, axis=0)) > 0.2)
+    line_phaseInit = np.array(line_phaseInit) * (np.sum(intensity, axis=0) / np.max(np.sum(intensity, axis=0)) > 0.2)
+    #
+    # set the range
+    range_q = np.arange(int(probe_init.shape[1]/2 *0.25), int(probe_init.shape[1]/2), 1)
+    #
+    # plot
+    ax.plot(mrads[range_q], np.array(line_phase)[range_q], label='run '+str(run), linewidth=2, alpha = 0.5, color='black')
+    ax.plot(mrads[range_q], np.array(line_phaseInit)[range_q], label='Input', linewidth=2, alpha = 0.5)
+    ax.set_ylabel('radians', fontsize = fontsize)
+    ax.set_xlabel(r'radians $\times 10^3$', fontsize = fontsize)
+    ax.set_xlim([mrads[range_q][0], mrads[range_q][-1]])
+    ax.legend()
+
+    #---------------------------------------
+    # farfield intensity
+    #---------------------------------------
+    ax = plt.subplot(gs[4:5, 1])
+    ax.plot(mrads[range_q], 1.0e-4*np.sum(intensity, axis=0)[range_q], label='run '+str(run), linewidth=2, alpha = 0.5, color='black')
+    ax.plot(mrads[range_q], 1.0e-4*np.sum(np.abs(bg.fft2(probeInit_0))**2, axis=0)[range_q], label='input', linewidth=2, alpha = 0.5)
+    ax.set_ylabel(r'total counts ($\times 10^{-4}$)', fontsize = fontsize)
+    ax.set_xlabel(r'radians $\times 10^{3}$', fontsize = fontsize)
+    ax.legend()
+    ax.set_xlim([mrads[range_q][0], mrads[range_q][-1]])
+
+    # colour wheel 
+    ax = colourwheel(pos = [0.45, 0.847, 0.04, 0.04])
+
+    fig = plt.gcf()
+    fig.set_size_inches(20,20)
     #
     plt.savefig(outputDir + 'fig_probeInit_Vs_probe_ret.png')
 
@@ -325,7 +515,7 @@ if __name__ == '__main__':
     print '#########################################################'
     print 'Processing the results'
     print '#########################################################'
-    inputDir, outputDir = main(sys.argv[1:])
+    inputDir, outputDir, scan, run = main(sys.argv[1:])
     print 'input directory is ', inputDir
     print 'output directory is ', outputDir
     #
@@ -373,9 +563,9 @@ if __name__ == '__main__':
     make_sample_fig(sample_init, sample_ret, sample_support, heatmap, outputDir)
     #
     print 'Making the probe figure...'
-    make_probe_fig(probe_init, probe_ret, outputDir)
+    make_probe_fig(probe_init, probe_ret, outputDir, scan, run)
     #
-    print 'Making the errors figure...'
-    make_error_fig(coords, mask, sample_init, sample_ret, sample_support, probe_init, probe_ret, eMod, eSup, inputDir, outputDir)
+    #print 'Making the errors figure...'
+    #make_error_fig(coords, mask, sample_init, sample_ret, sample_support, probe_init, probe_ret, eMod, eSup, inputDir, outputDir)
 
 
