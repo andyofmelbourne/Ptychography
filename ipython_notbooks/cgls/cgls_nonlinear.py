@@ -19,8 +19,7 @@ class Steepest(object):
             self.line_search = lambda x, d: ls.line_search_newton_raphson(x, d, self.fd, self.dfd, iters = 100, tol=1.0e-10)
         else :
             self.dfd         = None
-            #self.line_search = lambda x, d: ls.line_search_secant(x, d, self.fd, iters = 1, sigma = 1.0e-3, tol=1.0e-10)
-            self.line_search = lambda x, d: ls.line_search_ERA(x, d, self.fd, iters = 10, tol=0.0e-2)
+            self.line_search = lambda x, d: ls.line_search_secant(x, d, self.fd, iters = 2, sigma = 1.0e-3, tol=1.0e-10)
 
     def sd(self, iterations = None):
         """Iteratively solve the nonlinear equations using the steepest descent algorithm.
@@ -59,7 +58,7 @@ class Cgls(object):
     
     """
 
-    def __init__(self, x0, f, df, fd, dfd = None, imax = 10**5, e_tol = 1.0e-10, silent=True):
+    def __init__(self, x0, f, df, fd, dfd = None, imax = 10**5, e_tol = 1.0e-10):
         self.f     = f
         self.df    = df
         self.fd    = fd
@@ -68,14 +67,12 @@ class Cgls(object):
         self.e_tol = e_tol
         self.errors = []
         self.x     = x0
-        self.silent = silent
         if dfd != None :
             self.dfd         = dfd
             self.line_search = lambda x, d: ls.line_search_newton_raphson(x, d, self.fd, self.dfd, iters = 100, tol=1.0e-10)
         else :
             self.dfd         = None
-            self.line_search = lambda x, d: ls.line_search_secant(x, d, self.fd, iters = 5, sigma = 1.0e-2, tol=1.0e-10)
-            #self.line_search = lambda x, d: ls.line_search_ERA(x, d, self.fd, iters = 10, tol=0.0e-2)
+            self.line_search = lambda x, d: ls.line_search_secant(x, d, self.fd, iters = 2, sigma = 1.0e-3, tol=1.0e-10)
         #
         #self.cgls = self.cgls_Ploak_Ribiere
         self.cgls = self.cgls_Flecher_Reeves
@@ -96,13 +93,7 @@ class Cgls(object):
         for i in range(iterations):
             #
             # perform a line search of f along d
-            # self.x, status = self.line_search(self.x, self.d)
-            #
-            # If this fails then try a backup line-search
-            #if status == False :
-            #    print 'fallng back to line_search_linear...'
-            #    self.x, status = ls.line_search_linear(self.x, self.d, self.fd, self.f, iters=5)
-            self.x, error, status = ls.line_search_linear(self.x, self.d, self.fd, self.f, iters=10, silent = self.silent)
+            self.x, status = self.line_search(self.x, self.d)
             # 
             self.r         = - self.df(self.x)
             delta_old      = self.delta_new
@@ -114,13 +105,11 @@ class Cgls(object):
             self.d         = self.r + beta * self.d
             #
             # reset the algorithm 
-            if (self.iters % 4 == 0) or (status == False) :
-                if self.silent == False :
-                    print 'reseting ...'
-                self.d = self.r.copy()
+            if (self.iters % 50 == 0) or (status == False) :
+                self.d = self.r
             #
             # calculate the error
-            self.errors.append(error)
+            self.errors.append(self.f(self.x))
             self.iters = self.iters + 1
             if self.iters > self.imax or (self.errors[-1] < self.e_tol):
                 break
