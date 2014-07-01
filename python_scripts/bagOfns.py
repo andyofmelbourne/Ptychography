@@ -202,7 +202,7 @@ def threshold(arrayin, thresh = 1.0):
         arrayout = arrayout * np.exp(1J*np.angle(arrayin))
     return arrayout
 
-def gauss(arrayin,a,ryc=0.0,rxc=0.0): 
+def gauss(arrayin, a, ryc=0.0, rxc=0.0): 
     """Return a real gaussian as an numpy array e^{-a x^2}."""
     ny = arrayin.shape[0]
     nx = arrayin.shape[1]
@@ -625,7 +625,10 @@ def izero_pad(arrayin, shape = (1024, 1024)):
         return arrayout
     shape0   = arrayin.shape
     arrayout = np.zeros(shape, dtype = arrayin.dtype)
-    arrayout = arrayin[(shape0[0]-shape[0])//2 : (shape0[0]-shape[0])//2 + shape[0],(shape0[1]-shape[1])//2 : (shape0[1]-shape[1])//2 + shape[1]]
+    if len(arrayin.shape) == 2 :
+        arrayout = arrayin[(shape0[0]-shape[0])//2 : (shape0[0]-shape[0])//2 + shape[0],(shape0[1]-shape[1])//2 : (shape0[1]-shape[1])//2 + shape[1]]
+    elif len(arrayin.shape) == 1 :
+        arrayout = arrayin[(shape0[0]-shape[0])//2 : (shape0[0]-shape[0])//2 + shape[0]]
     return arrayout
 
 def interpolate_bigger(arrayin,ny,nx=None):
