@@ -157,7 +157,6 @@ def make_sample_fig(sample_init, sample_ret, sample_support, heatmap, outputDir)
     ax = plt.subplot(gs[1,0])
     ax.imshow(np.abs(sample_ret), aspect='auto')#, vmin = np.abs(sample_init).min(), vmax = np.abs(sampleInit).max())
     ax.set_title('sample ret amp', fontsize=18, position=(0.5, 1.01))
-    ax.set_ylim([0.7, 1.0])
     ax = plt.subplot(gs[2,0])
     ax.imshow(np.abs(sample_init), aspect='auto')#, vmin = np.abs(sample_init).min(), vmax = np.abs(sample_init).max())
     ax.set_title('sample init amp', fontsize=18, position=(0.5, 1.01))
@@ -172,7 +171,7 @@ def make_sample_fig(sample_init, sample_ret, sample_support, heatmap, outputDir)
     ax = plt.subplot(gs[3,0])
     ax.plot(np.sum(np.abs(sample_ret), axis=0)/float(sample_ret.shape[0]), linewidth=2, alpha=0.5)
     ax.set_title('sample ret amp', fontsize=18, position=(0.5, 1.01))
-    #ax.set_ylim([0.90, 1.02])
+    ax.set_ylim([0.7, 1.02])
     ax.set_xlim([0, sample_init.shape[1]])
     #
     ax = plt.subplot(gs[4,0])
@@ -220,8 +219,8 @@ def make_probe_fig(probe_init, probe_ret, outputDir, scan = '0181', run = 0):
     # 2d profile focus retrieved
     #---------------------------------------
     ax = plt.subplot(gs[0,0])
-    dy = 10
-    dx = 40
+    dy = 5
+    dx = 50
     probe_0 = pd.probe_z(probe_ret, [- zyxN_stack[run][0][0]], spacing, lamb)
     #
     # take a slice
@@ -399,6 +398,8 @@ def make_error_fig(ij_coords, mask, sample_init, sample_ret, sample_support, pro
     ax.set_title('eMod per diff -- Total(initial, final): '+str(np.sum(e_init)/np.sum(diffs_sum))+','+str(np.sum(e_ret)/np.sum(diffs_sum)), fontsize=18, position=(0.5, 1.01))
     #
     ax = plt.subplot(gs[: 2, 2 :])
+    # the first eSup value is dodgy
+    eSup[0] = eSup[1]
     ax.plot(np.log10(eMod), linewidth=5, alpha=0.5, label='modulus')
     ax.plot(np.log10(eSup) , linewidth=5, alpha=0.5, label='support')
     ax.legend()  
@@ -565,7 +566,7 @@ if __name__ == '__main__':
     print 'Making the probe figure...'
     make_probe_fig(probe_init, probe_ret, outputDir, scan, run)
     #
-    #print 'Making the errors figure...'
-    #make_error_fig(coords, mask, sample_init, sample_ret, sample_support, probe_init, probe_ret, eMod, eSup, inputDir, outputDir)
+    print 'Making the errors figure...'
+    make_error_fig(coords, mask, sample_init, sample_ret, sample_support, probe_init, probe_ret, eMod, eSup, inputDir, outputDir)
 
 

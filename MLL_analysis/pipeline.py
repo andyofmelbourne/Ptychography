@@ -18,13 +18,14 @@ import subprocess
 ##########################################
 ##########################################
 sequence = """
-Thibault_sample = 50
-ERA_both = 200
+Thibault_sample = 20
+ERA_sample = 200
 """
 
 gratingSim = False
 samplesupport = False
 sample1d = True
+rotate = True
 ##########################################
 ##########################################
 
@@ -55,7 +56,7 @@ if __name__=='__main__':
         commands = []
         #
         # process the .h5 files
-        commands.append('python process_diffs.py --scan=0181 --run='+str(run)+' --outputdir=' + tempdata_dir + ' --samplesupport='+str(samplesupport)+' --sample1d='+str(sample1d)+' --gratingSim='+str(gratingSim))
+        commands.append('python process_diffs.py --scan=0181 --run='+str(run)+' --outputdir=' + tempdata_dir + ' --samplesupport='+str(samplesupport)+' --sample1d='+str(sample1d)+' --gratingSim='+str(gratingSim) + ' --rotate='+str(rotate))
         #
         # Output the algorithm parameters
         print '#########################################################'
@@ -87,7 +88,7 @@ if __name__=='__main__':
         commands = []
         #
         # process the .h5 files
-        commands.append('python process_diffs.py --scan=0181 --run='+str(run)+' --outputdir=' + tempdata_dir + ' --samplesupport='+str(samplesupport)+' --sample1d='+str(sample1d)+' --gratingSim='+str(gratingSim))
+        commands.append('python process_diffs.py --scan=0181 --run='+str(run)+' --outputdir=' + tempdata_dir + ' --samplesupport='+str(samplesupport)+' --sample1d='+str(sample1d)+' --gratingSim='+str(gratingSim) + ' --rotate='+str(rotate))
         #
         # Output the algorithm parameters
         print '#########################################################'

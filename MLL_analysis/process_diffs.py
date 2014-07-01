@@ -2,6 +2,9 @@
 
 # Turn h5 files into --> diffs, mask, sampleInit, probeInit and coordsInit
 
+# This is the optimal rotation of the data figured out elsewhere
+phi = -2.1
+
 import os, sys, getopt, inspect
 import numpy as np
 import h5py
@@ -18,8 +21,9 @@ def main(argv):
     gratingSim = False
     sample1d = False
     samplesupport = False
+    rotate = False
     try :
-        opts, args = getopt.getopt(argv,"h",["scan=","run=","outputdir=","gratingSim=","sample1d=","samplesupport="])
+        opts, args = getopt.getopt(argv,"h",["scan=","run=","outputdir=","gratingSim=","sample1d=","samplesupport=","rotate="])
     except getopt.GetoptError:
         print 'process_diffs.py -s <scan> -r <run> -o <outputdir> -g <gratingSim=True/False> -s1 <sample1d=True/False> -ss <samplesupport=True/False>'
         sys.exit(2)
@@ -54,7 +58,14 @@ def main(argv):
                 samplesupport = True
             else :
                 print 'samplesupport must be True or False'
-    return scan, run, outputdir, gratingSim, sample1d, samplesupport
+        elif opt in ("--rotate"):
+            if arg == 'False':
+                rotate = False
+            elif arg == 'True':
+                rotate = True
+            else :
+                print 'rotate must be True or False'
+    return scan, run, outputdir, gratingSim, sample1d, samplesupport, rotate
 
 def memoize(f):
     """ Memoization decorator for functions taking one or more arguments. """
@@ -336,7 +347,7 @@ def padd_array(arrayin, zero_pixel = [400, 1490]):
 #       arrayin[256 :, 512 :] = np.array(arrayout)
 #       return arrayin
 
-def process_diffs(diffs):
+def process_diffs(diffs, rotate=False):
     """Process the diffraction data and return diffs, mask:
 
     Padd the diffraction patterns
@@ -358,14 +369,23 @@ def process_diffs(diffs):
     mask    = padd_array(mask)
     print 'Mask is now True for positive frequencies (in q_x). That is, zero counts will be enforced for q_x > 0' 
     mask[:, mask.shape[1]/2 :] = True 
+    mask_unrot = mask.copy()
+    if rotate :
+        mask = bg.rotate(mask, phi, 0)
+        mask = ~bg.blurthresh_mask(~mask, blur=2)
+        mask = bg.izero_pad(mask, (16, mask.shape[1]))
     #
     print 'Shifting, padding and deleting positive frequencies for the diffraction data...'
     diffs_out = []
     itot = float(len(diffs))
     for i, diff in enumerate(diffs):
         update_progress(i/(itot-1.0))
-        diffs_out.append(padd_array(diff))
-    return np.array(diffs_out, dtype=np.float64), np.array(mask, dtype=np.bool)
+        d = padd_array(diff)
+        if rotate :
+            d = bg.rotate(d * mask_unrot, phi, 1)
+            d = bg.izero_pad(d, (16, d.shape[1]))
+        diffs_out.append(d)
+    return np.array(diffs_out, dtype=np.float64), np.array(mask, dtype=np.bool), np.array(mask_unrot, dtype=np.bool)
 
 ############# #############
 # Propagation routines
@@ -413,7 +433,7 @@ def probe_z(probe, zyx_i, spacing, lamb):
     return probe_shift
 ############# #############
 
-def make_probe(mask, lamb, dq, scan = '0181'):
+def make_probe(mask, lamb, dq, scan = '0181', rotate=False):
     aperture = np.zeros((512, 1536), dtype=np.float64) # (512, 1536) is the original dimensions of the data
     index    = 0
     print 'averaging diffraction data without the grating in it (205, 251)'
@@ -462,6 +482,9 @@ def make_probe(mask, lamb, dq, scan = '0181'):
     #
     # unfortunately I am hard coding this...
     aperture[:, 1330 :] = 0
+    if rotate :
+        aperture = bg.rotate(aperture, phi, 1)
+        aperture = bg.izero_pad(aperture, (16, aperture.shape[1]))
     # Let's put some higher order aberrations in there
     C3    = 1.0e-3 
     x, y  = bg.make_xy(aperture.shape)
@@ -585,13 +608,14 @@ if __name__ == "__main__":
     print '#########################################################'
     print 'Processing diffraction data'
     print '#########################################################'
-    scan, run, outputdir, gratingSim, sample1d, samplesupport = main(sys.argv[1:])
+    scan, run, outputdir, gratingSim, sample1d, samplesupport, rotate = main(sys.argv[1:])
     print 'scan number is ', scan
     print 'run is ', run
     print 'output directory is ', outputdir
     print 'gratingSim', gratingSim, type(gratingSim)
     print 'sample1d', sample1d, type(sample1d)
     print 'samplesupport', samplesupport, type(samplesupport)
+    print 'rotate', rotate, type(rotate)
     #
     print 'loading metadata...'
     zyxN_stack, fnams_stack = load_metadata(scan = scan)
@@ -599,22 +623,23 @@ if __name__ == "__main__":
     zyx                     = zyxN[:, : 3]
     fnams                   = fnams_stack[int(run)]
     #
-    print 'taking a subset of the diffraction patterns'
     zyx_old = zyx
-    zyx_sub = []
-    fnams_sub = []
-    idiffs = range(100, 167, 1)
-    for i in idiffs:
-        zyx_sub.append(zyx[i])
-        fnams_sub.append(fnams[i])
-    zyx   = np.array(zyx_sub)
-    fnams = list(fnams_sub)
+    if False :
+        print 'taking a subset of the diffraction patterns'
+        zyx_sub = []
+        fnams_sub = []
+        idiffs = range(120, 187, 1)
+        for i in idiffs:
+            zyx_sub.append(zyx[i])
+            fnams_sub.append(fnams[i])
+        zyx   = np.array(zyx_sub)
+        fnams = list(fnams_sub)
     #
     print 'loading diffraction data...'
     diffs = load_h5s(fnams)
     #
     print 'Processing diffraction data and generating the diffraction mask...'
-    diffs, mask = process_diffs(diffs)
+    diffs, mask, mask_unrot = process_diffs(diffs, rotate = rotate)
     #
     # Calculate geometry
     print 'calculating the geometry...'
@@ -622,8 +647,8 @@ if __name__ == "__main__":
     # 
     # Estimate the in-focus probe
     print 'making the in-focus probe...'
-    probe = make_probe(mask, lamb, 1/X)
-    # 
+    probe = make_probe(mask_unrot, lamb, 1/X, rotate = rotate)
+    #
     # propagate the probe for the run
     print 'propagating the in-focus probe to the sample plane by (m):', zyx[0][0]
     spacing = [X / probe.shape[0], X / probe.shape[1]]
