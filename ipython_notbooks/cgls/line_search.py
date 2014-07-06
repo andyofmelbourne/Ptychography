@@ -55,3 +55,11 @@ def line_search_secant(x, d, fd, iters = 1, sigma = 1.0e-3, tol=1.0e-10):
         sigma = - alpha # ??????
     return x, True
 
+
+def line_search_ERA(x, d, fd, iters = 1, tol=1.0e-2):
+    for i in range(iters):
+        fd_0 = fd(x, d)
+        x    = x - fd_0 * d / np.sqrt(np.sum(np.abs(d)))
+        if np.abs(fd_0) < tol :
+            return x, True
+    return x, True
