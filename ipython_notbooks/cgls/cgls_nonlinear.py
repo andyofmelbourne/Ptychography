@@ -19,7 +19,8 @@ class Steepest(object):
             self.line_search = lambda x, d: ls.line_search_newton_raphson(x, d, self.fd, self.dfd, iters = 100, tol=1.0e-10)
         else :
             self.dfd         = None
-            self.line_search = lambda x, d: ls.line_search_secant(x, d, self.fd, iters = 2, sigma = 1.0e-3, tol=1.0e-10)
+            #self.line_search = lambda x, d: ls.line_search_secant(x, d, self.fd, iters = 1, sigma = 1.0e-3, tol=1.0e-10)
+            self.line_search = lambda x, d: ls.line_search_ERA(x, d, self.fd, iters = 10, tol=0.0e-2)
 
     def sd(self, iterations = None):
         """Iteratively solve the nonlinear equations using the steepest descent algorithm.
@@ -72,7 +73,8 @@ class Cgls(object):
             self.line_search = lambda x, d: ls.line_search_newton_raphson(x, d, self.fd, self.dfd, iters = 100, tol=1.0e-10)
         else :
             self.dfd         = None
-            self.line_search = lambda x, d: ls.line_search_secant(x, d, self.fd, iters = 2, sigma = 1.0e-3, tol=1.0e-10)
+            #self.line_search = lambda x, d: ls.line_search_secant(x, d, self.fd, iters = 2, sigma = 1.0e-3, tol=1.0e-10)
+            self.line_search = lambda x, d: ls.line_search_ERA(x, d, self.fd, iters = 10, tol=0.0e-2)
         #
         #self.cgls = self.cgls_Ploak_Ribiere
         self.cgls = self.cgls_Flecher_Reeves
@@ -105,7 +107,7 @@ class Cgls(object):
             self.d         = self.r + beta * self.d
             #
             # reset the algorithm 
-            if (self.iters % 50 == 0) or (status == False) :
+            if (self.iters % 4 == 0) or (status == False) :
                 self.d = self.r
             #
             # calculate the error
