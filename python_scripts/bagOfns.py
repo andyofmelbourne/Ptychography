@@ -255,15 +255,18 @@ def circle_new(shape = (1024, 1024), radius=0.25, Nrad = None, origin=[0,0]):
     
     If ny > nx (or vise versa) use the smaller radius."""
     if Nrad == None :
-        x, y = make_xy(shape, origin = origin)
-        r    = np.sqrt(x**2 + y**2)
-        if shape[1] > shape[0]:
-            rmax = radius * shape[0] / 2
-        else :
-            rmax = radius * shape[1] / 2
-        arrayout = (r <= rmax)
-    else :
         pass
+    else :
+        radius = max([shape[0], shape[1]]) 
+        radius = np.float(Nrad) / np.float(radius) 
+    # 
+    x, y = make_xy(shape, origin = origin)
+    r    = np.sqrt(x**2 + y**2)
+    if shape[1] > shape[0]:
+        rmax = radius * shape[0] / 2
+    else :
+        rmax = radius * shape[1] / 2
+    arrayout = (r <= rmax)
     return np.array(arrayout, dtype=np.float64)
 
 def circle(ny, nx, radius=0.25, Nrad = None):
@@ -474,14 +477,27 @@ def make_xy(N, origin=None):
         ny, nx = N, N
     elif len(N) == 2 :
         ny, nx = N 
-    if origin is None :
-        origin_x, origin_y = nx // 2 - 1, ny // 2 - 1
-    else :
-        origin_y, origin_x = origin
-    x, y = np.meshgrid(np.arange(nx), np.arange(ny))
-    x -= origin_x
-    y -= origin_y
-    return x, y
+    elif len(N) == 1 and (type(N) == tuple or type(N) == list):
+        ny = N[0] 
+        nx = 0
+    if ny != 0 and nx != 0 :
+        x, y = np.meshgrid(np.arange(nx), np.arange(ny))
+        if (origin is None) or (origin == 'centre') :
+            origin_x, origin_y = nx // 2 - 1, ny // 2 - 1
+            x -= origin_x
+            y -= origin_y
+        elif origin[0] == 0 and (origin[1] == 0):
+            x = ((x + nx // 2 - 1) % nx) - (nx // 2 - 1)
+            y = ((y + ny // 2 - 1) % ny) - (ny // 2 - 1)
+        return x, y
+    elif ny != 0 and nx == 0 :
+        y = np.arange(ny)
+        if (origin is None) or (origin == 'centre') :
+            origin_y = ny // 2 - 1
+            y -= origin_y
+        elif origin[0] == 0 :
+            y = ((y + ny // 2 - 1) % ny) - (ny // 2 - 1)
+        return y
 
 def cart2polar(x, y):
     r     = np.sqrt(x**2 + y**2)
@@ -710,12 +726,29 @@ def crop_to_nonzero(arrayin, mask=None):
     return arrayout
     
 def roll(arrayin, shift = (0, 0)):
-    """np.roll arrayin by dy in dim 0 and dx in dim 1."""
+    """np.roll arrayin by dy in dim -2 and dx in dim -1. If arrayin is 1d then just do that.
+    
+    If the shift coordinates are of type float then the Fourier shift theorem is used."""
     arrayout = arrayin.copy()
-    if shift[-2] != 0 :
-        arrayout = np.roll(arrayout, shift[-2], -2)
-    if shift[-1] != 0 :
-        arrayout = np.roll(arrayout, shift[-1], -1)
+    # if shift is integer valued then use np.roll
+    if (type(shift[0]) == int) or (type(shift[0]) == np.int) or (type(shift[0]) == np.int32):
+        if shift[-1] != 0 :
+            arrayout = np.roll(arrayout, shift[-1], -1)
+        # if shift is 1d then don't roll the other dim (if it even exists)
+        if len(arrayout.shape) >= 2 :
+            if shift[-2] != 0 :
+                arrayout = np.roll(arrayout, shift[-2], -2)
+    # if shift is float valued then use the Fourier shift theorem
+    elif (type(shift[0]) == float) or (type(shift[0]) == np.float32) or (type(shift[0]) == np.float64):
+        # if shift is 1d
+        if len(shift) == 1 :
+            arrayout = fftn_1d(arrayout)
+            arrayout = arrayout * phase_ramp(arrayout.shape, shift, origin = (0, 0))
+            arrayout = ifftn_1d(arrayout)
+        elif len(shift) == 2 :
+            arrayout = fftn(arrayout)
+            arrayout = arrayout * phase_ramp(arrayout.shape, shift, origin = (0, 0))
+            arrayout = ifftn(arrayout)
     return arrayout
 
 def roll_to(arrayin, y = 0, x = 0, centre = 'middle'):
@@ -734,7 +767,7 @@ def roll_to(arrayin, y = 0, x = 0, centre = 'middle'):
         arrayout = roll(arrayin, dy = int(y) - ny_centre, dx = int(x) - nx_centre)
     elif (y - int(y)) > 0 or (x - int(x)) > 0 :
         arrayout  = fft2(arrayin)
-        arrayout *= phase_ramp(arrayout.shape[0], y - ny_centre, x - nx_centre)
+        arrayout *= phase_ramp(arrayout.shape, [y - ny_centre, x - nx_centre])
         arrayout  = ifft2(arrayout)
     else :
         raise NameError('shift coordinates are niether int nor float (this is a bad thing).')
@@ -917,10 +950,19 @@ def lowpass(arrayin, rad=0.5):
     arrayout = np.array(arrayout, dtype=arrayin.dtype)
     return arrayout
 
-def phase_ramp(N, ny, nx):
+def phase_ramp(N = (1024, 1024), n = (10, 5), origin = 'centre'):
     """Make e^(-2 pi i (nx n + ny m) / N)"""
-    x, y     = make_xy(N)
-    exp      = np.exp(-2.0J * np.pi * (nx * x + ny * y) / float(N))
+    if (len(N) == 2) and (len(n) == 2):
+        x, y     = make_xy(N, origin = origin)
+        exp      = np.exp(-2.0J * np.pi * (n[1] * x / float(N[1]) + n[0] * y / float(N[0]))) 
+    elif (len(N) == 1) and (len(n) == 1) :
+        x     = make_xy(N, origin = origin)
+        exp   = np.exp(-2.0J * np.pi * (n[0] * x / float(N[0]))) 
+    elif (len(N) == 2) and (len(n) == 1):
+        # ramp the last dimension
+        x     = make_xy([N[1]], origin = origin)
+        exp   = np.zeros((N[0], N[1]), dtype=np.complex128)
+        exp[:]= np.exp(-2.0J * np.pi * (n[0] * x / float(N[1]))) 
     return exp
 
 def Fresnelprop(arrayin, z, wavelength, deltaq):

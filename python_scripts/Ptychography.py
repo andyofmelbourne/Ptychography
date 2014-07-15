@@ -68,6 +68,7 @@ def fnamBase_match(fnam):
         return False
     return True
 
+
 class Ptychography(object):
     def __init__(self, diffs, coords, mask, probe, sample, sample_support, pmod_int = False): 
         """Initialise the Ptychography module with the data in 'inputDir' 
@@ -202,7 +203,6 @@ class Ptychography(object):
             self.exits = exits
             #
             update_progress(i / max(1.0, float(iters-1)), 'Thibault sample', i, self.error_conv[-1], self.error_sup[-1])
-            #
 
     def Thibault_probe(self, iters=1):
         print 'i \t\t eConv \t\t eSup'
@@ -221,7 +221,6 @@ class Ptychography(object):
             self.exits = exits
             #
             update_progress(i / max(1.0, float(iters-1)), 'Thibault probe', i, self.error_conv[-1], self.error_sup[-1])
-            #
 
     def Thibault_both(self, iters=1):
         print 'i \t\t eMod \t\t eSup'
@@ -243,7 +242,6 @@ class Ptychography(object):
             self.exits = exits
             #
             update_progress(i / max(1.0, float(iters-1)), 'Thibault sample / probe', i, self.error_conv[-1], self.error_sup[-1])
-            #
 
     def Huang(self, iters=None):
         """This is the algorithm used in "11 nm Hard X-ray focus from a large-aperture multilayer Laue lens" (2013) nature"""
@@ -294,10 +292,21 @@ class Ptychography(object):
             exits_out = exits_out * (self.mask * self.diffAmps * (self.diffAmps > 0.99) /  np.clip(np.abs(exits_out), self.alpha_div, np.inf) \
                            + (~self.mask) )
         else :
-            #exits_out = exits_out * (self.mask * self.diffAmps / np.clip(np.abs(exits_out), self.alpha_div, np.inf) \
-            #               + (~self.mask) )
-            exits_out = exits_out * self.diffAmps / (np.abs(exits_out) + self.alpha_div)
+            exits_out = exits_out * (self.mask * self.diffAmps / np.clip(np.abs(exits_out), self.alpha_div, np.inf) \
+                           + (~self.mask) )
+            #exits_out = exits_out * self.diffAmps / (np.abs(exits_out) + self.alpha_div)
         exits_out = bg.ifftn(exits_out)
+        return exits_out
+
+    def Pmod_hat(self, exits_F, pmod_int = False):
+        exits_out = exits_F
+        if self.pmod_int or pmod_int :
+            exits_out = exits_out * (self.mask * self.diffAmps * (self.diffAmps > 0.99) /  np.clip(np.abs(exits_out), self.alpha_div, np.inf) \
+                           + (~self.mask) )
+        else :
+            exits_out = exits_out * (self.mask * self.diffAmps / np.clip(np.abs(exits_out), self.alpha_div, np.inf) \
+                           + (~self.mask) )
+            #exits_out = exits_out * self.diffAmps / (np.abs(exits_out) + self.alpha_div)
         return exits_out
 
     def Pmod_integer(self, exits):
@@ -386,9 +395,12 @@ class Ptychography(object):
         exits_out = probeF * (self.mask * self.diffAmps / (self.alpha_div + np.abs(probeF)) \
                        + (~self.mask) )
         self.exits = bg.ifftn(exits_out)
+    
+
 
 class Ptychography_1dsample(Ptychography):
     def __init__(self, diffs, coords, mask, probe, sample_1d, sample_support_1d, pmod_int = False): 
+        from cgls import cgls_nonlinear
         self.sample_1d = sample_1d
         self.sample_support_1d = sample_support_1d
         #
@@ -398,6 +410,13 @@ class Ptychography_1dsample(Ptychography):
         sample_support[:] = sample_support_1d.copy()
         #
         Ptychography.__init__(self, diffs, coords, mask, probe, sample, sample_support, pmod_int)
+        #
+        # nonlinear cgls update for coordinates in 1d
+        n  = len(self.coords) - 1
+        f  = lambda x   : self.f(x, n = n)
+        fd = lambda x, d: self.grad_f_dot_d(x, d, n = n)
+        df = lambda x   : self.grad_f(x, n = n)
+        self.cg = cgls_nonlinear.Cgls(self.coords_contract(self.coords, n = n), f, df, fd)
 
     def Psup_sample(self, exits, thresh=False, inPlace=True):
         """ """
@@ -439,6 +458,74 @@ class Ptychography_1dsample(Ptychography):
         self.sample_sum = None
         # 
         return sample_out
+
+    #------------------------------------------------------
+    # coordinates update stuff
+    #------------------------------------------------------
+    #
+    # we are only solving for a subset of the coordinates
+    def coords_expand(self, coords_sub, n = 1):
+        coords_full         = self.coords.copy().astype(np.float64)
+        coords_full[-n:, 1] = coords_sub
+        return coords_full 
+    #
+    def coords_contract(self, coords_full, n = 1):
+        coords_sub         = coords_full[-n:, 1].copy().astype(np.float64)
+        return coords_sub 
+    #
+    def coords_expand_d(self, coords_sub, n = 1):
+        coords_full         = np.zeros_like(self.coords, dtype = np.float64)
+        coords_full[-n:, 1] = coords_sub
+        return coords_full 
+    #
+    def f(self, x, n = 1):
+        x_full = self.coords_expand(x, n = n)
+        return fmod(self, x_full)
+    #
+    def grad_f_dot_d(self, x, d, n = 1):
+        x_full = self.coords_expand(x, n = n)
+        d_full = self.coords_expand_d(d, n = n)
+        return emod_grad_dot_coords_1d(d_full, self.sample, self.probe, x_full, self.diffAmps)
+    # 
+    def grad_f(self, x, n = 1):
+        x_full       = self.coords_expand(x, n = n)
+        xx           = emod_grad_coords_1d(self.sample, self.probe, x_full, self.diffAmps)
+        x_full[:, 1] = xx    
+        return self.coords_contract(x_full, n = n)
+
+    def coords_update_1d(self, iters=1, inPlace=True, intefy=True):
+        print 'Input coords:', self.coords
+        if intefy :
+            self.coords = self.coords.copy().astype(np.float64)
+        print 'i \t\t eMod \t\t conv'
+        for i in range(iters):
+            x = self.cg.cgls(iterations = 1)
+            #
+            self.error_mod.append(self.cg.errors[-1]/self.diffNorm)
+            #
+            update_progress(i / max(1.0, float(iters-1)), 'cgls coords', i, self.error_mod[-1], 999)
+            # 
+            if i >= 1 :
+                if (np.abs(self.error_mod[-2] - self.error_mod[-1]) / self.error_mod[-2]) < 1.0e-5 :
+                    print 'converged...'
+                    break
+        #
+        coords = self.coords_expand(x, len(self.coords) - 1)
+        #
+        # If intefy is true then round to the nearest integer
+        if intefy :
+            coords = np.round(coords).astype(np.int32)
+        #
+        print 'Output coords:', coords
+        # 
+        # 
+        self.sample_sum = None
+        self.probe_sum = None
+        if inPlace :
+            self.coords = coords
+        else :
+            return coords
+
 
 
 class Ptychography_gpu(object):
@@ -679,6 +766,8 @@ class Ptychography_gpu(object):
         else : 
             return probe_out
 
+
+
 class Ptychography_1dsample_gpu(Ptychography_gpu):
     def __init__(self, diffs, coords, mask, probe, sample_1d, sample_support_1d, pmod_int = False): 
         self.sample_1d = sample_1d
@@ -760,19 +849,80 @@ class Ptychography_1dsample_gpu(Ptychography_gpu):
         else : 
             return probe_out
 
+
+
+#------------------------------------------------------
+# coordinates
+#------------------------------------------------------
+def fmod(prob, coords):
+    exits      = makeExits(prob.sample, prob.probe, coords)
+    diffAmps   = np.abs(bg.fftn(exits)) * prob.mask
+    return np.sum((diffAmps - prob.diffAmps)**2) 
+
+def Pmod_hat_diffs(diffAmps, psis, mask = None, alpha = 1.0e-10):
+    if mask == None :
+        mask = np.ones_like(diffAmps[0], dtype=np.bool)
+    exits_out = psis
+    exits_out = exits_out * (mask * diffAmps / np.clip(np.abs(exits_out), alpha, np.inf) \
+                   + (~mask) )
+    return exits_out
+
+def emod_grad_coords_1d(T, probe, coords, diffAmps):
+    exits_d = bg.fftn(makeExits_grad_1d(T, probe, coords, coords_d = None))
+    exits   = bg.fftn(makeExits(T, probe, coords))
+    exits   = np.conj(exits_d) * (exits - Pmod_hat_diffs(diffAmps, exits))
+    return 2 * np.sum(np.real(exits), axis=(-2, -1))
+
+def emod_grad_dot_coords_1d(coords_d, T, probe, coords, diffAmps):
+    exits_d = bg.fftn(makeExits_grad_1d(T, probe, coords, coords_d))
+    exits   = bg.fftn(makeExits(T, probe, coords))
+    exits   = np.conj(exits_d) * (exits - Pmod_hat_diffs(diffAmps, exits))
+    return 2 * np.sum(np.real(exits) )
+
+def sample_grad_trans_1d(T, coord, coord_d):
+    """Calculate : F-1[ Ti_hat (-2 pi i / Nx) Ri_d n ]"""
+    Nx       = T.shape[-1]
+    x        = bg.make_xy([Nx], origin=(0,0))
+    #
+    array    = np.zeros_like(T)
+    array[:] = -2.0J * np.pi * (coord_d[1] * x / float(Nx)) * np.exp(-2.0J * np.pi * (coord[1] * x / float(Nx)))
+    return bg.ifftn_1d(bg.fftn_1d(T) * array)
+
+def makeExits_grad_1d(T, probe, coords, coords_d):
+    """Calculate the exit surface waves but with T_i = sample_grad_trans_1d(T, coord, coord_d)
+    
+    if coords_d == None then T_i = sample_grad_trans_1d(T, coord, I)"""
+    exits = np.zeros((len(coords), probe.shape[0], probe.shape[1]), dtype=np.complex128)
+    #
+    if np.all(coords_d == None):
+        I = np.ones_like(coords[0])
+        s_calc = False
+    else :
+        s_calc = True
+    #
+    for i in range(len(coords)):
+        if s_calc :
+            T_g      = sample_grad_trans_1d(T, coords[i], coords_d[i])
+        else :
+            T_g      = sample_grad_trans_1d(T, coords[i], I)
+        exits[i] = T_g[:probe.shape[0], :probe.shape[1]]
+    exits *= probe 
+    return exits
+
 def makeExits2(sample, probe, coords, exits):
+    """Calculate the exit surface waves with no wrapping and assuming integer coordinate shifts"""
     for i, coord in enumerate(coords):
         exits[i] = sample[-coord[0]:probe.shape[0]-coord[0], -coord[1]:probe.shape[1]-coord[1]]
     exits *= probe 
     return exits
 
 def makeExits(sample, probe, coords):
+    """Calculate the exit surface waves with possible wrapping using the Fourier shift theorem"""
     exits = np.zeros((len(coords), probe.shape[0], probe.shape[1]), dtype=np.complex128)
     for i in range(len(coords)):
         exits[i] = bg.roll(sample, coords[i])[:probe.shape[0], :probe.shape[1]]
     exits *= probe 
     return exits
-
 
 def input_output(inputDir):
     """Initialise the Ptychography module with the data in 'inputDir' 
@@ -878,7 +1028,7 @@ def runSequence(prob, sequence):
     # Check the sequence list
     run_seq = []
     for i in range(len(sequence)):
-        if sequence[i][0] in ('ERA_sample', 'ERA_probe', 'ERA_both', 'HIO_sample', 'HIO_probe', 'back_prop', 'Thibault_sample', 'Thibault_probe', 'Thibault_both', 'Huang'):
+        if sequence[i][0] in ('ERA_sample', 'ERA_probe', 'ERA_both', 'HIO_sample', 'HIO_probe', 'back_prop', 'Thibault_sample', 'Thibault_probe', 'Thibault_both', 'Huang', 'coords_update_1d'):
             # This will return an error if the string is not formatted properly (i.e. as an int)
             if sequence[i][0] == 'ERA_sample':
                 run_seq.append(sequence[i] + [prob.ERA_sample])
@@ -906,6 +1056,9 @@ def runSequence(prob, sequence):
             #
             if sequence[i][0] == 'Huang':
                 run_seq.append(sequence[i] + [prob.Huang])
+            #
+            if sequence[i][0] == 'coords_update_1d':
+                run_seq.append(sequence[i] + [prob.coords_update_1d])
             #
             if sequence[i][0] == 'back_prop':
                 run_seq.append(sequence[i] + [prob.back_prop])
