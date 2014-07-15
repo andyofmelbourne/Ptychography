@@ -63,3 +63,39 @@ def line_search_ERA(x, d, fd, iters = 1, tol=1.0e-2):
         if np.abs(fd_0) < tol :
             return x, True
     return x, True
+
+def line_search_linear(x, d, fd, f, iters = 1, tol=1.0e-1, silent = True):  
+    """f(x + alpha * d) ~ f(x) + alpha * f'(x) . d
+
+    alpha = - f(x) / [ f'(x) . d ] 
+    """
+    a      = 2.0
+    f_0    = f(x)
+    fd_0   = fd(x, d)
+    if silent == False :
+        print 'Input error :', f_0
+    for i in range(iters):
+        #
+        # If the slope is too shallow then don't step
+        if np.abs(fd_0) < tol :
+            if silent == False :
+                print 'too shallow'
+            return x, f_0, False
+        #
+        # Update the current position
+        alpha  = - f_0 / fd_0 
+        x2     = x + a * alpha * d
+        f_2    = f(x2)
+        #
+        # If the error has increased then try halving the step size
+        if f_2 < f_0 :
+            x     = x2.copy()
+            f_0   = f_2
+            fd_0  = fd(x, d)
+        else :
+            if silent == False :
+                print 'larger f'
+            a = a / 2.0
+    if silent == False :
+        print 'output error :', f_0
+    return x, f_0, True
