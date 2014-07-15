@@ -10,6 +10,7 @@ import time
 #
 # GPU stuff 
 try :
+    import pycuda.autoinit 
     import pycuda.gpuarray as gpuarray
     import pycuda.cumath as cumath
     from reikna.fft import FFT
@@ -494,7 +495,6 @@ class Ptychography_1dsample(Ptychography):
         return self.coords_contract(x_full, n = n)
 
     def coords_update_1d(self, iters=1, inPlace=True, intefy=True):
-        print 'Input coords:', self.coords
         if intefy :
             self.coords = self.coords.copy().astype(np.float64)
         print 'i \t\t eMod \t\t conv'
@@ -516,9 +516,6 @@ class Ptychography_1dsample(Ptychography):
         if intefy :
             coords = np.round(coords).astype(np.int32)
         #
-        print 'Output coords:', coords
-        # 
-        # 
         self.sample_sum = None
         self.probe_sum = None
         if inPlace :
@@ -567,15 +564,21 @@ class Ptychography_gpu(object):
         self.diffNorm   = np.sum(self.mask * (self.diffAmps)**2)
         self.pmod_int   = pmod_int
         self.sample_support = sample_support
+        #
+        # create a gpu thread
         api               = cluda.cuda_api()
         self.thr          = api.Thread.create()
+        #
+        # send the diffraction amplitudes, the exit waves and the mask to the gpu
         self.diffAmps_gpu = self.thr.to_device(self.diffAmps) * np.sqrt(float(self.diffAmps.shape[1]) * float(self.diffAmps.shape[2]))
-        fft               = FFT(self.diffAmps_gpu.astype(np.complex128), axes=(1,2))
-        self.fftc         = fft.compile(self.thr, fast_math=True)
         self.exits_gpu    = self.thr.to_device(self.exits)
         mask2             = np.zeros_like(diffs, dtype=np.complex128)
         mask2[:]          = self.mask.astype(np.complex128)
         self.mask_gpu     = self.thr.to_device(mask2)
+        #
+        # compile the fft routine
+        fft               = FFT(self.diffAmps_gpu.astype(np.complex128), axes=(1,2))
+        self.fftc         = fft.compile(self.thr, fast_math=True)
 
     def Thibault_sample(self, iters=1):
         exits2_gpu = self.thr.empty_like(self.exits_gpu)
@@ -770,7 +773,8 @@ class Ptychography_gpu(object):
 
 class Ptychography_1dsample_gpu(Ptychography_gpu):
     def __init__(self, diffs, coords, mask, probe, sample_1d, sample_support_1d, pmod_int = False): 
-        self.sample_1d = sample_1d
+        from cgls import cgls_nonlinear
+        self.sample_1d         = sample_1d
         self.sample_support_1d = sample_support_1d
         #
         sample         = np.zeros((probe.shape[0], sample_1d.shape[0]), dtype = sample_1d.dtype)
@@ -779,6 +783,13 @@ class Ptychography_1dsample_gpu(Ptychography_gpu):
         sample_support[:] = sample_support_1d.copy()
         #
         Ptychography_gpu.__init__(self, diffs, coords, mask, probe, sample, sample_support, pmod_int)
+        #
+        # nonlinear cgls update for coordinates in 1d
+        n  = len(self.coords) - 1
+        f  = lambda x   : self.f(x, n = n)
+        fd = lambda x, d: self.grad_f_dot_d(x, d, n = n)
+        df = lambda x   : self.grad_f(x, n = n)
+        self.cg = cgls_nonlinear.Cgls(self.coords_contract(self.coords, n = n), f, df, fd)
 
     def Psup_sample(self, exits, thresh=False, inPlace=True):
         """ """
@@ -849,13 +860,75 @@ class Ptychography_1dsample_gpu(Ptychography_gpu):
         else : 
             return probe_out
 
+    #------------------------------------------------------
+    # coordinates update stuff
+    #------------------------------------------------------
+    #
+    # we are only solving for a subset of the coordinates
+    def coords_expand(self, coords_sub, n = 1):
+        coords_full         = self.coords.copy().astype(np.float64)
+        coords_full[-n:, 1] = coords_sub
+        return coords_full 
+    #
+    def coords_contract(self, coords_full, n = 1):
+        coords_sub         = coords_full[-n:, 1].copy().astype(np.float64)
+        return coords_sub 
+    #
+    def coords_expand_d(self, coords_sub, n = 1):
+        coords_full         = np.zeros_like(self.coords, dtype = np.float64)
+        coords_full[-n:, 1] = coords_sub
+        return coords_full 
+    #
+    def f(self, x, n = 1):
+        x_full = self.coords_expand(x, n = n)
+        return fmod(self, x_full)
+    #
+    def grad_f_dot_d(self, x, d, n = 1):
+        x_full = self.coords_expand(x, n = n)
+        d_full = self.coords_expand_d(d, n = n)
+        return emod_grad_dot_coords_1d(d_full, self.sample, self.probe, x_full, self.diffAmps)
+    # 
+    def grad_f(self, x, n = 1):
+        x_full       = self.coords_expand(x, n = n)
+        xx           = emod_grad_coords_1d(self.sample, self.probe, x_full, self.diffAmps)
+        x_full[:, 1] = xx    
+        return self.coords_contract(x_full, n = n)
+
+    def coords_update_1d(self, iters=1, inPlace=True, intefy=True):
+        if intefy :
+            self.coords = self.coords.copy().astype(np.float64)
+        print 'i \t\t eMod \t\t conv'
+        for i in range(iters):
+            x = self.cg.cgls(iterations = 1)
+            #
+            self.error_mod.append(self.cg.errors[-1]/self.diffNorm)
+            #
+            update_progress(i / max(1.0, float(iters-1)), 'cgls coords', i, self.error_mod[-1], 999)
+            # 
+            if i >= 1 :
+                if (np.abs(self.error_mod[-2] - self.error_mod[-1]) / self.error_mod[-2]) < 1.0e-5 :
+                    print 'converged...'
+                    break
+        #
+        coords = self.coords_expand(x, len(self.coords) - 1)
+        #
+        # If intefy is true then round to the nearest integer
+        if intefy :
+            coords = np.round(coords).astype(np.int32)
+        #
+        self.sample_sum = None
+        self.probe_sum = None
+        if inPlace :
+            self.coords = coords
+        else :
+            return coords
 
 
 #------------------------------------------------------
-# coordinates
+# coordinates for 1d coords and 1d sample
 #------------------------------------------------------
 def fmod(prob, coords):
-    exits      = makeExits(prob.sample, prob.probe, coords)
+    exits      = makeExits_1dsample(prob.sample, prob.probe, coords)
     diffAmps   = np.abs(bg.fftn(exits)) * prob.mask
     return np.sum((diffAmps - prob.diffAmps)**2) 
 
@@ -869,13 +942,14 @@ def Pmod_hat_diffs(diffAmps, psis, mask = None, alpha = 1.0e-10):
 
 def emod_grad_coords_1d(T, probe, coords, diffAmps):
     exits_d = bg.fftn(makeExits_grad_1d(T, probe, coords, coords_d = None))
-    exits   = bg.fftn(makeExits(T, probe, coords))
+    exits   = bg.fftn(makeExits_1dsample(T, probe, coords))
     exits   = np.conj(exits_d) * (exits - Pmod_hat_diffs(diffAmps, exits))
-    return 2 * np.sum(np.real(exits), axis=(-2, -1))
+    out     = np.sum(np.real(exits), axis = 2)
+    return 2.0 * np.sum(out, axis = 1)
 
 def emod_grad_dot_coords_1d(coords_d, T, probe, coords, diffAmps):
     exits_d = bg.fftn(makeExits_grad_1d(T, probe, coords, coords_d))
-    exits   = bg.fftn(makeExits(T, probe, coords))
+    exits   = bg.fftn(makeExits_1dsample(T, probe, coords))
     exits   = np.conj(exits_d) * (exits - Pmod_hat_diffs(diffAmps, exits))
     return 2 * np.sum(np.real(exits) )
 
@@ -888,7 +962,7 @@ def sample_grad_trans_1d(T, coord, coord_d):
     array[:] = -2.0J * np.pi * (coord_d[1] * x / float(Nx)) * np.exp(-2.0J * np.pi * (coord[1] * x / float(Nx)))
     return bg.ifftn_1d(bg.fftn_1d(T) * array)
 
-def makeExits_grad_1d(T, probe, coords, coords_d):
+def makeExits_grad_1d_old(T, probe, coords, coords_d):
     """Calculate the exit surface waves but with T_i = sample_grad_trans_1d(T, coord, coord_d)
     
     if coords_d == None then T_i = sample_grad_trans_1d(T, coord, I)"""
@@ -909,6 +983,35 @@ def makeExits_grad_1d(T, probe, coords, coords_d):
     exits *= probe 
     return exits
 
+def makeExits_grad_1d(sample, probe, coords, coords_d):
+    sample1d        = sample[0, :]
+    sample_stack    = np.zeros((len(coords), sample1d.shape[0]), dtype=sample1d.dtype)
+    sample_stack[:] = sample1d
+    # 
+    # make the phase ramp for each 1d sample in the stack
+    x_stack = np.zeros_like(sample_stack)
+    x       = bg.make_xy([sample1d.shape[0]], origin=(0,))
+    x       = -2.0J * np.pi * (x / float(sample1d.shape[0]))
+    if np.all(coords_d == None ):
+        for i, coord in enumerate(coords):
+            x_stack[i] = np.exp(x * coords[i][1])
+    else :
+        for i, coord in enumerate(coords):
+            x_stack[i] = np.exp(x * coords[i][1]) * coords_d[i][1]  
+    x_stack = x_stack * x 
+    #
+    # shift the whole sample stack
+    sample_stack  = bg.fftn_1d(sample_stack)
+    sample_stack  = sample_stack * x_stack
+    sample_stack  = bg.ifftn_1d(sample_stack)
+    sample_stack  = sample_stack[:, :probe.shape[1]]
+    #
+    # make the exit waves
+    exits = np.zeros((len(coords), probe.shape[0], probe.shape[1]), dtype=np.complex128)
+    for i in range(len(coords)):
+        exits[i, :] = sample_stack[i]  
+    return exits * probe
+
 def makeExits2(sample, probe, coords, exits):
     """Calculate the exit surface waves with no wrapping and assuming integer coordinate shifts"""
     for i, coord in enumerate(coords):
@@ -923,6 +1026,30 @@ def makeExits(sample, probe, coords):
         exits[i] = bg.roll(sample, coords[i])[:probe.shape[0], :probe.shape[1]]
     exits *= probe 
     return exits
+
+def makeExits_1dsample(sample, probe, coords):
+    sample1d        = sample[0, :]
+    sample_stack    = np.zeros((len(coords), sample1d.shape[0]), dtype=sample1d.dtype)
+    sample_stack[:] = sample1d
+    # 
+    # make the phase ramp for each 1d sample in the stack
+    x_stack = np.zeros_like(sample_stack)
+    x       = bg.make_xy([sample1d.shape[0]], origin=(0,))
+    x       = -2.0J * np.pi * (x / float(sample1d.shape[0]))
+    for i, coord in enumerate(coords):
+        x_stack[i] = x * coord[1]
+    #
+    # shift the whole sample stack
+    sample_stack  = bg.fftn_1d(sample_stack)
+    sample_stack  = sample_stack * np.exp(x_stack)
+    sample_stack  = bg.ifftn_1d(sample_stack)
+    sample_stack  = sample_stack[:, :probe.shape[1]]
+    #
+    # make the exit waves
+    exits = np.zeros((len(coords), probe.shape[0], probe.shape[1]), dtype=np.complex128)
+    for i in range(len(coords)):
+        exits[i, :] = sample_stack[i]  
+    return exits * probe
 
 def input_output(inputDir):
     """Initialise the Ptychography module with the data in 'inputDir' 
