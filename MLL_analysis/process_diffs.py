@@ -123,7 +123,7 @@ def update_progress(progress):
     sys.stdout.write(text)
     sys.stdout.flush()
 
-def load_metadata(path_base = '../../../rawdata/PETRA3/PETRA-2013-Stellato-Nov-P11/10010762/', scan = '0181'):
+def load_metadata(path_base = '../../../rawdata/PETRA3/2013/PETRA-2013-Stellato-Nov-P11/rawdata/10010762/', scan = '0181'):
     """Returns a list of numpy arrays of z, y, x and N (a unique identifier) coordinates in loaded from the path metadata dir. where each item in the list is a different z-plane along the optical axis. 
     
     In addition to the filename (absolute path) associated with each coordinate set. 
@@ -215,7 +215,7 @@ def load_metadata(path_base = '../../../rawdata/PETRA3/PETRA-2013-Stellato-Nov-P
     return zyxN_stack, fnams_h5_stack
 
 def getfnam_scan_pos(scan = None, number = 0, pos = None):
-    dir_fnam = get_fnams_faster('../../../rawdata/PETRA3/PETRA-2013-Stellato-Nov-P11/10010762/lambda/')
+    dir_fnam = get_fnams_faster('../../../rawdata/PETRA3/2013/PETRA-2013-Stellato-Nov-P11/rawdata/10010762/lambda/')
     if pos is None :
         if number == len(dir_fnam[scan]):
             return False
@@ -561,8 +561,8 @@ def makeGrating_tilt(shape1, dx, phi_zx=0.0, phi_xy=0.0, lamb=5.635645115141718e
     return sample_out
 
 def make_sample(probe, coords, gratingSim=False):
-    sample_shape = (probe.shape[0] + np.abs(coords[:, 0].max() - coords[:, 0].min()),  \
-                    probe.shape[1] + np.abs(coords[:, 1].max() - coords[:, 1].min()))
+    sample_shape = (probe.shape[0] - coords[:, 0].min(),  \
+                    probe.shape[1] - coords[:, 1].min())
     sample = np.ones(sample_shape, dtype=np.complex128)
     sample = np.random.random(sample_shape) + 1J * np.random.random(sample_shape) 
     #

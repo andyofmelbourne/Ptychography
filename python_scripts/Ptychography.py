@@ -1107,7 +1107,6 @@ def makeExits_grad_1d(sample, probe, coords, coords_d):
     for i in range(len(coords)):
         exits[i, :] = sample_stack[i]  
     return exits * probe
->>>>>>> master
 
 def makeExits2(sample, probe, coords, exits):
     """Calculate the exit surface waves with no wrapping and assuming integer coordinate shifts"""
