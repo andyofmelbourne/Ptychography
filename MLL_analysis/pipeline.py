@@ -18,14 +18,24 @@ import subprocess
 ##########################################
 ##########################################
 sequence = """
-Thibault_sample = 50
-ERA_sample = 200
+Thibault_sample = 500
+ERA_sample = 100
+coords_update_1d = 10
+Thibault_sample = 100
+ERA_sample = 100
+coords_update_1d = 10
+Thibault_sample = 100
+ERA_sample = 100
+coords_update_1d = 10
+Thibault_sample = 100
+ERA_sample = 100
 """
+#coords_update_1d = 10
 
 gratingSim = False
 samplesupport = False
 sample1d = True
-rotate = True
+rotate = False
 ##########################################
 ##########################################
 

@@ -1002,11 +1002,14 @@ class Ptychography_1dsample_gpu(Ptychography_gpu):
             update_progress(i / max(1.0, float(iters-1)), 'cgls coords', i, self.error_mod[-1], 999)
             # 
             if i >= 1 :
-                if (np.abs(self.error_mod[-2] - self.error_mod[-1]) / self.error_mod[-2]) < 1.0e-5 :
+                if (np.abs(self.error_mod[-2] - self.error_mod[-1]) / self.error_mod[-2]) < 1.0e-8 :
                     print 'converged...'
                     break
         #
         coords = self.coords_expand(x, len(self.coords) - 1)
+        print ''
+        print 'delta coordates:'
+        print coords - self.coords
         #
         # If intefy is true then round to the nearest integer
         if intefy :
@@ -1176,7 +1179,7 @@ def input_output(inputDir):
     #
     # load the y,x pixel shift coordinates
     print 'Loading the ij coordinates...'
-    coords   = bg.binary_in(inputDir + 'coords', dt=np.float64, dimFnam=True)
+    coords   = bg.binary_in(inputDir + 'coordsInit', dt=np.float64, dimFnam=True)
     print 'warning: casting the coordinates from float to ints.'
     coords = np.array(coords, dtype=np.int32)
     #

@@ -10,6 +10,7 @@ from matplotlib.gridspec import GridSpec
 import matplotlib.pyplot as plt
 import process_diffs as pd
 import colorsys
+import pylab
 
 currentdir = os.path.dirname(os.path.abspath(inspect.getfile(inspect.currentframe())))
 parentdir = os.path.dirname(currentdir)
@@ -147,44 +148,77 @@ def make_sample_fig(sample_init, sample_ret, sample_support, heatmap, outputDir)
     gs = GridSpec(5,2)
     gs.update(hspace=0.5)
     #
+    #---------------------------------------
+    # Sample support
+    #---------------------------------------
     ax = plt.subplot(gs[0,0])
     ax.imshow(sample_support, aspect='auto')
     ax.set_title('sample support', fontsize=18, position=(0.5, 1.01))
+    #
+    #---------------------------------------
+    # heatmap
+    #---------------------------------------
     ax = plt.subplot(gs[0,1])
     ax.imshow(heatmap, aspect='auto', cmap='Greys_r', interpolation='nearest')
     ax.set_title('heatmap', fontsize=18, position=(0.5, 1.01))
     #
+    #---------------------------------------
+    # Sample retrieved amplitude
+    #---------------------------------------
     ax = plt.subplot(gs[1,0])
     ax.imshow(np.abs(sample_ret), aspect='auto')#, vmin = np.abs(sample_init).min(), vmax = np.abs(sampleInit).max())
     ax.set_title('sample ret amp', fontsize=18, position=(0.5, 1.01))
+    #
+    #---------------------------------------
+    # Sample initial amplitude
+    #---------------------------------------
     ax = plt.subplot(gs[2,0])
     ax.imshow(np.abs(sample_init), aspect='auto')#, vmin = np.abs(sample_init).min(), vmax = np.abs(sample_init).max())
     ax.set_title('sample init amp', fontsize=18, position=(0.5, 1.01))
     #
+    #---------------------------------------
+    # Sample retrieved phase
+    #---------------------------------------
     ax = plt.subplot(gs[1,1])
     ax.imshow(np.angle(sample_ret), aspect='auto')#, vmin = np.angle(sample_init).min(), vmax = np.angle(sample_init).max())
     ax.set_title('sample ret phase', fontsize=18, position=(0.5, 1.01))
+    #
+    #---------------------------------------
+    # Sample initial phase
+    #---------------------------------------
     ax = plt.subplot(gs[2,1])
     ax.imshow(np.angle(sample_init), aspect='auto')#, vmin = np.angle(sample_init).min(), vmax = np.angle(sample_init).max())
     ax.set_title('sample init phase', fontsize=18, position=(0.5, 1.01))
     #
+    #---------------------------------------
+    # Line profile sample retrieved amplitude
+    #---------------------------------------
     ax = plt.subplot(gs[3,0])
     ax.plot(np.sum(np.abs(sample_ret), axis=0)/float(sample_ret.shape[0]), linewidth=2, alpha=0.5)
     ax.set_title('sample ret amp', fontsize=18, position=(0.5, 1.01))
     ax.set_ylim([0.7, 1.02])
     ax.set_xlim([0, sample_init.shape[1]])
     #
+    #---------------------------------------
+    # Line profile sample initial amplitude
+    #---------------------------------------
     ax = plt.subplot(gs[4,0])
     ax.plot(np.sum(np.abs(sample_init), axis=0)/float(sample_init.shape[0]), linewidth=2, alpha=0.5)
     ax.set_title('sample init amp', fontsize=18, position=(0.5, 1.01))
     ax.set_xlim([0, sample_init.shape[1]])
     #
+    #---------------------------------------
+    # Line profile sample retrieved phase
+    #---------------------------------------
     ax = plt.subplot(gs[3,1])
     ax.plot(np.sum(np.angle(sample_ret), axis=0)/float(sample_ret.shape[0]), linewidth=2, alpha=0.5)
     ax.set_title('sample ret phase', fontsize=18, position=(0.5, 1.01))
     #ax.set_ylim([-0.5, 2.0])
     ax.set_xlim([0, sample_init.shape[1]])
     #
+    #---------------------------------------
+    # Line profile sample initial phase
+    #---------------------------------------
     ax = plt.subplot(gs[4,1])
     ax.plot(np.sum(np.angle(sample_init), axis=0)/float(sample_init.shape[0]), linewidth=2, alpha=0.5)
     ax.set_title('sample init phase', fontsize=18, position=(0.5, 1.01))
@@ -351,6 +385,71 @@ def make_probe_fig(probe_init, probe_ret, outputDir, scan = '0181', run = 0):
     fig.set_size_inches(20,20)
     #
     plt.savefig(outputDir + 'fig_probeInit_Vs_probe_ret.png')
+
+def make_coords_fig(coords_init, coords_ret, outputDir):
+    plt.clf()
+    #
+    print 'loading metadata...'
+    zyxN_stack, fnams_stack = pd.load_metadata(scan = scan)
+    #
+    # Calculate geometry
+    print 'calculating the geometry...'
+    X, lamb = pd.geometry()
+
+    spacing = [X / probe_init.shape[0], X / probe_init.shape[1]]
+
+    coords_init_x = coords_init[:,1] / spacing[1]
+    coords_ret_x  = coords_ret[:,1] / spacing[1]
+    
+    fontsize = 16
+
+    gs = GridSpec(2, 1)
+    gs.update(wspace=0.1, hspace=0.3)
+    #
+    #---------------------------------------
+    # Line profile pixels initial vs ret
+    #---------------------------------------
+    ax = plt.subplot(gs[0,0])
+    #
+    ax.plot(coords_init[:, 1], 'k-', linewidth=2, alpha=1.0, label='init')
+    ax.plot(coords_ret[:, 1], 'b.' , linewidth=2, alpha=0.5, label='ret')
+    #
+    ax.set_xlim([0, len(coords_init)])
+    ax.set_title('coordinates pixels', fontsize=18, position=(0.5, 1.01))
+    ax.set_xlabel(r'coordinate number', fontsize=18)
+    ax.set_ylabel(r'scan position (pixels)', fontsize=18)
+    ax.legend()
+    #
+    #---------------------------------------
+    # Line profile nm initial vs ret
+    #---------------------------------------
+    if False :
+        ax = plt.subplot(gs[1,0])
+        #
+        ax.plot(coords_init_x * 1.0e-9, 'k-', linewidth=2, alpha=0.5, label='init')
+        ax.plot(coords_ret_x * 1.0e-9, 'bo', linewidth=2, alpha=0.5, label='ret')
+        #
+        ax.set_xlim([0, len(coords_init)])
+        ax.set_title('coordinates nm', fontsize=18, position=(0.5, 1.01))
+        ax.set_xlabel(r'coordinate number', fontsize=18)
+        ax.set_ylabel(r'scan position (nm)', fontsize=18)
+        ax.legend()
+    #
+    #---------------------------------------
+    # Histogram of differences
+    #---------------------------------------
+    ax = plt.subplot(gs[1,0])
+    n, bins, patches = ax.hist(coords_ret[:, 1] - coords_init[:, 1], coords_init[:,1].max() - coords_init[:,1].min())
+    #ax.plot(coords_ret[:, 1] - coords_init[:, 1], 'k', linewidth=3, alpha = '0.7')
+    ax.plot(bins[:-1], n, 'k', linewidth=3, alpha = '0.7')
+    ax.set_xlabel('difference (pixls)')
+    ax.set_ylabel('number')
+    ax.set_title('histogram retrieved - initial coords')
+
+    fig = plt.gcf()
+    fig.set_size_inches(20,20)
+    #
+    plt.savefig(outputDir + 'fig_coordsInit_Vs_coordsRet.png')
 
 def make_error_fig(ij_coords, mask, sample_init, sample_ret, sample_support, probe_init, probe_ret, eMod, eSup, inputDir, outputDir):
     #
@@ -547,10 +646,12 @@ if __name__ == '__main__':
     mask = bg.binary_in(inputDir + 'mask', dt=np.float64, dimFnam=True)
     mask = np.array(mask, dtype=np.bool)
     #
-    print 'Loading the ij coordinates...'
-    coords   = bg.binary_in(inputDir + 'coords_retrieved', dt=np.float64, dimFnam=True)
+    print 'Loading the initial and retrieved ij coordinates...'
+    coords_ret  = bg.binary_in(inputDir + 'coords_retrieved', dt=np.float64, dimFnam=True)
+    coords_init = bg.binary_in(inputDir + 'coordsInit', dt=np.float64, dimFnam=True)
     print 'warning: casting the coordinates from float to ints.'
-    coords = np.array(coords, dtype=np.int32)
+    coords_ret  = np.array(coords_ret, dtype=np.int32)
+    coords_init = np.array(coords_init, dtype=np.int32)
     #
     #
     print 'Loading the errors...'
@@ -558,7 +659,7 @@ if __name__ == '__main__':
     eSup = bg.binary_in(inputDir + 'error_sup', dt=np.float64, dimFnam=True)
     #
     print 'Making a heatmap on the sample...'
-    heatmap = makeHeatmap(probe_init, sample_init, coords)
+    heatmap = makeHeatmap(probe_init, sample_init, coords_init)
     #
     print 'Making the sample figure...'
     make_sample_fig(sample_init, sample_ret, sample_support, heatmap, outputDir)
@@ -566,7 +667,10 @@ if __name__ == '__main__':
     print 'Making the probe figure...'
     make_probe_fig(probe_init, probe_ret, outputDir, scan, run)
     #
+    print 'Making the coords figure...'
+    make_coords_fig(coords_init, coords_ret, outputDir)
+    #
     print 'Making the errors figure...'
-    make_error_fig(coords, mask, sample_init, sample_ret, sample_support, probe_init, probe_ret, eMod, eSup, inputDir, outputDir)
+    make_error_fig(coords_ret, mask, sample_init, sample_ret, sample_support, probe_init, probe_ret, eMod, eSup, inputDir, outputDir)
 
 
