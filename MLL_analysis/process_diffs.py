@@ -624,11 +624,11 @@ if __name__ == "__main__":
     fnams                   = fnams_stack[int(run)]
     #
     zyx_old = zyx
-    if False :
+    if True :
         print 'taking a subset of the diffraction patterns'
         zyx_sub = []
         fnams_sub = []
-        idiffs = range(120, 187, 1)
+        idiffs = range(65, 200, 2)
         for i in idiffs:
             zyx_sub.append(zyx[i])
             fnams_sub.append(fnams[i])
@@ -664,6 +664,13 @@ if __name__ == "__main__":
     if gratingSim:
         print 'simulating the grating for the sample'
     sample = make_sample(probe, ij_coords_old, gratingSim)
+    print 'padding the sample by 1000 pixs...'
+    sample_big = np.ones((sample.shape[0], sample.shape[1] + 1000), dtype=sample.dtype)
+    sample_big[:, :sample.shape[1]] = sample
+    sample_big[:, -1000:] = 1.0
+    sample = sample_big
+    print 'offseting the coordinates by 500 pix...'
+    ij_coords[:, 1] = ij_coords[:, 1] - 500
     if samplesupport:
         print 'making the sample support'
         sample_support = np.zeros(sample.shape, dtype=np.bool)
@@ -678,8 +685,8 @@ if __name__ == "__main__":
             sample_support = sample_1d.copy()
     #
     # I want the probe to start at the "right". 0 --> sample.shape[1] - probe.shape[1]
-    print 'I want the probe to start at the "right". 0 --> sample.shape[1] - probe.shape[1]'
-    print 'and scan the sample to the left. so coords[:, 1] -ve --> 0'
+    #print 'I want the probe to start at the "right". 0 --> sample.shape[1] - probe.shape[1]'
+    #print 'and scan the sample to the left. so coords[:, 1] -ve --> 0'
     #
     # Output 
     print 'outputing to ', os.path.abspath(outputdir)
@@ -689,7 +696,7 @@ if __name__ == "__main__":
     bg.binary_out(mask, outputdir + 'mask', dt=np.float64, appendDim=True) 
     #bg.binary_out(zyxN[:, : 3], outputdir + 'zyx', dt=np.float64, appendDim=True) 
     print 'outputing the ij coords...'
-    bg.binary_out(ij_coords, outputdir + 'coords', dt=np.float64, appendDim=True)
+    bg.binary_out(ij_coords, outputdir + 'coordsInit', dt=np.float64, appendDim=True)
     print 'outputing the initial sample...'
     bg.binary_out(sample, outputdir + 'sampleInit', dt=np.complex128, appendDim=True)
     if samplesupport :
