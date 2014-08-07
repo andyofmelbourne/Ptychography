@@ -1015,6 +1015,9 @@ class Ptychography_1dsample_gpu(Ptychography_gpu):
         if intefy :
             coords = np.round(coords).astype(np.int32)
         #
+        # Let's reset the sample and start fresh
+        self.sample    = np.ones_like(self.sample)
+        self.sample_1d = np.ones_like(self.sample_1d)
         self.sample_sum = None
         self.probe_sum = None
         if inPlace :
@@ -1028,8 +1031,8 @@ class Ptychography_1dsample_gpu(Ptychography_gpu):
 #------------------------------------------------------
 def fmod(prob, coords):
     exits      = makeExits_1dsample(prob.sample, prob.probe, coords)
-    diffAmps   = np.abs(bg.fftn(exits)) * prob.mask
-    return np.sum((diffAmps - prob.diffAmps)**2) 
+    diffAmps   = np.abs(bg.fftn(exits)) 
+    return np.sum((diffAmps - prob.diffAmps)**2 * prob.mask) 
 
 def Pmod_hat_diffs(diffAmps, psis, mask = None, alpha = 1.0e-10):
     if mask == None :
@@ -1118,13 +1121,40 @@ def makeExits2(sample, probe, coords, exits):
     exits *= probe 
     return exits
 
-def makeExits(sample, probe, coords):
+def makeExits_old(sample, probe, coords):
     """Calculate the exit surface waves with possible wrapping using the Fourier shift theorem"""
     exits = np.zeros((len(coords), probe.shape[0], probe.shape[1]), dtype=np.complex128)
     for i in range(len(coords)):
         exits[i] = bg.roll(sample, coords[i])[:probe.shape[0], :probe.shape[1]]
     exits *= probe 
     return exits
+
+#--------------------------------------------------
+#  Warning !!!! this is temorary for 1dsample
+#--------------------------------------------------
+def makeExits(sample, probe, coords):
+    sample1d        = sample[0, :]
+    sample_stack    = np.zeros((len(coords), sample1d.shape[0]), dtype=sample1d.dtype)
+    sample_stack[:] = sample1d
+    # 
+    # make the phase ramp for each 1d sample in the stack
+    x_stack = np.zeros_like(sample_stack)
+    x       = bg.make_xy([sample1d.shape[0]], origin=(0,))
+    x       = -2.0J * np.pi * (x / float(sample1d.shape[0]))
+    for i, coord in enumerate(coords):
+        x_stack[i] = x * coord[1]
+    #
+    # shift the whole sample stack
+    sample_stack  = bg.fftn_1d(sample_stack)
+    sample_stack  = sample_stack * np.exp(x_stack)
+    sample_stack  = bg.ifftn_1d(sample_stack)
+    sample_stack  = sample_stack[:, :probe.shape[1]]
+    #
+    # make the exit waves
+    exits = np.zeros((len(coords), probe.shape[0], probe.shape[1]), dtype=np.complex128)
+    for i in range(len(coords)):
+        exits[i, :] = sample_stack[i]  
+    return exits * probe
 
 def makeExits_1dsample(sample, probe, coords):
     sample1d        = sample[0, :]

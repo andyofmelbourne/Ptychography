@@ -18,12 +18,7 @@ import subprocess
 ##########################################
 ##########################################
 sequence = """
-Thibault_sample = 500
-ERA_sample = 200
-coords_update_1d = 10
-ERA_sample = 200
-coords_update_1d = 10
-ERA_sample = 200
+ERA_both = 500
 """
 #Thibault_sample = 100
 #ERA_sample = 100

@@ -623,6 +623,12 @@ if __name__ == "__main__":
     zyx                     = zyxN[:, : 3]
     fnams                   = fnams_stack[int(run)]
     #
+    # I have refined the coordinates for run 6, so call them if run == 6
+    if int(run) == 6 and False :
+        print 'loading pre-refined sample coords for run 6...'
+        Rs = bg.binary_in('Rs_run6_refined_251.raw', (251), dt=np.float64)
+        zyx[:, 2] = Rs
+    #
     zyx_old = zyx
     if True :
         print 'taking a subset of the diffraction patterns'
