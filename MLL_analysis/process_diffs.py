@@ -486,7 +486,7 @@ def make_probe(mask, lamb, dq, scan = '0181', rotate=False):
         aperture = bg.rotate(aperture, phi, 1)
         aperture = bg.izero_pad(aperture, (16, aperture.shape[1]))
     # Let's put some higher order aberrations in there
-    C3    = 1.0e-3 
+    C3    = 0.0e-3 
     x, y  = bg.make_xy(aperture.shape)
     x = np.array(x, dtype=np.float64)
     y = np.array(y, dtype=np.float64)
