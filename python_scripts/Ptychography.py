@@ -19,6 +19,8 @@ try :
 except :
     GPU_calc = False
 
+GPU_calc = False
+
 print 'GPU_calc', GPU_calc
 
 def update_progress(progress, algorithm, i, emod, esup):

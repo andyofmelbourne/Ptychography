@@ -338,30 +338,15 @@ def make_probe_fig(probe_init, probe_ret, outputDir, scan = '0181', run = 0):
     # farfield phase and intensity
     probe_0     = pd.probe_z(probe_ret, [- zyxN_stack[run][0][0]], spacing, lamb)
     probeInit_0 = pd.probe_z(probe_init, [- zyxN_stack[run][0][0]], spacing, lamb)
-    phase     = np.angle(bg.fft2(probe_0))
-    phaseInit = np.angle(bg.fft2(probeInit_0))
-    intensity = np.abs(bg.fft2(probe_0))**2
-    #
-    # Find the most intense pixels
-    a = np.argmax(intensity, axis = 0)
-    #
-    # get their phase
-    line_phase = []
-    line_phaseInit = []
-    for x,y in enumerate(a):
-        line_phase.append(phase[y, x])
-        line_phaseInit.append(phaseInit[y, x])
-    #
-    # don't look at pixels with low intensity
-    line_phase     = np.array(line_phase) * (np.sum(intensity, axis=0) / np.max(np.sum(intensity, axis=0)) > 0.2)
-    line_phaseInit = np.array(line_phaseInit) * (np.sum(intensity, axis=0) / np.max(np.sum(intensity, axis=0)) > 0.2)
+    probeF      = bg.fft2(probe_0)
+    probeInitF  = bg.fft2(probeInit_0)
     #
     # set the range
     range_q = np.arange(int(probe_init.shape[1]/2 *0.25), int(probe_init.shape[1]/2), 1)
     #
     # plot
-    ax.plot(mrads[range_q], np.array(line_phase)[range_q], label='run '+str(run), linewidth=2, alpha = 0.5, color='black')
-    ax.plot(mrads[range_q], np.array(line_phaseInit)[range_q], label='Input', linewidth=2, alpha = 0.5)
+    ax.plot(mrads[range_q], np.angle(np.sum(probeF, axis=0))[range_q], label='run '+str(run), linewidth=2, alpha = 0.5, color='black')
+    ax.plot(mrads[range_q], np.angle(np.sum(probeInitF, axis=0))[range_q], label='Input', linewidth=2, alpha = 0.5)
     ax.set_ylabel('radians', fontsize = fontsize)
     ax.set_xlabel(r'radians $\times 10^3$', fontsize = fontsize)
     ax.set_xlim([mrads[range_q][0], mrads[range_q][-1]])
@@ -371,7 +356,7 @@ def make_probe_fig(probe_init, probe_ret, outputDir, scan = '0181', run = 0):
     # farfield intensity
     #---------------------------------------
     ax = plt.subplot(gs[4:5, 1])
-    ax.plot(mrads[range_q], 1.0e-4*np.sum(intensity, axis=0)[range_q], label='run '+str(run), linewidth=2, alpha = 0.5, color='black')
+    ax.plot(mrads[range_q], 1.0e-4*np.sum(np.abs(probeF)**2, axis=0)[range_q], label='run '+str(run), linewidth=2, alpha = 0.5, color='black')
     ax.plot(mrads[range_q], 1.0e-4*np.sum(np.abs(bg.fft2(probeInit_0))**2, axis=0)[range_q], label='input', linewidth=2, alpha = 0.5)
     ax.set_ylabel(r'total counts ($\times 10^{-4}$)', fontsize = fontsize)
     ax.set_xlabel(r'radians $\times 10^{3}$', fontsize = fontsize)
@@ -451,7 +436,7 @@ def make_coords_fig(coords_init, coords_ret, outputDir):
     #
     plt.savefig(outputDir + 'fig_coordsInit_Vs_coordsRet.png')
 
-def make_error_fig(ij_coords, mask, sample_init, sample_ret, sample_support, probe_init, probe_ret, eMod, eSup, inputDir, outputDir):
+def make_error_fig(ij_coords, mask, sample_init, sample_ret, sample_support, probe_init, probe_ret, eMod, eSup, inputDir, outputDir, run=0):
     #
     print 'Loading the diffraction data...'
     diffs = bg.binary_in(inputDir + 'diffs', dt=np.float64, dimFnam=True)
@@ -487,7 +472,7 @@ def make_error_fig(ij_coords, mask, sample_init, sample_ret, sample_support, pro
     #
     #
     plt.clf()
-    gs = GridSpec(15, 4)
+    gs = GridSpec(9, 4)
     gs.update(hspace=0.5)
     #
     ax = plt.subplot(gs[: 2, : 2])
@@ -521,48 +506,37 @@ def make_error_fig(ij_coords, mask, sample_init, sample_ret, sample_support, pro
     ax.set_ylabel(r'counts (%)', fontsize=18)
     ax.legend()
     #
+    #---------------------------------------
+    # Lines data
+    #---------------------------------------
     #
-    ax = plt.subplot(gs[6:8,0])
-    #ax.imshow(lines_diff[:, 500:1400], aspect='auto', vmax = 8.0e4, vmin=5.0e4)
-    ax.imshow(lines_diff, aspect='auto', vmax = 8.0e4, vmin=5.0e4)
-    ax.set_title('Data scan=0181 run=0', fontsize=18, position=(0.5, 1.01))
+    # Interpolate the lines onto the ij_coords grid
+    from scipy.interpolate import griddata
+    def interp_lines(lines_eg):
+        RRs, QQs = np.meshgrid(ij_coords[:, 1], range(lines_eg.shape[1]), sparse=False, indexing='ij')
+        points   = np.array(zip(RRs.flatten(), QQs.flatten()))
+        values   = lines_eg.flatten()
+        grid_R, grid_Q = np.meshgrid(np.linspace(ij_coords[:,1].min(), ij_coords[:,1].max(), ij_coords[:,1].shape[0]), range(lines_eg.shape[1]), sparse=False, indexing='ij')
+        I = griddata(points, values, (grid_R, grid_Q), method='linear')
+        return I
     #
-    ax = plt.subplot(gs[6:8,1])
-    #ax.imshow(np.roll(lines_init, 0, axis=0)[:, 500:1400], aspect='auto', vmax = 8.0e4, vmin=5.0e4)
-    ax.imshow(np.roll(lines_init, 0, axis=0), aspect='auto', vmax = 8.0e4, vmin=5.0e4)
-    ax.set_title('Simulation', fontsize=18, position=(0.5, 1.01))
+    ax = plt.subplot(gs[4 : 6, : 2])
+    ax.imshow(interp_lines(lines_diff)[:, 500 : 1400] , aspect='auto', vmax = 8.0e4, vmin=5.0e4)
+    ax.set_title('Data scan 0181, run '+str(run), fontsize=18, position=(0.5, 1.01))
     #
-    ax = plt.subplot(gs[6:8,2])
-    #ax.imshow(np.abs(lines_diff - lines_init)[:, 500:1400], aspect='auto')
-    ax.imshow(np.abs(lines_diff - lines_init), aspect='auto')
-    ax.set_title('Difference absolute value', fontsize=18, position=(0.5, 1.01))
-    #
-    ax = plt.subplot(gs[6:8,3])
-    #ax.imshow(np.log(1+np.abs(lines_diff - np.roll(lines_init, 0, axis=0))[:, 500:1400]), aspect='auto')
-    ax.imshow(np.log(1+np.abs(lines_diff - np.roll(lines_init, 0, axis=0))), aspect='auto')
-    ax.set_title('Difference log', fontsize=18, position=(0.5, 1.01))
-    #
-    ax = plt.subplot(gs[8:10,0])
-    #ax.imshow(lines_diff[:, 500:1400], aspect='auto', vmax = 8.0e4, vmin=5.0e4)
-    ax.imshow(lines_diff, aspect='auto', vmax = 8.0e4, vmin=5.0e4)
-    ax.set_title('Data scan=0181 run=0', fontsize=18, position=(0.5, 1.01))
-    #
-    ax = plt.subplot(gs[8:10,1])
-    #ax.imshow(np.roll(lines_ret, 0, axis=0)[:, 500:1400], aspect='auto', vmax = 8.0e4, vmin=5.0e4)
-    ax.imshow(np.roll(lines_ret, 0, axis=0), aspect='auto', vmax = 8.0e4, vmin=5.0e4)
+    ax = plt.subplot(gs[4 : 6,  2 :])
+    ax.imshow(interp_lines(lines_ret)[:, 500 : 1400] , aspect='auto', vmax = 8.0e4, vmin=5.0e4)
     ax.set_title('Retrieved', fontsize=18, position=(0.5, 1.01))
     #
-    ax = plt.subplot(gs[8:10,2])
-    #ax.imshow(np.abs(lines_diff - lines_ret)[:, 500:1400], aspect='auto')
-    ax.imshow(np.abs(lines_diff - lines_ret), aspect='auto')
-    ax.set_title('Difference absolute value', fontsize=18, position=(0.5, 1.01))
+    ax = plt.subplot(gs[6 : 8, : 2 ])
+    ax.imshow(interp_lines(lines_diff - lines_ret)[:, 500 : 1400] , aspect='auto')
+    ax.set_title('Difference', fontsize=18, position=(0.5, 1.01))
     #
-    ax = plt.subplot(gs[8:10,3])
-    #ax.imshow(np.log(1+np.abs(lines_diff - np.roll(lines_ret, 0, axis=0))[:, 500:1400]), aspect='auto')
-    ax.imshow(np.log(1+np.abs(lines_diff - np.roll(lines_ret, 0, axis=0))), aspect='auto')
-    ax.set_title('Difference log', fontsize=18, position=(0.5, 1.01))
+    ax = plt.subplot(gs[6 : 8, 2 :])
+    ax.imshow(np.log10(interp_lines(lines_diff - lines_ret))[:, 500 : 1400] , aspect='auto')
+    ax.set_title('Difference', fontsize=18, position=(0.5, 1.01))
     #
-    l_coords = [20, 80, 128, 180, 240]
+    l_coords = [lines_diff.shape[0] / 2]
     #
     diffs_exp = []
     for i in range(len(l_coords)):
@@ -587,26 +561,26 @@ def make_error_fig(ij_coords, mask, sample_init, sample_ret, sample_support, pro
     vmax = np.log(1+diffs_exp).max()
     #    
     for i in range(len(l_coords)):
-        ax = plt.subplot(gs[i+10,0])
+        ax = plt.subplot(gs[i+8,0])
         ax.imshow(np.log(1+diffs_exp[i]), aspect='auto')#, vmax = vmax, vmin=vmin)
         ax.set_title('pattern '+str(l_coords[i])+' exp log', fontsize=18, position=(0.5, 1.01))
     #
     for i in range(len(l_coords)):
-        ax = plt.subplot(gs[i+10,1])
+        ax = plt.subplot(gs[i+8,1])
         ax.imshow(np.log(1+diffs_init[i]), aspect='auto')#, vmax = vmax, vmin=vmin)
         ax.set_title('pattern '+str(l_coords[i])+' init log', fontsize=18, position=(0.5, 1.01))
     #
     for i in range(len(l_coords)):
-        ax = plt.subplot(gs[i+10,2])
+        ax = plt.subplot(gs[i+8,2])
         ax.imshow(np.log(1+diffs_ret[i]), aspect='auto')#, vmax = vmax, vmin=vmin)
         ax.set_title('pattern '+str(l_coords[i])+' ret log', fontsize=18, position=(0.5, 1.01))
     #
     for i in range(len(l_coords)):
-        ax = plt.subplot(gs[i+10,3])
+        ax = plt.subplot(gs[i+8,3])
         ax.imshow(np.log(1+np.abs(diffs_exp[i]-diffs_ret[i])), aspect='auto')#, vmax = vmax, vmin=vmin)
         ax.set_title('pattern '+str(l_coords[i])+' difference exp / ret log', fontsize=18, position=(0.5, 1.01))
     #
-    plt.gcf().set_size_inches(30,50)
+    plt.gcf().set_size_inches(30,40)
     #
     plt.savefig(outputDir + 'fig_errors.png')
 
@@ -671,6 +645,6 @@ if __name__ == '__main__':
     make_coords_fig(coords_init, coords_ret, outputDir)
     #
     print 'Making the errors figure...'
-    make_error_fig(coords_ret, mask, sample_init, sample_ret, sample_support, probe_init, probe_ret, eMod, eSup, inputDir, outputDir)
+    make_error_fig(coords_ret, mask, sample_init, sample_ret, sample_support, probe_init, probe_ret, eMod, eSup, inputDir, outputDir, run)
 
 

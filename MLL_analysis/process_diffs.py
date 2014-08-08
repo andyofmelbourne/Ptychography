@@ -630,7 +630,7 @@ if __name__ == "__main__":
         zyx[:, 2] = Rs
     #
     zyx_old = zyx
-    if True :
+    if False :
         print 'taking a subset of the diffraction patterns'
         zyx_sub = []
         fnams_sub = []
