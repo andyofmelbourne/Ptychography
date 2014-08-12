@@ -18,7 +18,13 @@ import subprocess
 ##########################################
 ##########################################
 sequence = """
-ERA_sample = 50
+pmod_int = True
+Thibault_sample = 5
+ERA_both = 10
+ERA_probe = 5
+ERA_sample = 5
+ERA_probe = 5
+ERA_sample = 5
 """
 #Thibault_sample = 100
 #ERA_sample = 100

@@ -365,6 +365,60 @@ def process_diffs(diffs, rotate=False):
     mask[: , 785] = 0    # this is a bad pixel that occurs often
     mask[:, 1330 :]  = 0     # mask the plate on the detector 1331 (1 pixel buffer)
     #mask[:, 1490]  = 0     # mask the plate on the detector 1331 (1 pixel buffer)
+    #
+    # New mask:
+    mask_new = np.ones_like(mask)
+    #
+    # Dead pix:
+    mask_new[432, 679] = 0
+    mask_new[431, 699] = 0
+    mask_new[433, 704] = 0
+    mask_new[422, 714] = 0
+    mask_new[425, 784] = 0
+    mask_new[421, 914] = 0
+    #
+    # mask the plate on the detector 1331 (1 pixel buffer)
+    mask_new[:, 1330 :]= 0     
+    #
+    # Panel edges
+    mask_new[:, 0]= 0     
+    mask_new[:, 255]= 0     
+    mask_new[:, 256]= 0     
+    mask_new[:, 511]= 0     
+    mask_new[:, 512]= 0     
+    mask_new[:, 767]= 0     
+    mask_new[:, 768]= 0     
+    mask_new[:, 1023]= 0     
+    mask_new[:, 1024]= 0     
+    mask_new[:, 1279]= 0     
+    mask_new[:, 1280]= 0     
+    mask_new[:, 1535]= 0     
+    mask_new[255, :]= 0     
+    mask_new[256, :]= 0     
+    #
+    # Hot pix
+    mask_new[:, 805]= 0     
+    mask_new[4, 876]= 0     
+    mask_new[34, 1393]= 0     
+    mask_new[34, 1394]= 0     
+    mask_new[36, 1427]= 0     
+    mask_new[72, 1145]= 0     
+    mask_new[153, 1119]= 0     
+    mask_new[229, 95]= 0     
+    mask_new[421, 278]= 0     
+    mask_new[333, 667]= 0     
+    mask_new[334, 666]= 0     
+    mask_new[367, 891]= 0     
+    mask_new[367, 892]= 0     
+    mask_new[368, 891]= 0     
+    mask_new[368, 892]= 0     
+    mask_new[421, 913]= 0     
+    #
+    # Temp: mask bump
+    mask_new[404 : 446, 834 : 870] = 0
+    #
+    mask = mask_new
+    #
     print 'Shifting, padding and deleting positive frequencies (in q_x)...'
     mask    = padd_array(mask)
     print 'Mask is now True for positive frequencies (in q_x). That is, zero counts will be enforced for q_x > 0' 
@@ -630,11 +684,11 @@ if __name__ == "__main__":
         zyx[:, 2] = Rs
     #
     zyx_old = zyx
-    if False :
+    if True :
         print 'taking a subset of the diffraction patterns'
         zyx_sub = []
         fnams_sub = []
-        idiffs = range(65, 200, 2)
+        idiffs = range(0, 210, 1)
         for i in idiffs:
             zyx_sub.append(zyx[i])
             fnams_sub.append(fnams[i])

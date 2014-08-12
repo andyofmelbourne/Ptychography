@@ -101,6 +101,7 @@ class Ptychography(object):
         self.coords     = coords
         self.mask       = bg.quadshift(mask)
         self.probe      = probe
+        self.probeInit  = probe.copy()
         self.sample     = sample
         self.alpha_div  = 1.0e-10
         self.error_mod  = []
@@ -372,7 +373,7 @@ class Ptychography(object):
             self.sample_sum = sample_sum[:self.shape[0], :self.shape[1]]
         # 
         # Calculate numerator
-        # probe = sample * [sum np.conj(sample_shifted) * exit_shifted] / sum |sample_shifted|^2 
+        # probe = [sum np.conj(sample_shifted) * exit_shifted] / sum |sample_shifted|^2 
         for i in range(len(self.coords)):
             sample_shifted = bg.roll(self.sample, self.coords[i])[:self.shape[0], :self.shape[1]]
             probe_out     += np.conj(sample_shifted) * exits[i] 
@@ -399,6 +400,21 @@ class Ptychography(object):
                        + (~self.mask) )
         self.exits = bg.ifftn(exits_out)
     
+    def Pmod_probe(self, iters = 1, inPlace=True, mask = True):
+        """ """
+        print 'applying the modulus constraint to the probe...'
+        probe_out  = bg.fftn(self.probe)
+        if mask :
+            probe_out  = probe_out * (bg.iquadshift(self.mask) * np.abs(bg.fftn(self.probeInit)) / np.clip(np.abs(probe_out), self.alpha_div, np.inf) + (~bg.iquadshift(self.mask)) )
+        else :
+            probe_out  = probe_out * np.abs(bg.fftn(self.probeInit)) / np.clip(np.abs(probe_out), self.alpha_div, np.inf) 
+        probe_out  = bg.ifftn(probe_out)
+        #
+        self.probe_sum = None
+        if inPlace:
+            self.probe = probe_out
+        else : 
+            return probe_out
 
 
 class Ptychography_1dsample(Ptychography):
@@ -1356,7 +1372,7 @@ if __name__ == '__main__':
     #
     # output the results
     bg.binary_out(prob.sample, outputdir + 'sample_retrieved', dt=np.complex128, appendDim=True)
-    bg.binary_out(prob.probe, outputdir + 'probe_retrieved', dt=np.complex128, appendDim=True)
+    bg.binary_out(prob.probe, outputdir  + 'probe_retrieved', dt=np.complex128, appendDim=True)
     bg.binary_out(prob.coords, outputdir + 'coords_retrieved', appendDim=True)
     #
     bg.binary_out(np.array(prob.error_mod), outputdir + 'error_mod', appendDim=True)
