@@ -261,6 +261,8 @@ def circle_new(shape = (1024, 1024), radius=0.25, Nrad = None, origin=[0,0]):
         radius = np.float(Nrad) / np.float(radius) 
     # 
     x, y = make_xy(shape, origin = origin)
+    x = np.array(x, dtype=np.float64)
+    y = np.array(y, dtype=np.float64)
     r    = np.sqrt(x**2 + y**2)
     if shape[1] > shape[0]:
         rmax = radius * shape[0] / 2

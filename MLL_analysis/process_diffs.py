@@ -201,6 +201,14 @@ def load_metadata(path_base = '../../../rawdata/PETRA3/2013/PETRA-2013-Stellato-
             zyxN_temp = []
             zyxN_temp.append([zyxN[j][0], zyxN[j][1], zyxN[j][2], zyxN[j][3]])
     zyxN_stack.append(np.array(zyxN_temp))
+    #
+    # Apply manual adjustments for run 6
+    if scan == '0181' or int(scan) == 181 :
+        print 'loading pre-refined sample coords for run 6...'
+        Rs = bg.binary_in('Rs_run6_refined_251.raw', (251), dt=np.float64)
+        zyxN_stack[6][:, 2]  = Rs
+        #zyxN_stack[6][:, 0] *= 1.1888
+        zyxN_stack[6][:, 0] = -105.6885e-6
     # 
     # make an fnams stack as well
     fnams_h5_stack = []
@@ -414,20 +422,32 @@ def process_diffs(diffs, rotate=False):
     mask_new[368, 892]= 0     
     mask_new[421, 913]= 0     
     #
-    # Temp: mask bump
-    mask_new[404 : 446, 834 : 870] = 0
+    mask_diff  = mask_new.copy()
+    mask_probe = mask_new.copy()
     #
-    mask = mask_new
+    # Temp: mask bump
+    #mask[404 : 446, 834 : 870] = 0
+    #
+    # Temp: mask everything right of bump 
+    #mask_diff[404 : 446, 530 : 870] = 0
     #
     print 'Shifting, padding and deleting positive frequencies (in q_x)...'
-    mask    = padd_array(mask)
+    mask_diff    = padd_array(mask_diff)
+    mask_probe   = padd_array(mask_probe)
+    #
     print 'Mask is now True for positive frequencies (in q_x). That is, zero counts will be enforced for q_x > 0' 
-    mask[:, mask.shape[1]/2 :] = True 
-    mask_unrot = mask.copy()
+    mask_diff[ :, mask_diff.shape[1]/2 :] = True 
+    mask_probe[:, mask_probe.shape[1]/2 :] = True 
+    mask_unrot_diff = mask_diff.copy()
+    mask_unrot_probe = mask_probe.copy()
     if rotate :
-        mask = bg.rotate(mask, phi, 0)
-        mask = ~bg.blurthresh_mask(~mask, blur=2)
-        mask = bg.izero_pad(mask, (16, mask.shape[1]))
+        mask_diff = bg.rotate(mask_diff, phi, 0)
+        mask_diff = ~bg.blurthresh_mask(~mask_diff, blur=2)
+        mask_diff = bg.izero_pad(mask_diff, (16, mask_diff.shape[1]))
+        #
+        mask_probe = bg.rotate(mask_probe, phi, 0)
+        mask_probe = ~bg.blurthresh_mask(~mask_probe, blur=2)
+        mask_probe = bg.izero_pad(mask_probe, (16, mask_probe.shape[1]))
     #
     print 'Shifting, padding and deleting positive frequencies for the diffraction data...'
     diffs_out = []
@@ -436,10 +456,10 @@ def process_diffs(diffs, rotate=False):
         update_progress(i/(itot-1.0))
         d = padd_array(diff)
         if rotate :
-            d = bg.rotate(d * mask_unrot, phi, 1)
+            d = bg.rotate(d * mask_unrot_diff, phi, 1)
             d = bg.izero_pad(d, (16, d.shape[1]))
         diffs_out.append(d)
-    return np.array(diffs_out, dtype=np.float64), np.array(mask, dtype=np.bool), np.array(mask_unrot, dtype=np.bool)
+    return np.array(diffs_out, dtype=np.float64), np.array(mask_diff, dtype=np.bool), np.array(mask_unrot_diff, dtype=np.bool), np.array(mask_probe, dtype=np.bool), np.array(mask_unrot_probe, dtype=np.bool)
 
 ############# #############
 # Propagation routines
@@ -502,6 +522,7 @@ def make_probe(mask, lamb, dq, scan = '0181', rotate=False):
             aperture += np.array(array_from_h5(scan = scan, number = i), dtype=np.float64)
             index    += 1
     aperture = aperture / float(index)
+    #
     print 'reshaping...'
     aperture = padd_array(aperture)
     #
@@ -539,13 +560,32 @@ def make_probe(mask, lamb, dq, scan = '0181', rotate=False):
     if rotate :
         aperture = bg.rotate(aperture, phi, 1)
         aperture = bg.izero_pad(aperture, (16, aperture.shape[1]))
-    # Let's put some higher order aberrations in there
-    C3    = 0.0e-3 
-    x, y  = bg.make_xy(aperture.shape)
-    x = np.array(x, dtype=np.float64)
-    y = np.array(y, dtype=np.float64)
-    exp   = np.exp(-1.0J * np.pi / lamb * C3 * (lamb*dq)**4 * (x**2 + y**2)**2)
-    probe = bg.ifft2(np.sqrt(aperture)*exp)
+    #
+    # Add a phase error to the area left of the bump
+    if True :
+        print 'adding a defocus phase error past the "bump"'
+        df    = 105.6885e-6 - 136.39133e-6 
+        x, y  = bg.make_xy(aperture.shape)
+        x = np.array(x, dtype=np.float64)
+        y = np.array(y, dtype=np.float64)
+        q = dq * np.sqrt(x**2 + y**2)
+        phase_error = -1.0J * np.pi * lamb * q**2 * df
+        bump_loc = [86, 852]
+        Nrad = np.sqrt( float(bump_loc[1] - aperture.shape[1]/2 + 1)**2 + float(bump_loc[0] - aperture.shape[0]/2 + 1)**2)
+        q_min = Nrad * dq
+        phase_error = phase_error * (q > q_min)
+        exp = np.exp(phase_error)
+        probe = bg.ifft2(np.sqrt(aperture)*exp)
+    elif False :
+        # Let's put some higher order aberrations in there
+        C3    = 0.0e-3 
+        x, y  = bg.make_xy(aperture.shape)
+        x = np.array(x, dtype=np.float64)
+        y = np.array(y, dtype=np.float64)
+        exp   = np.exp(-1.0J * np.pi / lamb * C3 * (lamb*dq)**4 * (x**2 + y**2)**2)
+        probe = bg.ifft2(np.sqrt(aperture)*exp)
+    else :
+        probe = bg.ifft2(np.sqrt(aperture))
     return probe
 
 def makeGrating_tilt(shape1, dx, phi_zx=0.0, phi_xy=0.0, lamb=5.635645115141718e-11, d = 4.0e-6):
@@ -677,18 +717,12 @@ if __name__ == "__main__":
     zyx                     = zyxN[:, : 3]
     fnams                   = fnams_stack[int(run)]
     #
-    # I have refined the coordinates for run 6, so call them if run == 6
-    if int(run) == 6 :
-        print 'loading pre-refined sample coords for run 6...'
-        Rs = bg.binary_in('Rs_run6_refined_251.raw', (251), dt=np.float64)
-        zyx[:, 2] = Rs
-    #
     zyx_old = zyx
     if True :
         print 'taking a subset of the diffraction patterns'
         zyx_sub = []
         fnams_sub = []
-        idiffs = range(0, 210, 1)
+        idiffs = range(20, 85, 1)
         for i in idiffs:
             zyx_sub.append(zyx[i])
             fnams_sub.append(fnams[i])
@@ -699,7 +733,7 @@ if __name__ == "__main__":
     diffs = load_h5s(fnams)
     #
     print 'Processing diffraction data and generating the diffraction mask...'
-    diffs, mask, mask_unrot = process_diffs(diffs, rotate = rotate)
+    diffs, mask, mask_unrot, mask_probe, mask_unrot_probe = process_diffs(diffs, rotate = rotate)
     #
     # Calculate geometry
     print 'calculating the geometry...'
@@ -707,7 +741,7 @@ if __name__ == "__main__":
     # 
     # Estimate the in-focus probe
     print 'making the in-focus probe...'
-    probe = make_probe(mask_unrot, lamb, 1/X, rotate = rotate)
+    probe = make_probe(mask_unrot_probe, lamb, 1/X, rotate = rotate)
     #
     # propagate the probe for the run
     print 'propagating the in-focus probe to the sample plane by (m):', zyx[0][0]

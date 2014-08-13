@@ -21,10 +21,6 @@ sequence = """
 pmod_int = True
 Thibault_sample = 5
 ERA_both = 10
-ERA_probe = 5
-ERA_sample = 5
-ERA_probe = 5
-ERA_sample = 5
 """
 #Thibault_sample = 100
 #ERA_sample = 100
@@ -196,7 +192,7 @@ if __name__=='__main__':
         commands = []
         #
         # send the job over ssh
-        commands.append('rsync -e ssh --recursive --progress --delete ../../Ptychography/ amorgan@it-hpc-gpu06:/nfs/cfel/cxi/home/amorgan/analysis/Ptychography')
+        commands.append('rsync -qe ssh --recursive --progress --delete ../../Ptychography/ amorgan@it-hpc-gpu06:/nfs/cfel/cxi/home/amorgan/analysis/Ptychography')
         #
         # process the diffs using cfelsgi (which can access the data)
         commands.append("ssh cfelsgi 'export LD_LIBRARY_PATH='/cfel/common/lib:$LD_LIBRARY_PATH'; export PYTHONPATH='/nfs/cfel/cxi/common/cfelsgi/gcc_4_4_7/python-hdf5/2.3.0/lib64/python2.6/site-packages:$PYTHONPATH'; cd /home/amorgan/analysis/Ptychography/MLL_analysis/; python pipeline.py --location=process --run="+str(run)   +" --tempdata_dir="+tempdata_dir   +" ' ")
@@ -205,10 +201,11 @@ if __name__=='__main__':
         commands.append("ssh it-hpc-gpu06 'eval $(./export_python.sh); cd /nfs/cfel/cxi/home/amorgan/analysis/Ptychography/MLL_analysis/; python pipeline.py --location=run --run="+str(run)   +" --tempdata_dir="+tempdata_dir   +" ' ")
         #
         # process the results using cfelsgi (which can access the data)
-        commands.append("ssh cfelsgi 'export LD_LIBRARY_PATH='/cfel/common/lib:$LD_LIBRARY_PATH'; export PYTHONPATH='/nfs/cfel/cxi/common/cfelsgi/gcc_4_4_7/python-hdf5/2.3.0/lib64/python2.6/site-packages:$PYTHONPATH'; cd /home/amorgan/analysis/Ptychography/MLL_analysis/; python pipeline.py --location=process_results --run="+str(run)   +" --tempdata_dir="+tempdata_dir   +" ' ")
+        # This doesn't work (old version of python)
+        #commands.append("ssh cfelsgi 'export LD_LIBRARY_PATH='/cfel/common/lib:$LD_LIBRARY_PATH'; export PYTHONPATH='/nfs/cfel/cxi/common/cfelsgi/gcc_4_4_7/python-hdf5/2.3.0/lib64/python2.6/site-packages:$PYTHONPATH'; cd /home/amorgan/analysis/Ptychography/MLL_analysis/; python pipeline.py --location=process_results --run="+str(run)   +" --tempdata_dir="+tempdata_dir   +" ' ")
         #
         # retrieve the data
-        commands.append('rsync -e ssh --recursive --progress amorgan@it-hpc-gpu06:/nfs/cfel/cxi/home/amorgan/tempdata/ ../../../tempdata/')
+        commands.append('rsync -qe ssh --recursive --progress amorgan@it-hpc-gpu06:/nfs/cfel/cxi/home/amorgan/tempdata/ ../../../tempdata/')
         #
         # execute sequentially
         for command in commands:

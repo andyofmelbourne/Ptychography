@@ -19,7 +19,6 @@ try :
 except :
     GPU_calc = False
 
-GPU_calc = False
 
 print 'GPU_calc', GPU_calc
 
@@ -400,7 +399,7 @@ class Ptychography(object):
                        + (~self.mask) )
         self.exits = bg.ifftn(exits_out)
     
-    def Pmod_probe(self, iters = 1, inPlace=True, mask = True):
+    def Pmod_probe(self, iters = 1, inPlace=True, mask = False):
         """ """
         print 'applying the modulus constraint to the probe...'
         probe_out  = bg.fftn(self.probe)
