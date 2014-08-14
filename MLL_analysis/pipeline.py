@@ -20,7 +20,16 @@ import subprocess
 sequence = """
 pmod_int = True
 Thibault_sample = 5
-ERA_both = 10
+ERA_both = 5
+Pmod_probe = 1
+ERA_both = 5
+Pmod_probe = 1
+ERA_both = 5
+Pmod_probe = 1
+ERA_both = 5
+Pmod_probe = 1
+ERA_both = 5
+Pmod_probe = 1
 """
 #Thibault_sample = 100
 #ERA_sample = 100

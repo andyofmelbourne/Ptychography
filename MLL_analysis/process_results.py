@@ -370,12 +370,12 @@ def make_probe_fig(probe_init, probe_ret, outputDir, scan = '0181', run = 0):
     fig.set_size_inches(20,20)
     #
     plt.savefig(outputDir + 'fig_probeInit_Vs_probe_ret.png')
+    #
+    probe_0 = pd.probe_z(probe_ret, [- zyxN_stack[run][0][0]], spacing, lamb)
+    bg.binary_out(np.abs(probe_0), outputDir + 'probe_ret_amp_focus', dt=np.float64, appendDim=True)
 
 def make_coords_fig(coords_init, coords_ret, outputDir):
     plt.clf()
-    #
-    print 'loading metadata...'
-    zyxN_stack, fnams_stack = pd.load_metadata(scan = scan)
     #
     # Calculate geometry
     print 'calculating the geometry...'
@@ -513,10 +513,10 @@ def make_error_fig(ij_coords, mask, sample_init, sample_ret, sample_support, pro
     # Interpolate the lines onto the ij_coords grid
     from scipy.interpolate import griddata
     def interp_lines(lines_eg):
-        RRs, QQs = np.meshgrid(ij_coords[:, 1], range(lines_eg.shape[1]), sparse=False, indexing='ij')
+        RRs, QQs = np.meshgrid(ij_coords[:, 1], range(lines_eg.shape[1]), indexing='ij')
         points   = np.array(zip(RRs.flatten(), QQs.flatten()))
         values   = lines_eg.flatten()
-        grid_R, grid_Q = np.meshgrid(np.linspace(ij_coords[:,1].min(), ij_coords[:,1].max(), ij_coords[:,1].shape[0]), range(lines_eg.shape[1]), sparse=False, indexing='ij')
+        grid_R, grid_Q = np.meshgrid(np.linspace(ij_coords[:,1].min(), ij_coords[:,1].max(), ij_coords[:,1].shape[0]), range(lines_eg.shape[1]), indexing='ij')
         I = griddata(points, values, (grid_R, grid_Q), method='linear')
         return I
     #
@@ -531,6 +531,12 @@ def make_error_fig(ij_coords, mask, sample_init, sample_ret, sample_support, pro
     ax = plt.subplot(gs[6 : 8, : 2 ])
     ax.imshow(interp_lines(lines_diff - lines_ret)[:, 500 : 1400] , aspect='auto')
     ax.set_title('Difference', fontsize=18, position=(0.5, 1.01))
+    #
+    # Temp
+    print 'outputing the difference of the lines...'
+    bg.binary_out(lines_diff - lines_ret, 'lines_diff', dt=np.float64, appendDim=True)
+    bg.binary_out(interp_lines(lines_diff), 'lines_exp', dt=np.float64, appendDim=True)
+    bg.binary_out(interp_lines(lines_ret), 'lines_ret', dt=np.float64, appendDim=True)
     #
     ax = plt.subplot(gs[6 : 8, 2 :])
     ax.imshow(np.log10(interp_lines(lines_diff - lines_ret))[:, 500 : 1400] , aspect='auto')
