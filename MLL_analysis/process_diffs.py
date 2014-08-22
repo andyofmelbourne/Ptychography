@@ -214,6 +214,11 @@ def load_metadata(path_base = '../../../rawdata/PETRA3/2013/PETRA-2013-Stellato-
         Rs = bg.binary_in('Rs_run4_refined_251.raw', (251), dt=np.float64)
         zyxN_stack[4][:, 2]  = Rs
         zyxN_stack[4][:, 0]  = -80.5102014175e-6
+        #
+        print 'loading pre-refined sample coords for run 4...'
+        Rs = bg.binary_in('Rs_run3_refined_251.raw', (251), dt=np.float64)
+        zyxN_stack[3][:, 2]  = Rs
+        zyxN_stack[3][:, 0]  = -70.9032303379e-6
     # 
     # make an fnams stack as well
     fnams_h5_stack = []
@@ -348,17 +353,6 @@ def padd_array(arrayin, zero_pixel = [400, 1490]):
     # truncate to 128x ?
     arrayout = bg.izero_pad(arrayout, (128, arrayout.shape[1]))
     return arrayout
-
-#   def ipadd_array(arrayout2, zero_pixel = [144, 978]):
-#       """ """
-#       arrayout = np.zeros((arrayout2.shape[0], arrayout2.shape[1]/2), dtype=arrayout2.dtype)
-#       arrayout = arrayout2[:, 1024 :] 
-#       #
-#       arrayout  = bg.roll(arrayout, zero_pixel)
-#       #
-#       arrayin = np.zeros((512, 1536), dtype=arrayout.dtype)
-#       arrayin[256 :, 512 :] = np.array(arrayout)
-#       return arrayin
 
 def process_diffs(diffs, rotate=False):
     """Process the diffraction data and return diffs, mask:

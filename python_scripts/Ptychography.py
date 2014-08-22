@@ -19,6 +19,7 @@ try :
 except :
     GPU_calc = False
 
+GPU_calc = False
 
 print 'GPU_calc', GPU_calc
 

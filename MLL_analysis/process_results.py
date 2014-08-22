@@ -534,9 +534,10 @@ def make_error_fig(ij_coords, mask, sample_init, sample_ret, sample_support, pro
     #
     # Temp
     print 'outputing the difference of the lines...'
-    bg.binary_out(lines_diff - lines_ret, 'lines_diff', dt=np.float64, appendDim=True)
-    bg.binary_out(interp_lines(lines_diff), 'lines_exp', dt=np.float64, appendDim=True)
-    bg.binary_out(interp_lines(lines_ret), 'lines_ret', dt=np.float64, appendDim=True)
+    bg.binary_out(lines_diff - lines_ret, outputDir + 'lines_diff', dt=np.float64, appendDim=True)
+    bg.binary_out(interp_lines(lines_diff), outputDir + 'lines_exp', dt=np.float64, appendDim=True)
+    bg.binary_out(lines_diff, outputDir + 'lines_exp_notinterpolated', dt=np.float64, appendDim=True)
+    bg.binary_out(interp_lines(lines_ret), outputDir + 'lines_ret', dt=np.float64, appendDim=True)
     #
     ax = plt.subplot(gs[6 : 8, 2 :])
     ax.imshow(np.log10(interp_lines(lines_diff - lines_ret))[:, 500 : 1400] , aspect='auto')
