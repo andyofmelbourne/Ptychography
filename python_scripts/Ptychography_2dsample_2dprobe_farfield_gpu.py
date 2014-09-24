@@ -5,6 +5,15 @@ import os, sys, getopt
 from ctypes import *
 import bagOfns as bg
 import time
+from utility_Ptych import makeExits
+from utility_Ptych import makeExits2
+
+# GPU stuff 
+import pycuda.autoinit 
+import pycuda.gpuarray as gpuarray
+import pycuda.cumath as cumath
+from reikna.fft import FFT
+import reikna.cluda as cluda
 
 class Ptychography_gpu(object):
     def __init__(self, diffs, coords, mask, probe, sample, sample_support, pmod_int = False): 
@@ -81,7 +90,6 @@ class Ptychography_gpu(object):
             self.exits_gpu = exits2_gpu.copy()
             #
             update_progress(i / max(1.0, float(iters-1)), 'Thibault sample', i, self.error_conv[-1], self.error_sup[-1])
-            #
 
     def Thibault_probe(self, iters=1):
         exits2_gpu = self.thr.empty_like(self.exits_gpu)
@@ -103,7 +111,6 @@ class Ptychography_gpu(object):
             self.exits_gpu = exits2_gpu.copy()
             #
             update_progress(i / max(1.0, float(iters-1)), 'Thibault probe', i, self.error_conv[-1], self.error_sup[-1])
-            #
 
     def Thibault_both(self, iters=1):
         exits2_gpu = self.thr.empty_like(self.exits_gpu)
@@ -251,6 +258,49 @@ class Ptychography_gpu(object):
             return probe_out
 
 
+
+def forward_sim():
+    # sample
+    shape_sample = (80, 180)
+    amp          = bg.scale(bg.brog(shape_sample), 0.0, 1.0)
+    phase        = bg.scale(bg.twain(shape_sample), -np.pi, np.pi)
+    sample       = amp * np.exp(1J * phase)
+    sample_support = np.ones_like(sample, dtype=np.bool)
+
+    shape_sample = (128, 256)
+    sample         = bg.zero_pad(sample,         shape_sample, fillvalue=1.0)
+    sample_support = bg.zero_pad(sample_support, shape_sample)
+    
+    # probe
+    shape_illum = (64, 128)
+    probe       = bg.circle_new(shape_illum, radius=0.5, origin='centre') + 0J
+        
+    # make some sample positions
+    xs = range(shape_illum[1] - shape_sample[1], 1, 4)
+    ys = range(shape_illum[0] - shape_sample[0], 1, 4)
+    xs, ys = np.meshgrid( xs, ys )
+    coords = zip(ys.ravel(), xs.ravel())
+
+    # diffraction patterns
+    diffs = makeExits(sample, probe, coords)
+    diffs = np.abs(bg.fft2(diffs))**2
+
+    mask = np.ones_like(diffs[0], dtype=np.bool)
+    return diffs, coords, mask, probe, sample, sample_support
+
+
 # Example usage
 if __name__ == '__main__' :
-    pass
+    diffs, coords, mask, probe, sample, sample_support = forward_sim()
+
+    sample0 = np.random.random(sample.shape) + 1J*np.random.random(sample.shape)
+
+    prob = Ptychography(diffs, coords, mask, probe, sample0, sample_support) 
+    
+    # do 100 ERA iterations
+    prob = Ptychography.ERA_sample(prob, 100)
+    
+    # check the fidelity inside of the illuminated region:
+    probe_mask = prob.probe_sum > prob.probe_sum.max() * 1.0e-10
+    
+    print '\nfidelity: ', bg.l2norm(sample * probe_mask, prob.sample * probe_mask)
