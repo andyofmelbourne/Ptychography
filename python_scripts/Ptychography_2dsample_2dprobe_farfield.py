@@ -362,8 +362,8 @@ class Ptychography(object):
         sys.stdout.flush()
 
 
-# Example usage
-if __name__ == '__main__' :
+
+def forward_sim():
     # sample
     shape_sample = (80, 180)
     amp          = bg.scale(bg.brog(shape_sample), 0.0, 1.0)
@@ -372,7 +372,7 @@ if __name__ == '__main__' :
     sample_support = np.ones_like(sample, dtype=np.bool)
 
     shape_sample = (128, 256)
-    sample         = bg.zero_pad(sample,         shape_sample)
+    sample         = bg.zero_pad(sample,         shape_sample, fillvalue=1.0)
     sample_support = bg.zero_pad(sample_support, shape_sample)
     
     # probe
@@ -390,11 +390,22 @@ if __name__ == '__main__' :
     diffs = np.abs(bg.fft2(diffs))**2
 
     mask = np.ones_like(diffs[0], dtype=np.bool)
+    return diffs, coords, mask, probe, sample, sample_support
 
-    sample0 = np.random.random(shape_sample) + 1J*np.random.random(shape_sample)
+
+
+# Example usage
+if __name__ == '__main__' :
+    diffs, coords, mask, probe, sample, sample_support = forward_sim()
+
+    sample0 = np.random.random(sample.shape) + 1J*np.random.random(sample.shape)
 
     prob = Ptychography(diffs, coords, mask, probe, sample0, sample_support) 
     
     # do 100 ERA iterations
     prob = Ptychography.ERA_sample(prob, 100)
-
+    
+    # check the fidelity inside of the illuminated region:
+    probe_mask = prob.probe_sum > prob.probe_sum.max() * 1.0e-10
+    
+    print '\nfidelity: ', bg.l2norm(sample * probe_mask, prob.sample * probe_mask)

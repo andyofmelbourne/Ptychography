@@ -609,7 +609,7 @@ def threshExpand(arrayin,thresh=0.1e0,blur=8):
     return arrayout
 
 
-def zero_pad(arrayin, shape = (1024, 1024)):
+def zero_pad(arrayin, shape = (1024, 1024), fillvalue = 0):
     """Padd arrayin with zeros until it is an ny*nx array, keeping the zero pixel at N/2-1
     
     only works when arrayin and arrayout have even domains."""
@@ -624,6 +624,7 @@ def zero_pad(arrayin, shape = (1024, 1024)):
     nyo = arrayin.shape[0]
     nxo = arrayin.shape[1]
     arrayout = np.zeros(shape, dtype = arrayin.dtype)
+    arrayout.fill(fillvalue)
     arrayout[(shape[0]-nyo)//2 : (shape[0]-nyo)//2 + nyo,(shape[1]-nxo)//2 : (shape[1]-nxo)//2 + nxo] = arrayin
     return arrayout
 
