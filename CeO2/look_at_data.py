@@ -6,11 +6,123 @@ import STEM_probe
 from scipy.optimize import curve_fit
 from scipy.ndimage.filters import median_filter
 from scipy.ndimage.filters import convolve
+import scipy.constants
+import h5py
+import numbers
 
 currentdir = os.path.dirname(os.path.abspath(inspect.getfile(inspect.currentframe())))
 parentdir = os.path.dirname(currentdir)
 sys.path.insert(0, parentdir) 
 from python_scripts import bagOfns as bg
+
+class CXI_file(object):
+    """Class that mimics the cxi h5 dataset for Ptychographic data
+
+    SI units only"""
+
+    def __init__(self):
+        # Construct the data structure
+        self.root = {}
+        
+        # sample_1
+        geometry_1 = {}
+        geometry_1['translation'] = None
+        
+        sample_1 = {}
+        sample_1['name'] = None
+        sample_1['geometry_1'] = geometry_1
+        
+        # instrument_1
+        detector_1 = {}
+        detector_1['distance'] = None
+        detector_1['corner_position'] = None
+        detector_1['x_pixel_size'] = None
+        detector_1['y_pixel_size'] = None
+        
+        source_1 = {}
+        source_1['energy'] = None
+        source_1['probe'] = None
+        source_1['probe_mask'] = None
+        
+        instrument_1 = {}
+        instrument_1['detector_1'] = detector_1
+        instrument_1['source_1'] = source_1
+        
+        # image_1
+        image_1 = {}
+        image_1['data'] = None
+        image_1['translation'] = None
+        image_1['intrument_1'] = None
+        
+        # data_1
+        data_1 = {}
+        data_1['data'] = None
+
+        # entry_1
+        entry_1 = {}
+        entry_1['sample_1'] = sample_1
+        entry_1['instrument_1'] = instrument_1
+        entry_1['image_1'] = image_1
+        entry_1['data_1'] = data_1
+
+        # root
+        self.root['cxi_version'] = 140
+        self.root['entry_1'] = entry_1
+
+    def write(self, fnam):
+        """Put everything in root into a h5file
+        
+        Recurse through self.root then add the soft links at
+        the end."""
+        f = h5py.File(fnam, "w")
+        
+        def mywrite(d, f1):
+            for k, v in d.iteritems():
+                if isinstance(v, dict):
+                    f2 = f1.create_group(k)
+                    print "Creating group: {0} <-- {1} ".format(f1.name, k)
+                    mywrite(v, f2)
+                    
+                elif isinstance(v, numbers.Number) or isinstance(v, str):
+                    f1.create_dataset(k, data = v)
+                    print "Adding data: {0} <-- {1}, {2}".format(f1.name, k, str(v))
+                    
+                elif isinstance(v, np.ndarray):
+                    if len(v.shape) == 3 :
+                        dset = f1.create_dataset(k, v.shape, dtype=v.dtype, chunks=(1, v.shape[1], v.shape[2]), compression='gzip')
+                        dset[:] = v
+                        print "Adding data: {0} <-- {1}, {2} {3}".format(f1.name, k, v.dtype, v.shape)
+                        
+                    elif len(v.shape) <= 2 :
+                        dset = f1.create_dataset(k, v.shape, dtype=v.dtype, chunks=v.shape, compression='gzip')
+                        dset[:] = v
+                        print "Adding data: {0} <-- {1}, {2} {3}".format(f1.name, k, v.dtype, v.shape)
+                        
+                    else :
+                        print "Warning max dimensions = 3, {1} {2}".format(k, v.shape)
+        mywrite(self.root, f)
+        
+        # now add the soft links and attributes
+        f['entry_1/image_1/data'].attrs['axes'] = ['translation:y:x']
+        f['entry_1/image_1/translation'] = h5py.SoftLink('/entry_1/sample_1/geometry_1/translation')
+        f['entry_1/image_1/instrument_1'] = h5py.SoftLink('/entry_1/instrument_1')
+        
+        f['entry_1/data_1/data'] = h5py.SoftLink('/entry_1/image_1/data')
+        print ''
+        print ''
+        bg.print_h5(f)
+        f.close()
+        print "done!"
+
+    def check(self):
+        # recursively search through the data structure
+        def myprint(d):
+            for k, v in d.iteritems():
+                if isinstance(v, dict):
+                    myprint(v)
+                elif v == None :
+                    print "Warning {0} : {1}".format(k, v)
+        myprint(self.root)
 
 def gauss(x, *p):
 	a, mu, sigma = p
@@ -67,6 +179,11 @@ x, y = np.loadtxt(fnam, dtype=d, unpack=True)
 x *= diffs.shape[-1]
 y *= diffs.shape[-2]
 
+# Let's reorder these for sample translations (instead of probe translations)
+x *= -1
+y *= -1
+sample_translations_xyz = np.array( zip(np.zeros_like(x), x, y) )
+
 # stack the diffs for display
 diffs_v = None
 for i in range(6, -1, -1):
@@ -119,16 +236,22 @@ probe = STEM_probe.makePupilPhase(aperture)
 # put it all into a h5 file
 fileName = "CeO2_Physical_Review_2014.cxi"
 
-import h5py
+prob_cxi = CXI_file()
+prob_cxi.root['entry_1']['sample_1']['name'] = 'CeO2'
+prob_cxi.root['entry_1']['sample_1']['description'] = 'cerium dioxide nanoparticle. Cubeoctahedron with limited truncation along {100}.'
+prob_cxi.root['entry_1']['sample_1']['thickness'] = 50.0e-10
+prob_cxi.root['entry_1']['sample_1']['geometry_1']['translation'] = sample_translations_xyz
 
-f = h5py.File(fileName, "w")
-f.create_dataset("cxi_version",data=140)
-entry_1 = f.create_group("entry_1")
-entry_1.create_dataset("experiment_identifier", data = 'Peng CeO2 data')
+du = 28.0e-6 # pixel size
+z = du / (probe.dq * probe.lamb)
+prob_cxi.root['entry_1']['instrument_1']['detector_1']['distance'] = z
+prob_cxi.root['entry_1']['instrument_1']['detector_1']['corner_position'] = np.array([ (diffs.shape[1]-3)/2., (diffs.shape[0]-3)/2., z])
+prob_cxi.root['entry_1']['instrument_1']['detector_1']['x_pixel_size'] = du
+prob_cxi.root['entry_1']['instrument_1']['detector_1']['y_pixel_size'] = du
+prob_cxi.root['entry_1']['instrument_1']['source_1']['energy'] = probe.energy * scipy.constants.e
+prob_cxi.root['entry_1']['instrument_1']['source_1']['probe'] = probe.probeR
+prob_cxi.root['entry_1']['instrument_1']['source_1']['probe_mask'] = np.ones_like(probe.probeR, dtype=np.bool)
 
-sample_1 = entry_1.create_group("sample_1")
-sample_1.create_dataset("name", data = 'CeO2')
-sample_1.create_dataset("description", data = 'cerium dioxide nanoparticle. Cubeoctahedron with limited truncation along {100}.')
-sample_1.create_dataset("thickness", data = 50.0e-10)
+prob_cxi.root['entry_1']['image_1']['data'] = diffs
 
-
+CXI_file.check(prob_cxi)
