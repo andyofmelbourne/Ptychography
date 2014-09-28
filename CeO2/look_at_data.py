@@ -239,7 +239,6 @@ fileName = "CeO2_Physical_Review_2014.cxi"
 prob_cxi = CXI_file()
 prob_cxi.root['entry_1']['experimental_identifier'] = 'Not sure'
 
-
 prob_cxi.root['entry_1']['sample_1']['name'] = 'CeO2'
 prob_cxi.root['entry_1']['sample_1']['description'] = 'cerium dioxide nanoparticle. Cubeoctahedron with limited truncation along {100}.'
 prob_cxi.root['entry_1']['sample_1']['thickness'] = 50.0e-10
