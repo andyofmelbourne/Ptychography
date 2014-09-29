@@ -477,27 +477,14 @@ def make_xy(N, origin=None):
         ny, nx = N, N
     elif len(N) == 2 :
         ny, nx = N 
-    elif len(N) == 1 and (type(N) == tuple or type(N) == list):
-        ny = N[0] 
-        nx = 0
-    if ny != 0 and nx != 0 :
-        x, y = np.meshgrid(np.arange(nx), np.arange(ny))
-        if (origin is None) or (origin == 'centre') :
-            origin_x, origin_y = nx // 2 - 1, ny // 2 - 1
-            x -= origin_x
-            y -= origin_y
-        elif origin[0] == 0 and (origin[1] == 0):
-            x = ((x + nx // 2 - 1) % nx) - (nx // 2 - 1)
-            y = ((y + ny // 2 - 1) % ny) - (ny // 2 - 1)
-        return x, y
-    elif ny != 0 and nx == 0 :
-        y = np.arange(ny)
-        if (origin is None) or (origin == 'centre') :
-            origin_y = ny // 2 - 1
-            y -= origin_y
-        elif origin[0] == 0 :
-            y = ((y + ny // 2 - 1) % ny) - (ny // 2 - 1)
-        return y
+    if origin is None :
+        origin_x, origin_y = nx // 2 - 1, ny // 2 - 1
+    else :
+        origin_y, origin_x = origin
+    x, y = np.meshgrid(np.arange(nx), np.arange(ny))
+    x -= origin_x
+    y -= origin_y
+    return x, y
 
 def cart2polar(x, y):
     r     = np.sqrt(x**2 + y**2)
@@ -609,7 +596,7 @@ def threshExpand(arrayin,thresh=0.1e0,blur=8):
     return arrayout
 
 
-def zero_pad(arrayin, shape = (1024, 1024)):
+def zero_pad(arrayin, shape = (1024, 1024), fillvalue = 0):
     """Padd arrayin with zeros until it is an ny*nx array, keeping the zero pixel at N/2-1
     
     only works when arrayin and arrayout have even domains."""
@@ -624,6 +611,7 @@ def zero_pad(arrayin, shape = (1024, 1024)):
     nyo = arrayin.shape[0]
     nxo = arrayin.shape[1]
     arrayout = np.zeros(shape, dtype = arrayin.dtype)
+    arrayout.fill(fillvalue)
     arrayout[(shape[0]-nyo)//2 : (shape[0]-nyo)//2 + nyo,(shape[1]-nxo)//2 : (shape[1]-nxo)//2 + nxo] = arrayin
     return arrayout
 
@@ -641,10 +629,7 @@ def izero_pad(arrayin, shape = (1024, 1024)):
         return arrayout
     shape0   = arrayin.shape
     arrayout = np.zeros(shape, dtype = arrayin.dtype)
-    if len(arrayin.shape) == 2 :
-        arrayout = arrayin[(shape0[0]-shape[0])//2 : (shape0[0]-shape[0])//2 + shape[0],(shape0[1]-shape[1])//2 : (shape0[1]-shape[1])//2 + shape[1]]
-    elif len(arrayin.shape) == 1 :
-        arrayout = arrayin[(shape0[0]-shape[0])//2 : (shape0[0]-shape[0])//2 + shape[0]]
+    arrayout = arrayin[(shape0[0]-shape[0])//2 : (shape0[0]-shape[0])//2 + shape[0],(shape0[1]-shape[1])//2 : (shape0[1]-shape[1])//2 + shape[1]]
     return arrayout
 
 def interpolate_bigger(arrayin,ny,nx=None):
@@ -725,42 +710,13 @@ def crop_to_nonzero(arrayin, mask=None):
             arrayout.append(i[top:bottom+1,left:right+1])
     return arrayout
     
-def roll(arrayin, shift = (0, 0), silent = True):
-    """np.roll arrayin by dy in dim -2 and dx in dim -1. If arrayin is 1d then just do that.
-    
-    If the shift coordinates are of type float then the Fourier shift theorem is used."""
+def roll(arrayin, shift = (0, 0)):
+    """np.roll arrayin by dy in dim 0 and dx in dim 1."""
     arrayout = arrayin.copy()
-    # if shift is integer valued then use np.roll
-    if (type(shift[0]) == int) or (type(shift[0]) == np.int) or (type(shift[0]) == np.int32) or (type(shift[0]) == np.int64):
-        if shift[-1] != 0 :
-            if silent == False :
-                print 'arrayout = np.roll(arrayout, shift[-1], -1)'
-            arrayout = np.roll(arrayout, shift[-1], -1)
-        # if shift is 1d then don't roll the other dim (if it even exists)
-        if len(arrayout.shape) >= 2 :
-            if shift[-2] != 0 :
-                if silent == False :
-                    print 'arrayout = np.roll(arrayout, shift[-2], -2)'
-                arrayout = np.roll(arrayout, shift[-2], -2)
-    # if shift is float valued then use the Fourier shift theorem
-    elif (type(shift[0]) == float) or (type(shift[0]) == np.float32) or (type(shift[0]) == np.float64):
-        # if shift is 1d
-        if len(shift) == 1 :
-            if silent == False :
-                print 'arrayout = fftn_1d(arrayout)'
-                print 'arrayout = arrayout * phase_ramp(arrayout.shape, shift, origin = (0, 0))'
-                print 'arrayout = ifftn_1d(arrayout)'
-            arrayout = fftn_1d(arrayout)
-            arrayout = arrayout * phase_ramp(arrayout.shape, shift, origin = (0, 0))
-            arrayout = ifftn_1d(arrayout)
-        elif len(shift) == 2 :
-            if silent == False :
-                print 'arrayout = fftn(arrayout)'
-                print 'arrayout = arrayout * phase_ramp(arrayout.shape, shift, origin = (0, 0))'
-                print 'arrayout = ifftn(arrayout)'
-            arrayout = fftn(arrayout)
-            arrayout = arrayout * phase_ramp(arrayout.shape, shift, origin = (0, 0))
-            arrayout = ifftn(arrayout)
+    if shift[-2] != 0 :
+        arrayout = np.roll(arrayout, shift[-2], -2)
+    if shift[-1] != 0 :
+        arrayout = np.roll(arrayout, shift[-1], -1)
     return arrayout
 
 def roll_to(arrayin, y = 0, x = 0, centre = 'middle'):

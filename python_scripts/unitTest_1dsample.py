@@ -88,14 +88,6 @@ for coord in coords:
     exitF = bg.fft2(makeExit(sample, probe, coord))
     diffs.append(np.abs(exitF)**2)
 
-print 'making heatmap'
-heatmap = np.zeros_like(sample)
-for coord in coords:
-    temp    = np.zeros_like(sample)
-    temp[:probe.shape[0], :probe.shape[1]] = makeExit(np.ones_like(sample), probe, coord)
-    temp = bg.roll(temp, -coord)
-    heatmap += np.abs(temp)**2
-
 sampleInit = np.random.random(sample_1d.shape) + 1J*np.random.random(sample_1d.shape)
 #sampleInit = sample
 #probeInit = np.random.random((shape_illum)) + 1J*np.random.random((shape_illum))
@@ -131,23 +123,4 @@ print ''
 print 'Now run the test with:'
 print 'python Ptychography.py -i', outputdir, ' -o',outputdir
 
-# run Ptychography and time it using the bash command "time"
-subprocess.call('time python Ptychography.py' + ' -i' + outputdir + ' -o' + outputdir, shell=True)
-
-sample_ret = bg.binary_in(outputdir + 'sample_retrieved', dt=np.complex128, dimFnam=True)
-c = np.sum(np.conj(sample_ret) * sample) / np.sum(np.abs(sample_ret)**2 + 1.0e-10)
-print 'sample error', bg.l2norm(c * sample_ret, sample)
-
-mask = (heatmap > 1.0e-1 * heatmap.max())
-print 'mask area' , np.sum(mask)
-
-sample_ret_m = sample_ret * mask
-sample_m = sample * mask
-c = np.sum(np.conj(sample_ret_m) * sample_m) / np.sum(np.abs(sample_ret_m)**2 + 1.0e-10)
-print 'sample error', bg.l2norm(c * sample_ret_m, sample_m)
-
-probe_ret0 = bg.binary_in(outputdir + 'probe_retrieved', dt=np.complex128, dimFnam=True)
-probe_ret = np.sum(bg.fft2(probe_ret0), axis=0)
-probe_1d  = np.sum(bg.fft2(probe), axis=0)
-c = np.sum(np.conj(probe_ret) * probe_1d) / np.sum(np.abs(probe_ret)**2 + 1.0e-10)
-print 'probe error', bg.l2norm(c * probe_ret, probe_1d)
+subprocess.Popen([sys.executable, 'Ptychography.py', '-i', outputdir, '-o', outputdir])

@@ -40,6 +40,25 @@ def update_progress(progress, algorithm, i, emod, esup):
     sys.stdout.write(text)
     sys.stdout.flush()
 
+def update_progress(progress, algorithm, i, emod, esup):
+    barLength = 15 # Modify this to change the length of the progress bar
+    status = ""
+    if isinstance(progress, int):
+        progress = float(progress)
+    if not isinstance(progress, float):
+        progress = 0
+        status = "error: progress var must be float\r\n"
+    if progress < 0:
+        progress = 0
+        status = "Halt...\r\n"
+    if progress >= 1:
+        progress = 1
+        status = "Done...\r\n"
+    block = int(round(barLength*progress))
+    text = "\r{0}: [{1}] {2}% {3} {4} {5} {6} {7}".format(algorithm, "#"*block + "-"*(barLength-block), int(progress*100), i, emod, esup, status, " " * 5) # this last bit clears the line
+    sys.stdout.write(text)
+    sys.stdout.flush()
+
 def main(argv):
     inpurtdir = './'
     outputdir = './'
@@ -204,6 +223,7 @@ class Ptychography(object):
             self.exits = exits
             #
             update_progress(i / max(1.0, float(iters-1)), 'Thibault sample', i, self.error_conv[-1], self.error_sup[-1])
+            #
 
     def Thibault_probe(self, iters=1):
         print 'i \t\t eConv \t\t eSup'
@@ -222,6 +242,7 @@ class Ptychography(object):
             self.exits = exits
             #
             update_progress(i / max(1.0, float(iters-1)), 'Thibault probe', i, self.error_conv[-1], self.error_sup[-1])
+            #
 
     def Thibault_both(self, iters=1):
         print 'i \t\t eMod \t\t eSup'
@@ -243,21 +264,6 @@ class Ptychography(object):
             self.exits = exits
             #
             update_progress(i / max(1.0, float(iters-1)), 'Thibault sample / probe', i, self.error_conv[-1], self.error_sup[-1])
-
-    def Huang(self, iters=None):
-        """This is the algorithm used in "11 nm Hard X-ray focus from a large-aperture multilayer Laue lens" (2013) nature"""
-        def randsample():
-            array = np.random.random(self.sample.shape) + 1J * np.random.random(self.sample.shape) 
-            return array
-        #
-        for i in range(3):
-            self.sample     = randsample()
-            self.sample_sum = None
-            self.exits = makeExits(self.sample, self.probe, self.coords)
-            #
-            self.Thibault_sample(iters=5)
-            #
-            self.Thibault_both(iters=10)
             #
             probes = []
             for j in range(10):
@@ -299,15 +305,15 @@ class Ptychography(object):
         exits_out = bg.ifftn(exits_out)
         return exits_out
 
-    def Pmod_hat(self, exits_F, pmod_int = False):
-        exits_out = exits_F
+    def Pmod(self, exits, pmod_int = False):
+        exits_out = bg.fftn(exits)
         if self.pmod_int or pmod_int :
             exits_out = exits_out * (self.mask * self.diffAmps * (self.diffAmps > 0.99) /  np.clip(np.abs(exits_out), self.alpha_div, np.inf) \
                            + (~self.mask) )
         else :
             exits_out = exits_out * (self.mask * self.diffAmps / np.clip(np.abs(exits_out), self.alpha_div, np.inf) \
                            + (~self.mask) )
-            #exits_out = exits_out * self.diffAmps / (np.abs(exits_out) + self.alpha_div)
+        exits_out = bg.ifftn(exits_out)
         return exits_out
 
     def Pmod_integer(self, exits):
@@ -399,9 +405,7 @@ class Ptychography(object):
     
 
 
-class Ptychography_1dsample(Ptychography):
     def __init__(self, diffs, coords, mask, probe, sample_1d, sample_support_1d, pmod_int = False): 
-        from cgls import cgls_nonlinear
         self.sample_1d = sample_1d
         self.sample_support_1d = sample_support_1d
         #
@@ -411,13 +415,6 @@ class Ptychography_1dsample(Ptychography):
         sample_support[:] = sample_support_1d.copy()
         #
         Ptychography.__init__(self, diffs, coords, mask, probe, sample, sample_support, pmod_int)
-        #
-        # nonlinear cgls update for coordinates in 1d
-        n  = len(self.coords) - 1
-        f  = lambda x   : self.f(x, n = n)
-        fd = lambda x, d: self.grad_f_dot_d(x, d, n = n)
-        df = lambda x   : self.grad_f(x, n = n)
-        self.cg = cgls_nonlinear.Cgls(self.coords_contract(self.coords, n = n), f, df, fd)
 
     def Psup_sample(self, exits, thresh=False, inPlace=True):
         """ """
@@ -1129,23 +1126,12 @@ def input_output(inputDir):
                     sequence.append([temp[0], temp[2]])
     #
     # If the sample is 1d then do a 1d retrieval 
-    if len(sample.shape) == 1 and GPU_calc == False :
+    if len(sample.shape) == 1 :
         print '1d sample => 1d Ptychography'
         prob = Ptychography_1dsample(diffs, coords, mask, probe, sample, sample_support)
-        #
-    elif len(sample.shape) == 2 and GPU_calc == False :
+    elif len(sample.shape) == 2 :
         print '2d sample => 2d Ptychography'
         prob = Ptychography(diffs, coords, mask, probe, sample, sample_support)
-        #
-    elif len(sample.shape) == 2 and GPU_calc == True :
-        print 'Performing calculations on GPU'
-        print '2d sample => 2d Ptychography'
-        prob = Ptychography_gpu(diffs, coords, mask, probe, sample, sample_support)
-    elif len(sample.shape) == 1 and GPU_calc == True :
-        print 'Performing calculations on GPU'
-        print '1d sample => 1d Ptychography'
-        prob = Ptychography_1dsample_gpu(diffs, coords, mask, probe, sample, sample_support)
-        #
     return prob, sequence
 
 def runSequence(prob, sequence):
@@ -1155,7 +1141,7 @@ def runSequence(prob, sequence):
     # Check the sequence list
     run_seq = []
     for i in range(len(sequence)):
-        if sequence[i][0] in ('ERA_sample', 'ERA_probe', 'ERA_both', 'HIO_sample', 'HIO_probe', 'back_prop', 'Thibault_sample', 'Thibault_probe', 'Thibault_both', 'Huang', 'coords_update_1d'):
+        if sequence[i][0] in ('ERA_sample', 'ERA_probe', 'ERA_both', 'HIO_sample', 'HIO_probe', 'back_prop', 'Thibault_sample', 'Thibault_probe', 'Thibault_both'):
             # This will return an error if the string is not formatted properly (i.e. as an int)
             if sequence[i][0] == 'ERA_sample':
                 run_seq.append(sequence[i] + [prob.ERA_sample])
@@ -1181,12 +1167,6 @@ def runSequence(prob, sequence):
             if sequence[i][0] == 'Thibault_both':
                 run_seq.append(sequence[i] + [prob.Thibault_both])
             #
-            if sequence[i][0] == 'Huang':
-                run_seq.append(sequence[i] + [prob.Huang])
-            #
-            if sequence[i][0] == 'coords_update_1d':
-                run_seq.append(sequence[i] + [prob.coords_update_1d])
-            #
             if sequence[i][0] == 'back_prop':
                 run_seq.append(sequence[i] + [prob.back_prop])
             #
@@ -1198,7 +1178,7 @@ def runSequence(prob, sequence):
                     print 'exluding the values of sqrt(I) that fall in the range (0 --> 1)'
                     prob.pmod_int = True
         else :
-            raise NameError("What algorithm is this?! I\'ll tell you one thing, it is not part of : 'ERA_sample', 'ERA_probe', 'ERA_both', 'HIO_sample', 'HIO_probe', 'back_prop', 'Thibault_sample', 'Thibault_probe', 'Thibault_both', 'Huang' " + sequence[i][0])
+            raise NameError("What algorithm is this?! I\'ll tell you one thing, it is not part of : 'ERA_sample', 'ERA_probe', 'ERA_both', 'HIO_sample', 'HIO_probe', 'back_prop', 'Thibault_sample', 'Thibault_probe', 'Thibault_both' " + sequence[i][0])
     #
     for seq in run_seq:
         print 'Running ', seq[0]
