@@ -3,6 +3,7 @@ import sys
 from ctypes import *
 import bagOfns as bg
 from utility_Ptych import makeExits
+from utility_Ptych import ERA, HIO, Thibault, update_progress
 
 
 class Ptychography(object):
@@ -44,193 +45,116 @@ class Ptychography(object):
         self.diffNorm   = np.sum(self.mask * (self.diffAmps)**2)
         self.pmod_int   = pmod_int
         self.sample_support = sample_support
+        self.iteration  = 0
 
-    def ERA_sample(self, iters=1):
-        print 'i, eMod, eSup'
-        for i in range(iters):
-            exits = self.Pmod(self.exits)
-            self.exits -= exits
-            self.error_mod.append(np.sum(np.real(np.conj(self.exits)*self.exits))/self.diffNorm)
-            #
-            self.Psup_sample(exits)
-            self.exits = makeExits(self.sample, self.probe, self.coords)
-            exits     -= self.exits
-            self.error_sup.append(np.sum(np.real(np.conj(exits)*exits))/self.diffNorm)
-            #
-            self.update_progress(i / max(1.0, float(iters-1)), 'ERA sample', i, self.error_mod[-1], self.error_sup[-1])
-        return self
+    def ERA(self, iters=1, update = 'sample'):
+        """Caculate the update for the exit surface waves using the Error Reduction Algorithm
 
-    def ERA_probe(self, iters=1):
-        print 'i \t\t eMod \t\t eSup'
-        for i in range(iters):
-            exits = self.Pmod(self.exits)
-            self.exits -= exits
-            self.error_mod.append(np.sum(np.real(np.conj(self.exits)*self.exits))/self.diffNorm)
-            #
-            self.Psup_probe(exits)
-            self.exits = makeExits(self.sample, self.probe, self.coords)
-            exits     -= self.exits
-            self.error_sup.append(np.sum(np.real(np.conj(exits)*exits))/self.diffNorm)
-            #
-            self.update_progress(i / max(1.0, float(iters-1)), 'ERA Probe', i, self.error_mod[-1], self.error_sup[-1])
-        return self
-
-    def ERA_both(self, iters=1):
-        print 'i, eMod, eSup'
-        for i in range(iters):
-            exits = self.Pmod(self.exits)
-            #
-            self.exits -= exits
-            self.error_mod.append(np.sum(np.real(np.conj(self.exits)*self.exits))/self.diffNorm)
-            #
-            for j in range(5):
-                self.Psup_sample(exits, thresh=1.0)
-                self.Psup_probe(exits)
-            #
-            self.exits = makeExits(self.sample, self.probe, self.coords)
-            exits     -= self.exits
-            self.error_sup.append(np.sum(np.real(np.conj(exits)*exits))/self.diffNorm)
-            #
-            self.update_progress(i / max(1.0, float(iters-1)), 'ERA both', i, self.error_mod[-1], self.error_sup[-1])
-        return self
-
-    def HIO_sample(self, iters=1, beta=1):
-        print 'i \t\t eMod \t\t eSup'
-        for i in range(iters):
-            exits = self.Pmod(self.exits)
-            self.Psup_sample((1 + 1/beta)*exits - 1/beta * self.exits)
-            exits = self.exits + beta * makeExits(self.sample, self.probe, self.coords) - beta * exits
-            #
-            self.exits = self.exits - self.Pmod(exits)
-            self.error_mod.append(np.sum(np.real(np.conj(self.exits)*self.exits))/self.diffNorm)
-            #
-            self.Psup_sample(exits)
-            self.exits = exits - makeExits(self.sample, self.probe, self.coords)
-            self.error_sup.append(np.sum(np.real(np.conj(self.exits)*self.exits))/self.diffNorm)
-            #
-            self.update_progress(i / max(1.0, float(iters-1)), 'HIO sample', i, self.error_mod[-1], self.error_sup[-1])
-            #
-            self.exits = exits
-        return self
-
-    def HIO_probe(self, iters=1, beta=1):
-        print 'i \t\t eMod \t\t eSup'
-        for i in range(iters):
-            exits = self.Pmod(self.exits)
-            self.Psup_probe((1 + 1/beta)*exits - 1/beta * self.exits)
-            exits = self.exits + beta * makeExits(self.sample, self.probe, self.coords) - beta * exits
-            #
-            self.exits = exits - self.Pmod(exits)
-            self.error_mod.append(np.sum(np.real(np.conj(self.exits)*self.exits))/self.diffNorm)
-            #
-            self.Psup_probe(exits)
-            self.exits = exits - makeExits(self.sample, self.probe, self.coords)
-            self.error_sup.append(np.sum(np.real(np.conj(self.exits)*self.exits))/self.diffNorm)
-            #
-            self.update_progress(i / max(1.0, float(iters-1)), 'HIO probe', i, self.error_mod[-1], self.error_sup[-1])
-            #
-            self.exits = exits
-        return self
-
-    def Thibault_sample(self, iters=1):
-        print 'i \t\t eConv \t\t eSup'
-        for i in range(iters):
-            self.Psup_sample(self.exits, thresh=1.0)
-            exits = makeExits(self.sample, self.probe, self.coords)
-            self.error_sup.append(np.sum(np.abs(exits - self.exits)**2)/self.diffNorm)
-            exits = self.exits + self.Pmod(2*exits - self.exits) - exits
-            self.error_conv.append(np.sum(np.abs(exits - self.exits)**2)/self.diffNorm)
-            self.error_mod.append(None)
-            self.exits = exits
-            #
-            self.update_progress(i / max(1.0, float(iters-1)), 'Thibault sample', i, self.error_conv[-1], self.error_sup[-1])
-        return self
-
-    def Thibault_probe(self, iters=1):
-        print 'i \t\t eConv \t\t eSup'
-        for i in range(iters):
-            self.Psup_probe(self.exits)
-
-            exits = makeExits(self.sample, self.probe, self.coords)
-
-            self.error_sup.append(np.sum(np.abs(exits - self.exits)**2)/self.diffNorm)
-
-            exits = self.exits + self.Pmod(2*exits - self.exits) - exits
-
-            self.error_conv.append(np.sum(np.abs(exits - self.exits)**2)/self.diffNorm)
-            self.error_mod.append(None)
-
-            self.exits = exits
-            #
-            self.update_progress(i / max(1.0, float(iters-1)), 'Thibault probe', i, self.error_conv[-1], self.error_sup[-1])
-        return self
-
-    def Thibault_both(self, iters=1):
-        print 'i \t\t eMod \t\t eSup'
-        for i in range(iters):
-            self.Psup_sample(self.exits, thresh=1.0)
-            self.Psup_probe(self.exits)
-            self.Psup_sample(self.exits, thresh=1.0)
-            self.Psup_probe(self.exits)
-
-            exits = makeExits(self.sample, self.probe, self.coords)
-
-            self.error_sup.append(np.sum(np.abs(exits - self.exits)**2)/self.diffNorm)
-
-            exits = self.exits + self.Pmod(2*exits - self.exits) - exits
-
-            self.error_conv.append(np.sum(np.abs(exits - self.exits)**2)/self.diffNorm)
-            self.error_mod.append(None)
-
-            self.exits = exits
-            #
-            self.update_progress(i / max(1.0, float(iters-1)), 'Thibault sample / probe', i, self.error_conv[-1], self.error_sup[-1])
-        return self
-
-    def Huang(self, iters=None):
-        """This is the algorithm used in "11 nm Hard X-ray focus from a large-aperture multilayer Laue lens" (2013) nature"""
-        def randsample():
-            array = np.random.random(self.sample.shape) + 1J * np.random.random(self.sample.shape) 
-            return array
-        #
-        for i in range(3):
-            self.sample     = randsample()
-            self.sample_sum = None
-            self.exits = makeExits(self.sample, self.probe, self.coords)
-            #
-            self.Thibault_sample(iters=5)
-            #
-            self.Thibault_both(iters=10)
-            #
-            probes = []
-            for j in range(10):
-                self.Thibault_both(iters=1)
-                probes.append(self.probe.copy())
-            self.probe     = np.sum(np.array(probes), axis=0) / float(len(probes))
-            self.probe_sum = None
-        #
-        probe  = self.probe.copy()
-        probes  = []
-        samples = []
-        for i in range(3):
-            self.sample     = randsample()
-            self.sample_sum = None
-            self.probe      = probe.copy()
-            self.probe_sum  = None
-            self.exits = makeExits(self.sample, self.probe, self.coords)
-            #
-            self.Thibault_sample(iters=5)
-            #
-            self.Thibault_both(iters=5)
-            #
-            for j in range(5):
-                self.Thibault_both(iters=1)
-                probes.append(self.probe.copy())
-                samples.append(self.sample.copy())
-        self.probe = np.sum(np.array(probes), axis=0) / float(len(probes))
-        self.sample = np.sum(np.array(samples), axis=0) / float(len(samples))
-        return self
+        We can specify the one of 'sample', 'probe' or 'both' should be updated.
+        """
+        if update == 'sample' :
+            Psup = lambda ex : makeExits(self.Psup_sample(ex, inPlace=True), self.probe, self.coords) 
+            alg = 'ERA sample'
         
+        elif update == 'probe' :
+            Psup = lambda ex : makeExits(self.sample, self.Psup_probe(ex, inPlace=True), self.coords) 
+            alg = 'ERA probe'
+        
+        elif update == 'both':
+            temp_sample = lambda ex : makeExits(self.Psup_sample(ex, inPlace=True, thresh=1.0), self.probe, self.coords)
+            temp_probe  = lambda ex : makeExits(self.sample, self.Psup_probe(ex, inPlace=True), self.coords) 
+            Psup = lambda ex : temp_probe(temp_sample(ex))
+            alg = 'ERA both'
+        
+        print 'i, eMod, eSup'
+        for i in range(iters):
+            self.exits = ERA(self.exits, self.Pmod, Psup)
+            
+            # calculate errors every 4 iters
+            if (i % 4 == 0) or (i == iters - 1) :
+                eMod = self.calc_eMod(self.exits)
+                eSup = self.calc_eSup(self.exits, Psup)
+                self.error_mod.append([self.iteration, eMod])
+                self.error_sup.append([self.iteration, eSup])
+            
+            self.iteration += 1
+             
+            # display errors
+            update_progress(i / max(1.0, float(iters-1)), alg, i, self.error_mod[-1][1], self.error_sup[-1][1])
+        return self
+
+    def HIO(self, iters=1, beta=1., update='sample'):
+        """Caculate the update for the exit surface waves using the Hybrid Input Output algorithm
+
+        We can specify the one of 'sample', 'probe' or 'both' should be updated.
+        """
+        if update == 'sample' :
+            Psup = lambda ex : makeExits(self.Psup_sample(ex, inPlace=True), self.probe, self.coords) 
+            alg = 'HIO sample'
+        
+        elif update == 'probe' :
+            Psup = lambda ex : makeExits(self.sample, self.Psup_probe(ex, inPlace=True), self.coords) 
+            alg = 'HIO probe'
+        
+        elif update == 'both':
+            temp_sample = lambda ex : makeExits(self.Psup_sample(ex, inPlace=True, thresh=1.0), self.probe, self.coords)
+            temp_probe  = lambda ex : makeExits(self.sample, self.Psup_probe(ex, inPlace=True), self.coords) 
+            Psup = lambda ex : temp_probe(temp_sample(ex))
+            alg = 'HIO both'
+        
+        print 'i, eMod, eSup'
+        for i in range(iters):
+            self.exits = HIO(self.exits, self.Pmod, Psup, beta=beta)
+            
+            # calculate errors every 4 iters
+            if (i % 4 == 0) or (i == iters - 1) :
+                eMod = self.calc_eMod(self.exits)
+                eSup = self.calc_eSup(self.exits, Psup)
+                self.error_mod.append([self.iteration, eMod])
+                self.error_sup.append([self.iteration, eSup])
+            
+            self.iteration += 1
+             
+            # display errors
+            update_progress(i / max(1.0, float(iters-1)), alg, i, self.error_mod[-1][1], self.error_sup[-1][1])
+        return self
+
+    def Thibault(self, iters=1, beta=1., update='sample'):
+        """Caculate the update for the exit surface waves using Thibault's application of the difference map algorithm
+
+        We can specify the one of 'sample', 'probe' or 'both' should be updated.
+        """
+        if update == 'sample' :
+            Psup = lambda ex : makeExits(self.Psup_sample(ex, inPlace=True), self.probe, self.coords) 
+            alg = 'DM sample'
+        
+        elif update == 'probe' :
+            Psup = lambda ex : makeExits(self.sample, self.Psup_probe(ex, inPlace=True), self.coords) 
+            alg = 'DM probe'
+        
+        elif update == 'both':
+            temp_sample = lambda ex : makeExits(self.Psup_sample(ex, inPlace=True, thresh=1.0), self.probe, self.coords)
+            temp_probe  = lambda ex : makeExits(self.sample, self.Psup_probe(ex, inPlace=True), self.coords) 
+            Psup = lambda ex : temp_probe(temp_sample(ex))
+            alg = 'DM both'
+        
+        print 'i, eMod, eSup'
+        for i in range(iters):
+            self.exits = Thibault(self.exits, self.Pmod, Psup)
+            
+            # calculate errors every 4 iters
+            if (i % 4 == 0) or (i == iters - 1) :
+                eMod = self.calc_eMod(self.exits)
+                eSup = self.calc_eSup(self.exits, Psup)
+                self.error_mod.append([self.iteration, eMod])
+                self.error_sup.append([self.iteration, eSup])
+            
+            self.iteration += 1
+             
+            # display errors
+            update_progress(i / max(1.0, float(iters-1)), alg, i, self.error_mod[-1][1], self.error_sup[-1][1])
+        return self
+
     def Pmod(self, exits, pmod_int = False):
         exits_out = bg.fftn(exits)
         if self.pmod_int or pmod_int :
@@ -342,25 +266,17 @@ class Ptychography(object):
         self.exits = bg.ifftn(exits_out)
         return self
     
-    def update_progress(self, progress, algorithm, i, emod, esup):
-        barLength = 15 # Modify this to change the length of the progress bar
-        status = ""
-        if isinstance(progress, int):
-            progress = float(progress)
-        if not isinstance(progress, float):
-            progress = 0
-            status = "error: progress var must be float\r\n"
-        if progress < 0:
-            progress = 0
-            status = "Halt...\r\n"
-        if progress >= 1:
-            progress = 1
-            status = "Done...\r\n"
-        block = int(round(barLength*progress))
-        text = "\r{0}: [{1}] {2}% {3} {4} {5} {6} {7}".format(algorithm, "#"*block + "-"*(barLength-block), int(progress*100), i, emod, esup, status, " " * 5) # this last bit clears the line
-        sys.stdout.write(text)
-        sys.stdout.flush()
-
+    def calc_eMod(self, exits):
+        eMod = self.mask * (np.abs(bg.fftn(exits)) - self.diffAmps)**2
+        eMod = np.sum(eMod) / self.diffNorm
+        eMod = np.sqrt(eMod)
+        return eMod
+    
+    def calc_eSup(self, exits, Psup):
+        eSup = np.abs( exits - Psup(exits) )**2
+        eSup = np.sum(eSup) / self.diffNorm
+        eSup = np.sqrt(eSup)
+        return eSup
 
 
 def forward_sim():
@@ -397,13 +313,15 @@ def forward_sim():
 # Example usage
 if __name__ == '__main__' :
     diffs, coords, mask, probe, sample, sample_support = forward_sim()
-
+    
     sample0 = np.random.random(sample.shape) + 1J*np.random.random(sample.shape)
-
+    probe0  = probe + 0.1 * (np.random.random(probe.shape) + 1J*np.random.random(probe.shape))
+    
     prob = Ptychography(diffs, coords, mask, probe, sample0, sample_support) 
     
     # do 100 ERA iterations
-    prob = Ptychography.ERA_sample(prob, 100)
+    prob = Ptychography.Thibault(prob, 40, update='sample')
+    prob = Ptychography.ERA(prob, 20, update='sample')
     
     # check the fidelity inside of the illuminated region:
     probe_mask = prob.probe_sum > prob.probe_sum.max() * 1.0e-10
