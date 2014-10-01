@@ -21,6 +21,15 @@ def Thibault(exit, Pmod, Psup):
     out = exit +  Pmod(2*out - exit) - out
     return out
 
+def makeExits3(sample, probe, coords):
+    """Calculate the exit surface waves with no wrapping and assuming integer coordinate shifts"""
+    exits = np.zeros((len(coords), probe.shape[0], probe.shape[1]), dtype=np.complex128)
+    for i, coord in enumerate(coords):
+        exits[i] = sample[-coord[0]:probe.shape[0]-coord[0], -coord[1]:probe.shape[1]-coord[1]]
+    exits *= probe 
+    return exits
+
+
 def makeExits2(sample, probe, coords, exits):
     """Calculate the exit surface waves with no wrapping and assuming integer coordinate shifts"""
     for i, coord in enumerate(coords):

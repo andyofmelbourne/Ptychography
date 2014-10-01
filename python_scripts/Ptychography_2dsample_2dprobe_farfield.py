@@ -2,7 +2,7 @@ import numpy as np
 import sys
 from ctypes import *
 import bagOfns as bg
-from utility_Ptych import makeExits
+from utility_Ptych import makeExits3 as makeExits
 from utility_Ptych import ERA, HIO, Thibault, update_progress
 
 
@@ -46,6 +46,7 @@ class Ptychography(object):
         self.pmod_int   = pmod_int
         self.sample_support = sample_support
         self.iteration  = 0
+
 
     def ERA(self, iters=1, update = 'sample'):
         """Caculate the update for the exit surface waves using the Error Reduction Algorithm
@@ -187,6 +188,38 @@ class Ptychography(object):
         exits_out = bg.ifftn(exits_out)
         return exits_out
 
+    def Psup_sample_test(self, exits, thresh=False, inPlace=True):
+        """ """
+        sample_out  = np.zeros_like(self.sample)
+        # 
+        # Calculate denominator
+        # but only do this if it hasn't been done already
+        # (we must set self.probe_sum = None when the probe/coords has changed)
+        if self.probe_sum is None :
+            probe_sum   = np.zeros_like(self.sample, dtype=np.float64)
+            probe_s     = np.real(np.conj(self.probe) * self.probe)
+            for coord in self.coords:
+                probe_sum[-coord[0]:self.shape[0]-coord[0], -coord[1]:self.shape[1]-coord[1]] += probe_s
+            self.probe_sum = probe_sum
+        # 
+        # Calculate numerator
+        exits     = np.conj(self.probe) * exits
+        for coord, exit in zip(self.coords, exits):
+            sample_out[-coord[0]:self.shape[0]-coord[0], -coord[1]:self.shape[1]-coord[1]] += exit
+        #
+        # divide
+        sample_out  = sample_out / (self.probe_sum + self.alpha_div)
+        sample_out  = sample_out * self.sample_support + ~self.sample_support
+        #
+        if thresh :
+            sample_out = bg.threshold(sample_out, thresh=thresh)
+        #
+        self.sample_sum = None
+        if inPlace :
+            self.sample = sample_out
+        else :
+            return sample_out
+
     def Psup_sample(self, exits, thresh=False, inPlace=True):
         """ """
         sample_out  = np.zeros_like(self.sample)
@@ -201,26 +234,23 @@ class Ptychography(object):
             for coord in self.coords:
                 probe_sum  += bg.roll(probe_large, [-coord[0], -coord[1]])
             self.probe_sum = probe_sum.copy()
-        # 
+          
         # Calculate numerator
         exits2     = np.conj(self.probe) * exits 
-        temp       = np.zeros_like(self.sample)
-        for i in range(len(self.coords)):
-            temp.fill(0.0)
-            temp[:self.shape[0], :self.shape[1]] = exits2[i]
-            sample_out += bg.roll(temp, [-self.coords[i][0], -self.coords[i][1]])
-        #
+        for coord, exit in zip(self.coords, exits2):
+            sample_out[-coord[0]:self.shape[0]-coord[0], -coord[1]:self.shape[1]-coord[1]] += exit
+         
         # divide
         sample_out  = sample_out / (self.probe_sum + self.alpha_div)
         sample_out  = sample_out * self.sample_support + ~self.sample_support
-        #
+         
         if thresh :
             sample_out = bg.threshold(sample_out, thresh=thresh)
-        #
+         
         if inPlace :
             self.sample = sample_out
         self.sample_sum = None
-        # 
+          
         return sample_out
     
     def Psup_probe(self, exits, inPlace=True):
@@ -296,8 +326,8 @@ def forward_sim():
     probe       = bg.circle_new(shape_illum, radius=0.5, origin='centre') + 0J
         
     # make some sample positions
-    xs = range(shape_illum[1] - shape_sample[1], 1, 4)
-    ys = range(shape_illum[0] - shape_sample[0], 1, 4)
+    xs = range(shape_illum[1] - shape_sample[1], 1, 8)
+    ys = range(shape_illum[0] - shape_sample[0], 1, 8)
     xs, ys = np.meshgrid( xs, ys )
     coords = zip(ys.ravel(), xs.ravel())
 
@@ -320,8 +350,8 @@ if __name__ == '__main__' :
     prob = Ptychography(diffs, coords, mask, probe, sample0, sample_support) 
     
     # do 100 ERA iterations
-    prob = Ptychography.Thibault(prob, 40, update='sample')
-    prob = Ptychography.ERA(prob, 20, update='sample')
+    #prob = Ptychography.Thibault(prob, 1, update='sample')
+    prob = Ptychography.ERA(prob, 50, update='sample')
     
     # check the fidelity inside of the illuminated region:
     probe_mask = prob.probe_sum > prob.probe_sum.max() * 1.0e-10
