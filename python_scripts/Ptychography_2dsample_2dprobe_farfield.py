@@ -7,7 +7,7 @@ from utility_Ptych import ERA, HIO, Thibault, update_progress
 
 
 class Ptychography(object):
-    def __init__(self, diffs, coords, mask, probe, sample, sample_support, pmod_int = False): 
+    def __init__(self, diffs, coords, probe, sample, mask = None, sample_support = None, pmod_int = False): 
         """Initialise the Ptychography module with the data in 'inputDir' 
         
         Naming convention:
@@ -33,7 +33,10 @@ class Ptychography(object):
         self.shape      = shape
         self.shape_sample = sample.shape
         self.coords     = coords
-        self.mask       = bg.quadshift(mask)
+        if mask is None :
+            self.mask = np.ones_like(diffs[0], dtype=np.bool)
+        else :
+            self.mask       = bg.quadshift(mask)
         self.probe      = probe
         self.sample     = sample
         self.alpha_div  = 1.0e-10
@@ -44,7 +47,10 @@ class Ptychography(object):
         self.sample_sum = None
         self.diffNorm   = np.sum(self.mask * (self.diffAmps)**2)
         self.pmod_int   = pmod_int
-        self.sample_support = sample_support
+        if sample_support is None :
+            sample_support = np.ones_like(sample, dtype=np.bool)
+        else :
+            self.sample_support = sample_support
         self.iteration  = 0
 
 
@@ -297,7 +303,7 @@ def forward_sim():
     xs = range(shape_illum[1] - shape_sample[1], 1, 8)
     ys = range(shape_illum[0] - shape_sample[0], 1, 8)
     xs, ys = np.meshgrid( xs, ys )
-    coords = zip(ys.ravel(), xs.ravel())
+    coords = np.array(zip(ys.ravel(), xs.ravel()))
 
     # diffraction patterns
     diffs = makeExits(sample, probe, coords)
