@@ -188,42 +188,10 @@ class Ptychography(object):
         exits_out = bg.ifftn(exits_out)
         return exits_out
 
-    def Psup_sample_test(self, exits, thresh=False, inPlace=True):
-        """ """
-        sample_out  = np.zeros_like(self.sample)
-        # 
-        # Calculate denominator
-        # but only do this if it hasn't been done already
-        # (we must set self.probe_sum = None when the probe/coords has changed)
-        if self.probe_sum is None :
-            probe_sum   = np.zeros_like(self.sample, dtype=np.float64)
-            probe_s     = np.real(np.conj(self.probe) * self.probe)
-            for coord in self.coords:
-                probe_sum[-coord[0]:self.shape[0]-coord[0], -coord[1]:self.shape[1]-coord[1]] += probe_s
-            self.probe_sum = probe_sum
-        # 
-        # Calculate numerator
-        exits     = np.conj(self.probe) * exits
-        for coord, exit in zip(self.coords, exits):
-            sample_out[-coord[0]:self.shape[0]-coord[0], -coord[1]:self.shape[1]-coord[1]] += exit
-        #
-        # divide
-        sample_out  = sample_out / (self.probe_sum + self.alpha_div)
-        sample_out  = sample_out * self.sample_support + ~self.sample_support
-        #
-        if thresh :
-            sample_out = bg.threshold(sample_out, thresh=thresh)
-        #
-        self.sample_sum = None
-        if inPlace :
-            self.sample = sample_out
-        else :
-            return sample_out
-
     def Psup_sample(self, exits, thresh=False, inPlace=True):
         """ """
         sample_out  = np.zeros_like(self.sample)
-        # 
+          
         # Calculate denominator
         # but only do this if it hasn't been done already
         # (we must set self.probe_sum = None when the probe/coords has changed)
@@ -259,20 +227,20 @@ class Ptychography(object):
         # 
         # Calculate denominator
         # but only do this if it hasn't been done already
-        # (we must set self.probe_sum = None when the probe/coords has changed)
+        # (we must set self.sample_sum = None when the sample/coords has changed)
         if self.sample_sum is None :
             sample_sum  = np.zeros_like(self.sample, dtype=np.float64)
             temp        = np.real(self.sample * np.conj(self.sample))
             for coord in self.coords:
                 sample_sum  += bg.roll(temp, coord)
             self.sample_sum = sample_sum[:self.shape[0], :self.shape[1]]
-        # 
+          
         # Calculate numerator
         # probe = sample * [sum np.conj(sample_shifted) * exit_shifted] / sum |sample_shifted|^2 
-        for i in range(len(self.coords)):
-            sample_shifted = bg.roll(self.sample, self.coords[i])[:self.shape[0], :self.shape[1]]
-            probe_out     += np.conj(sample_shifted) * exits[i] 
-        #
+        sample_conj = np.conj(self.sample)
+        for exit, coord in zip(exits, self.coords):
+            probe_out += exit * sample_conj[-coord[0]:self.shape[0]-coord[0], -coord[1]:self.shape[1]-coord[1]]
+         
         # divide
         probe_out   = probe_out / (self.sample_sum + self.alpha_div)
         if inPlace:
@@ -349,7 +317,7 @@ if __name__ == '__main__' :
     
     prob = Ptychography(diffs, coords, mask, probe, sample0, sample_support) 
     
-    # do 100 ERA iterations
+    # do 50 ERA iterations
     #prob = Ptychography.Thibault(prob, 1, update='sample')
     prob = Ptychography.ERA(prob, 50, update='sample')
     
