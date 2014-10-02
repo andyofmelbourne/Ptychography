@@ -45,275 +45,50 @@ class Pcxi(object):
                      energy                     float
                      probe                      (N, M) np.complex128 (???)
     """
-    def __init__(self, cxi_fnam, Pcxi):
+    def __init__(self, cxi_file):
         """Initialise the Ptychography class from the cxi file
-        
-        Add the extra entries on top of cxi_fnam.
         """
+        self.cxi_file = cxi_file
 
+    def ERA(self, iters=1, update='sample'):
+        """
+        self --> Ptychography
+        ERA iters
+        Ptychography <-- self
+        """
+        prob = Pcxi.Pcxi_to_P(self)
+        prob = Ptychography.ERA(prob, iters=iters, update=update)
+        self.append_P(prob)
+        return self
 
-    
-    def write(self, fnam):
+    def Pcxi_to_P(self):
+        diffs  = np.array(self.cxi_file['entry_1/image_1/data'])
+        mask   = np.array(self.cxi_file['entry_1/image_1/instrument_1/detector_1/mask'])
+        shape  = diffs[0].shape
+        
+        # geometry
+        z      = self.cxi_file['entry_1/image_1/instrument_1/detector_1/distance']
+        lamb   = self.cxi_file['entry_1/image_1/instrument_1/source_1/wave length']
+        du     = np.array((2), dtype=np.float64)
+        du[0]  = self.cxi_file['entry_1/image_1/instrument_1/detector_1/y_pixel_size']
+        du[1]  = self.cxi_file['entry_1/image_1/instrument_1/detector_1/x_pixel_size']
+        dr     = lamb * z / (shape * du)
+        xyz    = np.array(self.cxi_file['translation'])
+        i = xyz[1] * dr[0]
+        j = xyz[0] * dr[1]
+        coords = np.array( zip(i, j), dtype=np.int ) 
+        
+        # sample / probe
+        sample         = np.array(self.cxi_file['entry_1/sample_1/transmission function'])
+        sample_support = np.array(self.cxi_file['entry_1/sample_1/support'])
+        probe = np.array(self.cxi_file['entry_1/image_1/source_1/probe'])
+        
+        prob = Ptychography(diffs, coords, probe, sample, mask, sample_support)
+        return prob
+
+    def append_P(self, prob)
         pass
 
-    def read(fnam):
-        print fnam
-    
-    def check(self):
-        # recursively search through the data structure
-        def myprint(d):
-            for k, v in d.iteritems():
-                if isinstance(v, dict):
-                    myprint(v)
-                elif v == None :
-                    print "Warning {0} : {1}".format(k, v)
-        myprint(self.root)
-
-class P_to_Pcxi(object):
-    """Get everything from a Ptychography object and put it into a Pcxi object""" 
-    def __init__(self, prob):
-        # Grab everything from prob
-        sample_translations_xyz = np.array( zip(np.zeros_like(prob.coords[:, 1]), coords[:, 1], coords[:, 0]) )
-        probe                   = prob.probe
-        probe_mask              = np.ones_like(prob.probe, dtype=np.bool)
-        sample_mask             = prob.sample_support
-        diff_mask               = prob.mask
-        data                    = prob.diffAmps**2
-        is_fft_shifted          = 1
-        exits                   = prob.exits
-        error_mod  = prob.error_mod
-        error_sup  = prob.error_sup
-        error_conv = prob.error_conv
-        
-        # Construct the data structure
-        self.root = {}
-        
-        # sample_1
-        geometry_1 = {}
-        geometry_1['translation'] = sample_translations_xyz
-        
-        sample_1 = {}
-        sample_1['name'] = 'sample'
-        sample_1['geometry_1'] = geometry_1
-        sample_1['sample_mask'] = sample_mask
-        
-        # instrument_1
-        detector_1 = {}
-        detector_1['distance'] = None
-        detector_1['corner_position'] = None
-        detector_1['x_pixel_size'] = None
-        detector_1['y_pixel_size'] = None
-        
-        source_1 = {}
-        source_1['energy'] = None
-        source_1['probe'] = probe
-        source_1['probe_mask'] = probe_mask
-        
-        instrument_1 = {}
-        instrument_1['detector_1'] = detector_1
-        instrument_1['source_1'] = source_1
-        
-        # image_1, this stuff get linked to
-        image_1 = {}
-        image_1['data'] = None
-        image_1['translation'] = None
-        image_1['intrument_1'] = None
-        
-        # process_1 
-        process_1 = {}
-        process_1['exits']      = exits
-        process_1['error_mod']  = error_mod
-        process_1['error_sup']  = error_sup
-        process_1['error_conv'] = error_conv
-
-        # data_1
-        data_1 = {}
-        data_1['data'] = data
-
-        # entry_1
-        entry_1 = {}
-        entry_1['sample_1'] = sample_1
-        entry_1['instrument_1'] = instrument_1
-        entry_1['image_1'] = image_1
-        entry_1['data_1'] = data_1
-
-        # root
-        self.root['cxi_version'] = 140
-        self.root['entry_1'] = entry_1
-
-    def write(self, fnam):
-        """Put everything in root into a h5file
-        
-        Recurse through self.root then add the soft links at
-        the end."""
-        f = h5py.File(fnam, "w")
-        
-        def mywrite(d, f1):
-            for k, v in d.iteritems():
-                if isinstance(v, dict):
-                    f2 = f1.create_group(k)
-                    print "Creating group: {0} <-- {1} ".format(f1.name, k)
-                    mywrite(v, f2)
-                    
-                elif isinstance(v, numbers.Number) or isinstance(v, str):
-                    f1.create_dataset(k, data = v)
-                    print "Adding data: {0} <-- {1}, {2}".format(f1.name, k, str(v))
-                    
-                elif isinstance(v, np.ndarray):
-                    if len(v.shape) == 3 :
-                        dset = f1.create_dataset(k, v.shape, dtype=v.dtype, chunks=(1, v.shape[1], v.shape[2]), compression='gzip')
-                        dset[:] = v
-                        print "Adding data: {0} <-- {1}, {2} {3}".format(f1.name, k, v.dtype, v.shape)
-                        
-                    elif len(v.shape) <= 2 :
-                        dset = f1.create_dataset(k, v.shape, dtype=v.dtype, chunks=v.shape, compression='gzip')
-                        dset[:] = v
-                        print "Adding data: {0} <-- {1}, {2} {3}".format(f1.name, k, v.dtype, v.shape)
-                        
-                    else :
-                        print "Warning max dimensions = 3, {1} {2}".format(k, v.shape)
-        mywrite(self.root, f)
-        
-        # now add the soft links and attributes
-        f['entry_1/image_1/data'].attrs['axes'] = ['translation:y:x']
-        f['entry_1/image_1/translation'] = h5py.SoftLink('/entry_1/sample_1/geometry_1/translation')
-        f['entry_1/image_1/instrument_1'] = h5py.SoftLink('/entry_1/instrument_1')
-        
-        f['entry_1/data_1/data'] = h5py.SoftLink('/entry_1/image_1/data')
-        print ''
-        print ''
-        bg.print_h5(f)
-        f.close()
-        print "done!"
-
-    def check(self):
-        # recursively search through the data structure
-        def myprint(d):
-            for k, v in d.iteritems():
-                if isinstance(v, dict):
-                    myprint(v)
-                elif v == None :
-                    print "Warning {0} : {1}".format(k, v)
-        myprint(self.root)
-
-
-class CXI_file(object):
-    """Ptychography data --> *.cxi file 
-
-    - Class that mimics the cxi h5 dataset for Ptychographic data.
-    - This is just a class that enforces the cxi file format on the input data.
-    - SI units only.
-    """
-
-    def __init__(self):
-        # Construct the data structure
-        self.root = {}
-        
-        # sample_1
-        geometry_1 = {}
-        geometry_1['translation'] = None
-        
-        sample_1 = {}
-        sample_1['name'] = None
-        sample_1['geometry_1'] = geometry_1
-        
-        # instrument_1
-        detector_1 = {}
-        detector_1['distance'] = None
-        detector_1['corner_position'] = None
-        detector_1['x_pixel_size'] = None
-        detector_1['y_pixel_size'] = None
-        
-        source_1 = {}
-        source_1['energy'] = None
-        source_1['probe'] = None
-        source_1['probe_mask'] = None
-        
-        instrument_1 = {}
-        instrument_1['detector_1'] = detector_1
-        instrument_1['source_1'] = source_1
-        
-        # image_1
-        image_1 = {}
-        image_1['data'] = None
-        image_1['translation'] = None
-        image_1['intrument_1'] = None
-        
-        # data_1
-        data_1 = {}
-        data_1['data'] = None
-
-        # entry_1
-        entry_1 = {}
-        entry_1['sample_1'] = sample_1
-        entry_1['instrument_1'] = instrument_1
-        entry_1['image_1'] = image_1
-        entry_1['data_1'] = data_1
-
-        # root
-        self.root['cxi_version'] = 140
-        self.root['entry_1'] = entry_1
-
-    def write(self, fnam):
-        """Put everything in root into a h5file
-        
-        Recurse through self.root then add the soft links at
-        the end."""
-        f = h5py.File(fnam, "w")
-        
-        def mywrite(d, f1):
-            for k, v in d.iteritems():
-                if isinstance(v, dict):
-                    f2 = f1.create_group(k)
-                    print "Creating group: {0} <-- {1} ".format(f1.name, k)
-                    mywrite(v, f2)
-                    
-                elif isinstance(v, numbers.Number) or isinstance(v, str):
-                    f1.create_dataset(k, data = v)
-                    print "Adding data: {0} <-- {1}, {2}".format(f1.name, k, str(v))
-                    
-                elif isinstance(v, np.ndarray):
-                    if len(v.shape) == 3 :
-                        dset = f1.create_dataset(k, v.shape, dtype=v.dtype, chunks=(1, v.shape[1], v.shape[2]), compression='gzip')
-                        dset[:] = v
-                        print "Adding data: {0} <-- {1}, {2} {3}".format(f1.name, k, v.dtype, v.shape)
-                        
-                    elif len(v.shape) <= 2 :
-                        dset = f1.create_dataset(k, v.shape, dtype=v.dtype, chunks=v.shape, compression='gzip')
-                        dset[:] = v
-                        print "Adding data: {0} <-- {1}, {2} {3}".format(f1.name, k, v.dtype, v.shape)
-                        
-                    else :
-                        print "Warning max dimensions = 3, {1} {2}".format(k, v.shape)
-        mywrite(self.root, f)
-        
-        # now add the soft links and attributes
-        f['entry_1/image_1/data'].attrs['axes'] = ['translation:y:x']
-        f['entry_1/image_1/translation'] = h5py.SoftLink('/entry_1/sample_1/geometry_1/translation')
-        f['entry_1/image_1/instrument_1'] = h5py.SoftLink('/entry_1/instrument_1')
-        
-        f['entry_1/data_1/data'] = h5py.SoftLink('/entry_1/image_1/data')
-        print ''
-        print ''
-        bg.print_h5(f)
-        f.close()
-        print "done!"
-
-    def check(self):
-        # recursively search through the data structure
-        def myprint(d):
-            for k, v in d.iteritems():
-                if isinstance(v, dict):
-                    myprint(v)
-                elif v == None :
-                    print "Warning {0} : {1}".format(k, v)
-        myprint(self.root)
-
-
-class Pcxi_view(object):
-    """Use pyqtgraph to look at a Ptychography_cxi file"""
-    def __init__(self):
-        pass
 
 
 def forward_sim():
@@ -376,7 +151,8 @@ def put_into_cxi():
     f['entry_1/sample_1'].create_dataset('name', data = 'de Broglie and Twain')
     f['entry_1/sample_1'].create_dataset('description', data = 'simulated sample')
     f['entry_1/sample_1'].create_dataset('thickness', data = 0.0)
-    f['entry_1/sample_1'].create_dataset('Transmission function', data = data['sample'])
+    f['entry_1/sample_1'].create_dataset('transmission function', data = data['sample'])
+    f['entry_1/sample_1'].create_dataset('support', data = data['sample_support'])
     f['entry_1/sample_1'].create_group('geometry_1')
     f['entry_1/sample_1/geometry_1'].create_dataset('translation', data = data['sample_translations_xyz'])
 
@@ -387,10 +163,12 @@ def put_into_cxi():
     f['entry_1/instrument_1/detector_1'].create_dataset('distance', data = z)
     f['entry_1/instrument_1/detector_1'].create_dataset('corner_position', data = np.array([ (shape[1]-3)/2., (shape[0]-3)/2., z]))
     f['entry_1/instrument_1/detector_1'].create_dataset('y_pixel_size', data = data['dr'][0])
-    f['entry_1/instrument_1/detector_1'].create_dataset('x_pixel_size', data = data['dr'][0])
+    f['entry_1/instrument_1/detector_1'].create_dataset('x_pixel_size', data = data['dr'][1])
+    f['entry_1/instrument_1/detector_1'].create_dataset('mask', data = data['mask'])
     f['entry_1/instrument_1'].create_group('source_1')
     f['entry_1/instrument_1/source_1'].create_dataset('probe_mask', data = np.ones_like(data['probe'], dtype=np.bool))
     f['entry_1/instrument_1/source_1'].create_dataset('energy', data = data['energy'])
+    f['entry_1/instrument_1/source_1'].create_dataset('wave length', data = data['lamb'])
     f['entry_1/instrument_1/source_1'].create_dataset('probe', data = data['probe'])
 
     f['entry_1'].create_group('data_1')
@@ -416,7 +194,7 @@ def put_into_cxi():
 if __name__ == '__main__':
     cxi_file = put_into_cxi()
     
-    cxi_file = Pcxi(cxi_file)
+    Pcxi_file = Pcxi(cxi_file)
     
-    Pcxi.ERA(cxi_file, iters=10, update='sample')
+    Pcxi.ERA(Pcxi_file, iters=10, update='sample')
 
