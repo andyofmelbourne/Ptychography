@@ -40,8 +40,8 @@ class Ptychography(object):
         self.probe      = probe
         self.sample     = sample
         self.alpha_div  = 1.0e-10
-        self.error_mod  = []
-        self.error_sup  = []
+        self.eMod  = []
+        self.eSup  = []
         self.error_conv = []
         self.probe_sum  = None
         self.sample_sum = None
@@ -81,13 +81,13 @@ class Ptychography(object):
             if (i % 4 == 0) or (i == iters - 1) :
                 eMod = self.calc_eMod(self.exits)
                 eSup = self.calc_eSup(self.exits, Psup)
-                self.error_mod.append([self.iteration, eMod])
-                self.error_sup.append([self.iteration, eSup])
+                self.eMod.append([self.iteration, eMod])
+                self.eSup.append([self.iteration, eSup])
             
             self.iteration += 1
              
             # display errors
-            update_progress(i / max(1.0, float(iters-1)), alg, i, self.error_mod[-1][1], self.error_sup[-1][1])
+            update_progress(i / max(1.0, float(iters-1)), alg, i, self.eMod[-1][1], self.eSup[-1][1])
         return self
 
     def HIO(self, iters=1, beta=1., update='sample'):
@@ -117,13 +117,13 @@ class Ptychography(object):
             if (i % 4 == 0) or (i == iters - 1) :
                 eMod = self.calc_eMod(self.exits)
                 eSup = self.calc_eSup(self.exits, Psup)
-                self.error_mod.append([self.iteration, eMod])
-                self.error_sup.append([self.iteration, eSup])
+                self.eMod.append([self.iteration, eMod])
+                self.eSup.append([self.iteration, eSup])
             
             self.iteration += 1
              
             # display errors
-            update_progress(i / max(1.0, float(iters-1)), alg, i, self.error_mod[-1][1], self.error_sup[-1][1])
+            update_progress(i / max(1.0, float(iters-1)), alg, i, self.eMod[-1][1], self.eSup[-1][1])
         return self
 
     def Thibault(self, iters=1, beta=1., update='sample'):
@@ -153,13 +153,13 @@ class Ptychography(object):
             if (i % 4 == 0) or (i == iters - 1) :
                 eMod = self.calc_eMod(self.exits)
                 eSup = self.calc_eSup(self.exits, Psup)
-                self.error_mod.append([self.iteration, eMod])
-                self.error_sup.append([self.iteration, eSup])
+                self.eMod.append([self.iteration, eMod])
+                self.eSup.append([self.iteration, eSup])
             
             self.iteration += 1
              
             # display errors
-            update_progress(i / max(1.0, float(iters-1)), alg, i, self.error_mod[-1][1], self.error_sup[-1][1])
+            update_progress(i / max(1.0, float(iters-1)), alg, i, self.eMod[-1][1], self.eSup[-1][1])
         return self
 
     def Pmod(self, exits, pmod_int = False):
@@ -202,12 +202,7 @@ class Ptychography(object):
         # but only do this if it hasn't been done already
         # (we must set self.probe_sum = None when the probe/coords has changed)
         if self.probe_sum is None :
-            probe_sum   = np.zeros_like(self.sample, dtype=np.float64)
-            probe_large = np.zeros_like(self.sample, dtype=np.float64)
-            probe_large[:self.shape[0], :self.shape[1]] = np.real(np.conj(self.probe) * self.probe)
-            for coord in self.coords:
-                probe_sum  += bg.roll(probe_large, [-coord[0], -coord[1]])
-            self.probe_sum = probe_sum.copy()
+            self.probe_sum = self.heatmap().copy()
           
         # Calculate numerator
         exits2     = np.conj(self.probe) * exits 
@@ -254,6 +249,14 @@ class Ptychography(object):
         self.probe_sum = None
         # 
         return probe_out
+
+    def heatmap(self):
+        probe_sum   = np.zeros_like(self.sample, dtype=np.float64)
+        probe_large = np.zeros_like(self.sample, dtype=np.float64)
+        probe_large[:self.shape[0], :self.shape[1]] = np.real(np.conj(self.probe) * self.probe)
+        for coord in self.coords:
+            probe_sum  += bg.roll(probe_large, [-coord[0], -coord[1]])
+        return probe_sum
 
     def back_prop(self, iters=1):
         """Back propagate from the diffraction patterns using the phase from probe in the detector plane.
@@ -305,6 +308,13 @@ def forward_sim():
     xs, ys = np.meshgrid( xs, ys )
     coords = np.array(zip(ys.ravel(), xs.ravel()))
 
+    # random offset 
+    dcoords = (np.random.random(coords.shape) * 3).astype(np.int)
+    coords += dcoords
+    coords[np.where(coords > 0)] = 0
+    coords[:, 0][np.where(coords[:, 0] < shape_illum[0] - shape_sample[0])] = shape_illum[0] - shape_sample[0]
+    coords[:, 1][np.where(coords[:, 1] < shape_illum[1] - shape_sample[1])] = shape_illum[1] - shape_sample[1]
+
     # diffraction patterns
     diffs = makeExits(sample, probe, coords)
     diffs = np.abs(bg.fft2(diffs))**2
@@ -321,10 +331,10 @@ if __name__ == '__main__' :
     sample0 = np.random.random(sample.shape) + 1J*np.random.random(sample.shape)
     probe0  = probe + 0.1 * (np.random.random(probe.shape) + 1J*np.random.random(probe.shape))
     
-    prob = Ptychography(diffs, coords, mask, probe, sample0, sample_support) 
+    prob = Ptychography(diffs, coords, probe, sample0, mask, sample_support) 
     
     # do 50 ERA iterations
-    #prob = Ptychography.Thibault(prob, 1, update='sample')
+    prob = Ptychography.Thibault(prob, 20, update='sample')
     prob = Ptychography.ERA(prob, 50, update='sample')
     
     # check the fidelity inside of the illuminated region:
