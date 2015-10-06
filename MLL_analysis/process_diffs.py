@@ -564,19 +564,23 @@ def make_probe(mask, lamb, dq, scan = '0181', rotate=False):
     # Add a phase error to the area left of the bump
     if True :
         print 'adding a defocus phase error past the "bump"'
-        df    = 105.6885e-6 - 136.39133e-6  # defocus error in m
-        A0    = 36.5839534211e-17           # beam shift aberration in m
+        # for these numbers see ./forward_sims_defocus/sim1
+        df         = -17.2e-6  # defocus error in m
+        beam_shift = 3.42e-7   # beam shift aberration in m
         x, y  = bg.make_xy(aperture.shape)
         x = np.array(x, dtype=np.float64)
         y = np.array(y, dtype=np.float64)
         q = dq * np.sqrt(x**2 + y**2)
-        phase_error = -1.0J * np.pi * lamb * q**2 * df + 2.0J * np.pi / lamb * A0 * q
+        # bump location
         bump_loc = [86, 852]
-        Nrad = np.sqrt( float(bump_loc[1] - aperture.shape[1]/2 + 1)**2 + float(bump_loc[0] - aperture.shape[0]/2 + 1)**2)
-        q_min = Nrad * dq
-        phase_error = phase_error * (q > q_min)
-        exp = np.exp(phase_error)
-        probe = bg.ifft2(np.sqrt(aperture)*exp)
+        Nrad     = np.sqrt( float(bump_loc[1] - aperture.shape[1]/2 + 1)**2 + float(bump_loc[0] - aperture.shape[0]/2 + 1)**2)
+        qb       = Nrad * dq
+        
+        phase_error = -1.0J * np.pi * lamb * (q**2 - qb**2) * df - 2.0J * np.pi * beam_shift * q
+        phase_error = phase_error * (q > qb)
+         
+        probe = np.sqrt(aperture) * np.exp(phase_error)
+        probe = bg.ifft2(probe)
     elif False :
         # Let's put some higher order aberrations in there
         C3    = 0.0e-3 
