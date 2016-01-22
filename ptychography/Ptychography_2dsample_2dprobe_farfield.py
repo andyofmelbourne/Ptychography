@@ -48,7 +48,7 @@ class Ptychography(object):
         self.diffNorm   = np.sum(self.mask * (self.diffAmps)**2)
         self.pmod_int   = pmod_int
         if sample_support is None :
-            sample_support = np.ones_like(sample, dtype=np.bool)
+            self.sample_support = np.ones_like(sample, dtype=np.bool)
         else :
             self.sample_support = sample_support
         self.iteration  = 0
