@@ -1,8 +1,9 @@
 import numpy as np
+import sys
 from itertools import product
 
 
-def ERA(I, R, P, O, iters, mask = None):
+def ERA(I, R, P, O, iters, mask = 1, update = 'O', alpha = 1.0e-10, full_output = True):
     """
     Find the phases of 'I' given O, P, R using the Error Reduction Algorithm (Ptychography).
     
@@ -14,6 +15,13 @@ def ERA(I, R, P, O, iters, mask = None):
         N : the number of diffraction patterns
         M : the number of pixels along slow scan axis of the detector
         K : the number of pixels along fast scan axis of the detector
+    
+    R : numpy.ndarray, (N, 3)
+        The translational displacements of the object corresponding to each diffraction
+        pattern in pixel units, such that:
+            O_n = O[i - R[n, 0], j - R[n, 1]]
+        This way positive numbers move the sample to the left, or, we can think of the 
+        coordinates (R) as tracking the poisition of some point in the object.
     
     P : numpy.ndarray, (M, K)
         The wavefront of the real space probe incident on the surface of
@@ -28,23 +36,42 @@ def ERA(I, R, P, O, iters, mask = None):
             M <= U < inf
             K <= V < inf
     
-    R : numpy.ndarray, (N, 3)
-        The translational displacements of the object corresponding to each diffraction
-        pattern in pixel units, such that:
-            O_n = O[i - R[n, 0], j - R[n, 1]]
-    
     iters : int
         The number of ERA iterations to perform.
-    
-    mask : numpy.ndarray, (M, K), optional
+
+    mask : numpy.ndarray, (M, K), optional, default (1)
         The valid detector pixels. Mask[i, j] = 1 (or True) when the detector pixel 
         i, j is valid, Mask[i, j] = 0 otherwise.
     
+    update : 'O' or 'P', optional, default ('O')
+        Specifies wither to update the object transmission function ('O') or the probe 
+        wavefront ('P').
+
+    alpha : float, optional, default (1.0e-10)
+        A floating point number to regularise array division (prevents 1/0 errors).
+
+    full_output : bool, optional, default (True)
+        If true then return a bunch of diagnostics (see info) as a python dictionary 
+        (a list of key : value pairs).
+
+    
     Returns
     -------
-    Os : numpy.ndarray, (U, V)
-        The transmission function of the real space object, retrieved after 'iters' iterations
-        of the ERA algorithm.
+    O / P : numpy.ndarray, (U, V) / (M, K)
+        If update = 'O': returns the transmission function of the real space object, 
+        retrieved after 'iters' iterations of the ERA algorithm. If update = 'P': 
+        returns the probe wavefront.
+    
+    info : dict, optional
+        contains diagnostics:
+            
+            'exits' : the exit surface waves corresponding to the returned O (P)
+            'I'     : the diffraction patterns corresponding to 'exits' above
+            'eMod'  : the modulus error for each iteration:
+                      eMod_i = sqrt( sum(| exits - Pmod(exits) |^2) / I )
+            'eCon'  : the convergence error for each iteration:
+                      eCon_i = sqrt( sum(| O_i - O_i-1 |^2) / sum(| O_i |^2) )
+        
 
     Notes 
     -----
@@ -64,49 +91,185 @@ def ERA(I, R, P, O, iters, mask = None):
     Examples 
     --------
     """
-    Os    = O.copy()
-    amp   = np.sqrt(I)
-    exits = np.zeros(I.shape, dtype = (I[0, 0, 0] + 1J * I[0, 0, 0]).dtype)
+    if O is None :
+        # find the smallest array that fits O
+        # This is just U = M + R[:, 0].max() - R[:, 0].min()
+        #              V = K + R[:, 1].max() - R[:, 1].min()
+        shape = (I.shape[1] + R[:, 0].max() - R[:, 0].min(),\
+                 I.shape[2] + R[:, 1].max() - R[:, 1].min())
+        O = np.ones(shape, P.dtype)
+        print 'O.shape', O.shape
+        print 'P.shape', P.shape
+        print 'R min max', np.min(R, axis=0), np.max(R, axis=0)
+    
+    if P is None :
+        P = np.random.random(I[0].shape) + 1J*np.random.random(I[0].shape)
+    
+    I_norm    = np.sum(mask * I)
+    amp       = np.sqrt(I)
+    exits     = make_exits(O, P, R)
+    P_heatmap = None
+    O_heatmap = None
+    eMods     = []
+    eCons     = []
     
     # method 1
     #---------
+    print 'algrithm progress iteration convergence modulus error'
+    for i in range(iters) :
+        if update == 'O': bak = O.copy()
+        if update == 'P': bak = P.copy()
+        E_bak        = exits.copy()
+        
+        # modulus projection 
+        exits        = pmod_1(amp, exits, mask, alpha = alpha)
+        
+        E_bak       -= exits
 
-def psub_1(exits, O, P, R, P_heatmap = None):
+        # consistency projection 
+        if update == 'O': O, P_heatmap = psup_O_1(exits, P, R, O.shape, P_heatmap, alpha = alpha)
+        if update == 'P': P, O_heatmap = psup_P_1(exits, O, R, O_heatmap, alpha = alpha)
+        
+        exits = make_exits(O, P, R, exits)
+        
+        # metrics
+        if update == 'O': temp = O
+        if update == 'P': temp = P
+        
+        bak -= temp
+        eCon   = np.sum( (bak * bak.conj()).real ) / np.sum( (temp * temp.conj()).real )
+        eCon   = np.sqrt(eCon)
+        
+        eMod   = np.sum( (E_bak * E_bak.conj()).real ) / I_norm
+        eMod   = np.sqrt(eMod)
+        
+        update_progress(i / max(1.0, float(iters-1)), 'ERA', i, eCon, eMod )
+
+        eMods.append(eMod)
+        eCons.append(eCon)
+    
+    if full_output : 
+        info = {}
+        info['exits'] = exits
+        info['I']     = np.abs(np.fft.fftn(exits, axes = (-2, -1)))**2
+        info['eMod']  = eMods
+        info['eCon']  = eCons
+        info['heatmap']  = P_heatmap
+        if update == 'O': return O, info
+        if update == 'P': return P, info
+    else :
+        if update == 'O': return O
+        if update == 'P': return P
+
+
+
+def update_progress(progress, algorithm, i, emod, esup):
+    barLength = 15 # Modify this to change the length of the progress bar
+    status = ""
+    if isinstance(progress, int):
+        progress = float(progress)
+    if not isinstance(progress, float):
+        progress = 0
+        status = "error: progress var must be float\r\n"
+    if progress < 0:
+        progress = 0
+        status = "Halt...\r\n"
+    if progress >= 1:
+        progress = 1
+        status = "Done...\r\n"
+    block = int(round(barLength*progress))
+    text = "\r{0}: [{1}] {2}% {3} {4} {5} {6} {7}".format(algorithm, "#"*block + "-"*(barLength-block), int(progress*100), i, emod, esup, status, " " * 5) # this last bit clears the line
+    sys.stdout.write(text)
+    sys.stdout.flush()
+
+
+def make_exits(O, P, R, exits = None):
+    if exits is None :
+        exits = np.empty((len(R),) + P.shape, dtype = P.dtype)
+    
+    for i, r in enumerate(R) : 
+        exits[i] = multiroll(O, [r[0], r[1]])[:P.shape[0], :P.shape[1]] * P
+    return exits
+
+
+def psup_O_1(exits, P, R, O_shape, P_heatmap = None, alpha = 1.0e-10):
+    O = np.zeros(O_shape, P.dtype)
+    
+    # Calculate denominator
+    #----------------------
+    # but only do this if it hasn't been done already
+    # (we must set P_heatmap = None when the probe/coords has changed)
     if P_heatmap is None : 
-        pass
+        P_heatmap = make_P_heatmap(P, R, O_shape)
 
+    # Calculate numerator
+    #--------------------
+    for r, exit in zip(R, exits):
+        O[-r[0]:P.shape[0]-r[0], -r[1]:P.shape[1]-r[1]] += exit * P.conj()
+         
+    # divide
+    #-------
+    O  = O / (P_heatmap + alpha)
+    
+    return O, P_heatmap
+
+def psup_P_1(exits, O, R, O_heatmap = None, alpha = 1.0e-10):
+    P = np.zeros(exits[0].shape, exits.dtype)
+    
+    # Calculate denominator
+    #----------------------
+    # but only do this if it hasn't been done already
+    # (we must set O_heatmap = None when the object/coords has changed)
+    if O_heatmap is None : 
+        O_heatmap = make_O_heatmap(O, R, P.shape)
+
+    # Calculate numerator
+    #--------------------
+    Oc = O.conj()
+    for r, exit in zip(R, exits):
+        P += exit * Oc[-r[0]:P.shape[0]-r[0], -r[1]:P.shape[1]-r[1]] 
+         
+    # divide
+    #-------
+    P  = P / (O_heatmap + alpha)
+    
+    return P, O_heatmap
 
 def make_P_heatmap(P, R, shape):
     P_heatmap = np.zeros(shape, dtype = P.real.dtype)
     P_temp    = np.zeros(shape, dtype = P.real.dtype)
     P_temp[:P.shape[0], :P.shape[1]] = (P.conj() * P).real
     for r in R : 
-        #P_heatmap += np.roll()
-
-        """
-        probe_sum   = np.zeros_like(self.sample, dtype=np.float64)
-        probe_large = np.zeros_like(self.sample, dtype=np.float64)
-        probe_large[:self.shape[0], :self.shape[1]] = np.real(np.conj(self.probe) * self.probe)
-        for coord in self.coords:
-            probe_sum  += bg.roll(probe_large, [-coord[0], -coord[1]])
-        return probe_sum
-        """
-        pass
+        P_heatmap += multiroll(P_temp, [-r[0], -r[1]]) 
+    return P_heatmap
     
-def pmod_1(amp, exits, alpha = 1.0e-10):
+def make_O_heatmap(O, R, shape):
+    O_heatmap = np.zeros(O.shape, dtype = O.real.dtype)
+    O_temp    = (O * O.conj()).real
+    for r in R : 
+        O_heatmap += multiroll(O_temp, [r[0], r[1]]) 
+    return O_heatmap[:shape[0], :shape[1]]
+
+def pmod_1(amp, exits, mask = 1, alpha = 1.0e-10):
     exits = np.fft.fftn(exits, axes = (-2, -1))
-    exits = Pmod_1(amp, exits, alpha = 1.0e-10)
+    exits = Pmod_1(amp, exits, mask = mask, alpha = alpha)
     exits = np.fft.ifftn(exits, axes = (-2, -1))
     return exits
     
-def Pmod_1(amp, exits, alpha = 1.0e-10):
+
+def Pmod_1(amp, exits, mask = 1, alpha = 1.0e-10):
     exits  = mask * exits * amp / (abs(exits) + alpha)
-    exits += (1 - good_pix) * exits
+    exits += (1 - mask) * exits
     return exits
+
 
 def multiroll(x, shift, axis=None):
     """Roll an array along each axis.
 
+    Thanks to: Warren Weckesser, 
+    http://stackoverflow.com/questions/30639656/numpy-roll-in-several-dimensions
+    
+    
     Parameters
     ----------
     x : array_like
