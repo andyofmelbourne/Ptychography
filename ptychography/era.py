@@ -3,7 +3,7 @@ import sys
 from itertools import product
 
 
-def ERA(I, R, P, O, iters, mask = 1, update = 'O', alpha = 1.0e-10, full_output = True):
+def ERA(I, R, P, O, iters, OP_iters = 1, mask = 1, update = 'O', method = None, alpha = 1.0e-10, full_output = True):
     """
     Find the phases of 'I' given O, P, R using the Error Reduction Algorithm (Ptychography).
     
@@ -39,13 +39,28 @@ def ERA(I, R, P, O, iters, mask = 1, update = 'O', alpha = 1.0e-10, full_output 
     iters : int
         The number of ERA iterations to perform.
 
+    OP_iters : int, optional, default (1)
+        The number of projections onto the sample and probe consistency constraints 
+        before doing the modulus projection when update = 'OP' has been selected. 
+        Ideally OP_iters should be large enough so that convergence has been acheived.
+
     mask : numpy.ndarray, (M, K), optional, default (1)
         The valid detector pixels. Mask[i, j] = 1 (or True) when the detector pixel 
         i, j is valid, Mask[i, j] = 0 otherwise.
     
-    update : 'O' or 'P', optional, default ('O')
+    update : ('O', 'P' or 'OP'), optional, default ('O')
         Specifies wither to update the object transmission function ('O') or the probe 
-        wavefront ('P').
+        wavefront ('P') or both ('OP').
+
+    method : (1, 2, 3, 4), optional
+        method = 1 :
+            Just update 'O' using a single cpu core
+        method = 2 :
+            Just update 'P' using a single cpu core
+        method = 3 :
+            Update 'O' and 'P' using a single cpu core
+        method = 4 :
+            Update 'O' using a single gpu core
 
     alpha : float, optional, default (1.0e-10)
         A floating point number to regularise array division (prevents 1/0 errors).
@@ -60,7 +75,7 @@ def ERA(I, R, P, O, iters, mask = 1, update = 'O', alpha = 1.0e-10, full_output 
     O / P : numpy.ndarray, (U, V) / (M, K)
         If update = 'O': returns the transmission function of the real space object, 
         retrieved after 'iters' iterations of the ERA algorithm. If update = 'P': 
-        returns the probe wavefront.
+        returns the probe wavefront. If update = 'OP' then you get both (O, P).
     
     info : dict, optional
         contains diagnostics:
@@ -91,19 +106,18 @@ def ERA(I, R, P, O, iters, mask = 1, update = 'O', alpha = 1.0e-10, full_output 
     Examples 
     --------
     """
+    c_dtype = (I[0,0,0] + 1J * I[0, 0, 0]).dtype
     if O is None :
         # find the smallest array that fits O
         # This is just U = M + R[:, 0].max() - R[:, 0].min()
         #              V = K + R[:, 1].max() - R[:, 1].min()
         shape = (I.shape[1] + R[:, 0].max() - R[:, 0].min(),\
                  I.shape[2] + R[:, 1].max() - R[:, 1].min())
-        O = np.ones(shape, P.dtype)
-        print 'O.shape', O.shape
-        print 'P.shape', P.shape
-        print 'R min max', np.min(R, axis=0), np.max(R, axis=0)
+        O = np.ones(shape, c_dtype)
     
     if P is None :
         P = np.random.random(I[0].shape) + 1J*np.random.random(I[0].shape)
+        P = P.astype(c_dtype)
     
     I_norm    = np.sum(mask * I)
     amp       = np.sqrt(I)
@@ -112,55 +126,130 @@ def ERA(I, R, P, O, iters, mask = 1, update = 'O', alpha = 1.0e-10, full_output 
     O_heatmap = None
     eMods     = []
     eCons     = []
+
+    if method == None :
+        if update == 'O' :
+            method = 1
+        elif update == 'P' :
+            method = 2
+        elif update == 'OP' :
+            method = 3
     
-    # method 1
+    if method == 1 : 
+        update = 'O'
+    elif method == 2 : 
+        update = 'P'
+    elif method == 3 : 
+        update = 'OP'
+    elif method == 4 : 
+        update = 'O'
+    
+    # method 1 and 2, update O or P
     #---------
-    print 'algrithm progress iteration convergence modulus error'
-    for i in range(iters) :
-        if update == 'O': bak = O.copy()
-        if update == 'P': bak = P.copy()
-        E_bak        = exits.copy()
-        
-        # modulus projection 
-        exits        = pmod_1(amp, exits, mask, alpha = alpha)
-        
-        E_bak       -= exits
+    if method == 1 or method == 2 :
+        print 'algrithm progress iteration convergence modulus error'
+        for i in range(iters) :
+            if update == 'O': bak = O.copy()
+            if update == 'P': bak = P.copy()
+            E_bak        = exits.copy()
+            
+            # modulus projection 
+            exits        = pmod_1(amp, exits, mask, alpha = alpha)
+            
+            E_bak       -= exits
 
-        # consistency projection 
-        if update == 'O': O, P_heatmap = psup_O_1(exits, P, R, O.shape, P_heatmap, alpha = alpha)
-        if update == 'P': P, O_heatmap = psup_P_1(exits, O, R, O_heatmap, alpha = alpha)
-        
-        exits = make_exits(O, P, R, exits)
-        
-        # metrics
-        if update == 'O': temp = O
-        if update == 'P': temp = P
-        
-        bak -= temp
-        eCon   = np.sum( (bak * bak.conj()).real ) / np.sum( (temp * temp.conj()).real )
-        eCon   = np.sqrt(eCon)
-        
-        eMod   = np.sum( (E_bak * E_bak.conj()).real ) / I_norm
-        eMod   = np.sqrt(eMod)
-        
-        update_progress(i / max(1.0, float(iters-1)), 'ERA', i, eCon, eMod )
+            # consistency projection 
+            if update == 'O': O, P_heatmap = psup_O_1(exits, P, R, O.shape, P_heatmap, alpha = alpha)
+            if update == 'P': P, O_heatmap = psup_P_1(exits, O, R, O_heatmap, alpha = alpha)
+            
+            exits = make_exits(O, P, R, exits)
+            
+            # metrics
+            if update == 'O': temp = O
+            if update == 'P': temp = P
+            
+            bak -= temp
+            eCon   = np.sum( (bak * bak.conj()).real ) / np.sum( (temp * temp.conj()).real )
+            eCon   = np.sqrt(eCon)
+            
+            eMod   = np.sum( (E_bak * E_bak.conj()).real ) / I_norm
+            eMod   = np.sqrt(eMod)
+            
+            update_progress(i / max(1.0, float(iters-1)), 'ERA', i, eCon, eMod )
 
-        eMods.append(eMod)
-        eCons.append(eCon)
-    
-    if full_output : 
-        info = {}
-        info['exits'] = exits
-        info['I']     = np.abs(np.fft.fftn(exits, axes = (-2, -1)))**2
-        info['eMod']  = eMods
-        info['eCon']  = eCons
-        info['heatmap']  = P_heatmap
-        if update == 'O': return O, info
-        if update == 'P': return P, info
-    else :
-        if update == 'O': return O
-        if update == 'P': return P
+            eMods.append(eMod)
+            eCons.append(eCon)
+        
+        if full_output : 
+            info = {}
+            info['exits'] = exits
+            info['I']     = np.abs(np.fft.fftn(exits, axes = (-2, -1)))**2
+            info['eMod']  = eMods
+            info['eCon']  = eCons
+            info['heatmap']  = P_heatmap
+            if update == 'O': return O, info
+            if update == 'P': return P, info
+        else :
+            if update == 'O': return O
+            if update == 'P': return P
 
+    # method 3
+    #---------
+    elif method == 3 : 
+        print 'algrithm progress iteration convergence modulus error'
+        for i in range(iters) :
+            OP_bak = np.hstack((O.ravel().copy(), P.ravel().copy()))
+            E_bak  = exits.copy()
+            
+            # modulus projection 
+            exits        = pmod_1(amp, exits, mask, alpha = alpha)
+            
+            E_bak       -= exits
+            
+            # consistency projection 
+            for j in range(OP_iters):
+                O, P_heatmap = psup_O_1(exits, P, R, O.shape, None, alpha = alpha)
+                P, O_heatmap = psup_P_1(exits, O, R, None, alpha = alpha)
+            
+            exits = make_exits(O, P, R, exits)
+            
+            # metrics
+            temp = np.hstack((O.ravel(), P.ravel()))
+            
+            OP_bak-= temp
+            eCon   = np.sum( (OP_bak * OP_bak.conj()).real ) / np.sum( (temp * temp.conj()).real )
+            eCon   = np.sqrt(eCon)
+            
+            eMod   = np.sum( (E_bak * E_bak.conj()).real ) / I_norm
+            eMod   = np.sqrt(eMod)
+            
+            update_progress(i / max(1.0, float(iters-1)), 'ERA', i, eCon, eMod )
+
+            eMods.append(eMod)
+            eCons.append(eCon)
+        
+        if full_output : 
+            info = {}
+            info['exits'] = exits
+            info['I']     = np.abs(np.fft.fftn(exits, axes = (-2, -1)))**2
+            info['eMod']  = eMods
+            info['eCon']  = eCons
+            info['heatmap']  = P_heatmap
+            return O, P, info
+        else :
+            return O, P
+
+    # method 4
+    #---------
+    elif method == 4 :
+        # set up the gpu
+        #---------------
+        import pyfft
+        import pyopencl
+        import pyopencl.array
+        from   pyfft.cl import Plan
+        import pyopencl.clmath 
+        return 1,2
 
 
 def update_progress(progress, algorithm, i, emod, esup):
@@ -257,11 +346,22 @@ def pmod_1(amp, exits, mask = 1, alpha = 1.0e-10):
     return exits
     
 
-def Pmod_1(amp, exits, mask = 1, alpha = 1.0e-10):
+def Pmod_4(amp, exits, mask = 1, alpha = 1.0e-10):
     exits  = mask * exits * amp / (abs(exits) + alpha)
     exits += (1 - mask) * exits
     return exits
 
+def pmod_4(amp, exits, plan, queue, mask = 1, alpha = 1.0e-10):
+    exits = plan.execute(exits.data)
+    exits = Pmod_4(amp, exits, mask = mask, alpha = alpha)
+    exits = plan.execute(exits.data, inverse = True)
+    return exits
+    
+
+def Pmod_1(amp, exits, mask = 1, alpha = 1.0e-10):
+    exits  = mask * exits * amp / (abs(exits) + alpha)
+    exits += (1 - mask) * exits
+    return exits
 
 def multiroll(x, shift, axis=None):
     """Roll an array along each axis.
