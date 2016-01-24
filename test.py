@@ -17,10 +17,14 @@ from ptychography.Ptychography_2dsample_2dprobe_farfield import forward_sim
 
 I, R, mask, P, O, sample_support = forward_sim()
 
-#Or, info = pt.ERA(I, R, P, None, 100, mask=mask, alpha=1e-10)
+#Or, info = pt.ERA(I, R, P, None, 20, mask=mask, alpha=1e-10, dtype='double')
 
 #Pr, info = pt.ERA(I, R, None, O, 100, update = 'P', mask=mask, alpha=1e-10)
 
 #Or, Pr, info = pt.ERA(I, R, None, None, 1000, update = 'OP', mask=mask, alpha=1e-10)
 
-Or, info = pt.ERA(I, R, P, O, 10, method = 4, mask=mask, alpha=1e-10)
+#Or, info = pt.ERA(I, R, P, None, 1000, method = 4, mask=mask, alpha=1e-10, dtype='double')
+
+#Pr, info = pt.ERA(I, R, None, O, 1000, method = 5, mask=mask, alpha=1e-10, dtype='double')
+
+Or, Pr, info = pt.ERA(I, R, None, None, 1000, method = 6, mask=mask, alpha=1e-10)
