@@ -27,4 +27,15 @@ I, R, mask, P, O, sample_support = forward_sim()
 
 #Pr, info = pt.ERA(I, R, None, O, 1000, method = 5, mask=mask, alpha=1e-10, dtype='double')
 
-Or, Pr, info = pt.ERA(I, R, None, None, 1000, method = 6, mask=mask, alpha=1e-10)
+#Or, Pr, info = pt.ERA(I, R, None, None, 1000, method = 6, mask=mask, alpha=1e-10)
+
+back = (np.random.random(I[0].shape) * 10.0 * np.mean(I))**2
+I   += back
+
+print '\n\nWithout background retrieval:'
+Or1, Pr1, info = pt.ERA(I, R, None, None, 1000, mask=mask, method = 3, alpha=1e-10, dtype='double')
+
+print '\n\nWith background retrieval:'
+Or2, Pr2, background, info = pt.ERA(I, R, None, None, 1000, mask=mask, method = 9, alpha=1e-10, dtype='double')
+
+

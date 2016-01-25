@@ -144,6 +144,10 @@ def ERA(I, R, P, O, iters, OP_iters = 1, mask = 1, update = 'O', method = None, 
     eMods     = []
     eCons     = []
 
+    # subtract an overall offset from R's
+    R[:, 0] -= R[:, 0].max()
+    R[:, 1] -= R[:, 1].max()
+
     if method == None :
         if update == 'O' :
             method = 1
@@ -162,6 +166,12 @@ def ERA(I, R, P, O, iters, OP_iters = 1, mask = 1, update = 'O', method = None, 
         update = 'O'
     elif method == 5 : 
         update = 'P'
+    elif method == 7 :
+        update = 'O'
+    elif method == 8 :
+        update = 'P'
+    elif method == 9 :
+        update = 'OP'
     
     # method 1 and 2, update O or P
     #---------
@@ -403,8 +413,8 @@ def ERA(I, R, P, O, iters, OP_iters = 1, mask = 1, update = 'O', method = None, 
         exits_g = pyopencl.array.to_device(queue, np.ascontiguousarray(exits))
         amp_g   = pyopencl.array.to_device(queue, np.ascontiguousarray(amp))
         if mask is not 1 :
-            mask_g    = np.empty(I.shape, dtype=np.uint8)
-            mask_g[:] = mask
+            mask_g    = np.empty(I.shape, dtype=np.int8)
+            mask_g[:] = mask.astype(np.int8)*2 - 1
             mask_g    = pyopencl.array.to_device(queue, np.ascontiguousarray(mask_g))
         else :
             mask_g  = 1
@@ -453,6 +463,107 @@ def ERA(I, R, P, O, iters, OP_iters = 1, mask = 1, update = 'O', method = None, 
         else :
             return O, P
 
+    # method 7
+    #---------
+    # update the object with background retrieval
+    elif method == 7 or method == 8 :
+        background = np.random.random((I.shape)).astype(dtype)
+        print 'algrithm progress iteration convergence modulus error'
+        for i in range(iters) :
+            if update == 'O': bak = O.copy()
+            if update == 'P': bak = P.copy()
+            E_bak        = exits.copy()
+            
+            # modulus projection 
+            exits, background  = pmod_7(amp, background, exits, mask, alpha = alpha)
+            
+            E_bak       -= exits
+
+            # consistency projection 
+            if update == 'O': O, P_heatmap = psup_O_1(exits, P, R, O.shape, P_heatmap, alpha = alpha)
+            if update == 'P': P, O_heatmap = psup_P_1(exits, O, R, O_heatmap, alpha = alpha)
+
+            background[:] = np.mean(background, axis=0)
+            
+            exits = make_exits(O, P, R, exits)
+            
+            # metrics
+            if update == 'O': temp = O
+            if update == 'P': temp = P
+            
+            bak   -= temp
+            eCon   = np.sum( (bak * bak.conj()).real ) / np.sum( (temp * temp.conj()).real )
+            eCon   = np.sqrt(eCon)
+            
+            eMod   = np.sum( (E_bak * E_bak.conj()).real ) / I_norm
+            eMod   = np.sqrt(eMod)
+            
+            update_progress(i / max(1.0, float(iters-1)), 'ERA', i, eCon, eMod )
+
+            eMods.append(eMod)
+            eCons.append(eCon)
+        
+        if full_output : 
+            info = {}
+            info['exits'] = exits
+            info['I']     = np.abs(np.fft.fftn(exits, axes = (-2, -1)))**2
+            info['eMod']  = eMods
+            info['eCon']  = eCons
+            info['heatmap']  = P_heatmap
+            if update == 'O': return O, background**2, info
+            if update == 'P': return P, background**2, info
+        else :
+            if update == 'O': return O, background**2
+            if update == 'P': return P, background**2
+
+    elif method == 9 : 
+        background = np.random.random((I.shape)).astype(dtype)
+        print 'method 9:'
+        print 'algrithm progress iteration convergence modulus error'
+        for i in range(iters) :
+            OP_bak = np.hstack((O.ravel().copy(), P.ravel().copy()))
+            E_bak  = exits.copy()
+            
+            # modulus projection 
+            exits, background  = pmod_7(amp, background, exits, mask, alpha = alpha)
+            
+            E_bak       -= exits
+            
+            # consistency projection 
+            for j in range(OP_iters):
+                O, P_heatmap = psup_O_1(exits, P, R, O.shape, None, alpha = alpha)
+                P, O_heatmap = psup_P_1(exits, O, R, None, alpha = alpha)
+            
+            background[:] = np.mean(background, axis=0)
+            
+            exits = make_exits(O, P, R, exits)
+            
+            # metrics
+            temp = np.hstack((O.ravel(), P.ravel()))
+            
+            OP_bak-= temp
+            eCon   = np.sum( (OP_bak * OP_bak.conj()).real ) / np.sum( (temp * temp.conj()).real )
+            eCon   = np.sqrt(eCon)
+            
+            eMod   = np.sum( (E_bak * E_bak.conj()).real ) / I_norm
+            eMod   = np.sqrt(eMod)
+            
+            update_progress(i / max(1.0, float(iters-1)), 'ERA', i, eCon, eMod )
+
+            eMods.append(eMod)
+            eCons.append(eCon)
+        
+        if full_output : 
+            info = {}
+            info['exits'] = exits
+            info['I']     = np.abs(np.fft.fftn(exits, axes = (-2, -1)))**2
+            info['eMod']  = eMods
+            info['eCon']  = eCons
+            info['heatmap']  = P_heatmap
+            return O, P, background**2, info
+        else :
+            return O, P, background**2
+
 def update_progress(progress, algorithm, i, emod, esup):
     barLength = 15 # Modify this to change the length of the progress bar
     status = ""
@@ -495,6 +606,7 @@ def psup_O_1(exits, P, R, O_shape, P_heatmap = None, alpha = 1.0e-10):
     # Calculate numerator
     #--------------------
     for r, exit in zip(R, exits):
+        #print exit.shape, P.shape, O.shape, -r[0],P.shape[0]-r[0], -r[1],P.shape[1]-r[1], O[-r[0]:P.shape[0]-r[0], -r[1]:P.shape[1]-r[1]].shape
         O[-r[0]:P.shape[0]-r[0], -r[1]:P.shape[1]-r[1]] += exit * P.conj()
          
     # divide
@@ -558,13 +670,28 @@ def pmod_4(amp, exits, plan, mask = 1, alpha = 1.0e-10):
     return exits
     
 def Pmod_4(amp, exits, mask = 1, alpha = 1.0e-10):
+    import pyopencl.array
     if mask is 1 :
         exits  = exits * amp / (abs(exits) + alpha)
     else :
-        exits  = mask * exits * amp / (abs(exits) + alpha)
-    exits += (1 - mask) * exits
+        #exits  = mask * exits * amp / (abs(exits) + alpha)
+        exits2 = exits * amp / (abs(exits) + alpha)
+        pyopencl.array.if_positive(mask, exits2, exits, out = exits)
+        #exits.mul_add(mask * amp / (abs(exits) + alpha), (1 - mask), exits)
     return exits
 
+def pmod_7(amp, background, exits, mask = 1, alpha = 1.0e-10):
+    exits = np.fft.fftn(exits, axes = (-2, -1))
+    exits, background = Pmod_7(amp, background, exits, mask = mask, alpha = alpha)
+    exits = np.fft.ifftn(exits, axes = (-2, -1))
+    return exits, background
+    
+def Pmod_7(amp, background, exits, mask = 1, alpha = 1.0e-10):
+    M = mask * amp / np.sqrt((exits.conj() * exits).real + background**2 + alpha)
+    exits      *= M
+    background *= M
+    exits += (1 - mask) * exits
+    return exits, background
 
 def multiroll(x, shift, axis=None):
     """Roll an array along each axis.
