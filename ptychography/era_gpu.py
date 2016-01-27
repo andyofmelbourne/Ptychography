@@ -106,14 +106,16 @@ def ERA_gpu(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method
     else :
         mask_g  = 1
 
-    # method 1 and 2, update O or P
+    # method 1, 2 or 3, update O or P or 'OP'
     #---------
-    if method == 1 or method == 2 :
+    if method == 1 or method == 2 or method == 3:
         
         print 'algrithm progress iteration convergence modulus error'
         for i in range(iters) :
-            if update == 'O': bak = O.copy()
-            if update == 'P': bak = P.copy()
+            if update == 'O' : bak = O.copy()
+            if update == 'P' : bak = P.copy()
+            if update == 'OP': bak = np.hstack((O.ravel().copy(), P.ravel().copy()))
+		
             E_bak        = exits.copy()
             
             # modulus projection 
@@ -123,14 +125,19 @@ def ERA_gpu(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method
             E_bak       -= exits
 
             # consistency projection 
-            if update == 'O': O, P_heatmap = psup_O_1(exits, P, R, O.shape, P_heatmap, alpha = alpha)
-            if update == 'P': P, O_heatmap = psup_P_1(exits, O, R, O_heatmap, alpha = alpha)
+            if update == 'O' : O, P_heatmap = era.psup_O_1(exits, P, R, O.shape, P_heatmap, alpha = alpha)
+            if update == 'P' : P, O_heatmap = era.psup_P_1(exits, O, R, O_heatmap, alpha = alpha)
+            if update == 'OP': 
+                for j in range(OP_iters):
+                    O, P_heatmap = era.psup_O_1(exits, P, R, O.shape, None, alpha = alpha)
+                    P, O_heatmap = era.psup_P_1(exits, O, R, None, alpha = alpha)
             
-            exits = make_exits(O, P, R, exits)
+            exits = era.make_exits(O, P, R, exits)
             
             # metrics
-            if update == 'O': temp = O
-            if update == 'P': temp = P
+            if update == 'O' : temp = O
+            if update == 'P' : temp = P
+            if update == 'OP': temp = np.hstack((O.ravel(), P.ravel()))
             
             bak -= temp
             eCon   = np.sum( (bak * bak.conj()).real ) / np.sum( (temp * temp.conj()).real )
@@ -139,7 +146,7 @@ def ERA_gpu(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method
             eMod   = np.sum( (E_bak * E_bak.conj()).real ) / I_norm
             eMod   = np.sqrt(eMod)
             
-            update_progress(i / max(1.0, float(iters-1)), 'ERA', i, eCon, eMod )
+            era.update_progress(i / max(1.0, float(iters-1)), 'ERA', i, eCon, eMod )
 
             eMods.append(eMod)
             eCons.append(eCon)
@@ -151,59 +158,14 @@ def ERA_gpu(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method
             info['eMod']  = eMods
             info['eCon']  = eCons
             info['heatmap']  = P_heatmap
-            if update == 'O': return O, info
-            if update == 'P': return P, info
+            if update == 'O' : return O, info
+            if update == 'P' : return P, info
+            if update == 'OP': return O, P, info
         else :
-            if update == 'O': return O
-            if update == 'P': return P
+            if update == 'O' : return O
+            if update == 'P' : return P
+            if update == 'OP': return O, P
 
-    # method 3
-    #---------
-    elif method == 3 :
-
-        print 'algrithm progress iteration convergence modulus error'
-        for i in range(iters) :
-            OP_bak = np.hstack((O.ravel().copy(), P.ravel().copy()))
-            E_bak  = exits.copy()
-            
-            # modulus projection 
-            exits_g.set(exits)
-            exits        = pmod_4(amp_g, exits_g, plan, mask_g, alpha = alpha).get()
-            
-            E_bak       -= exits
-            
-            # consistency projection 
-            for j in range(OP_iters):
-                O, P_heatmap = psup_O_1(exits, P, R, O.shape, None, alpha = alpha)
-                P, O_heatmap = psup_P_1(exits, O, R, None, alpha = alpha)
-            
-            exits = make_exits(O, P, R, exits)
-            
-            # metrics
-            temp = np.hstack((O.ravel(), P.ravel()))
-            
-            OP_bak-= temp
-            eCon   = np.sum( (OP_bak * OP_bak.conj()).real ) / np.sum( (temp * temp.conj()).real )
-            eCon   = np.sqrt(eCon)
-            
-            eMod   = np.sum( (E_bak * E_bak.conj()).real ) / I_norm
-            eMod   = np.sqrt(eMod)
-            
-            update_progress(i / max(1.0, float(iters-1)), 'ERA', i, eCon, eMod )
-
-            eMods.append(eMod)
-            eCons.append(eCon)
-        
-        if full_output : 
-            info = {}
-            info['exits'] = exits
-            info['I']     = np.abs(np.fft.fftn(exits, axes = (-2, -1)))**2
-            info['eMod']  = eMods
-            info['eCon']  = eCons
-            info['heatmap']  = P_heatmap
-            return O, P, info
-        else :
-            return O, P
 
 
 def pmod_4(amp, exits, plan, mask = 1, alpha = 1.0e-10):

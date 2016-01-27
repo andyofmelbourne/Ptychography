@@ -103,7 +103,7 @@ if rank == 0 :
     print '\nUpdating the object and probe a single gpu...'
     try :
         d0 = time.time()
-        Or, Pr, info = pt.ERA(I, R, None, None, iters, hardware = 'gpu', method = 6, mask=mask, alpha=1e-10)
+        Or, Pr, info = pt.ERA(I, R, None, None, iters, hardware = 'gpu', method = 3, mask=mask, alpha=1e-10)
         d1 = time.time()
         print '\ntime (s):', (d1 - d0) 
     except Exception as e:
