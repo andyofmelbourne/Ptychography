@@ -79,6 +79,10 @@ if rank == 0 :
     #----------------
     print '\n-----------------------------------'
     print 'Updating the object a single gpu...'
+    d0 = time.time()
+    Or, info = pt.ERA(I, R, P, None, iters, hardware = 'gpu', mask=mask, alpha=1e-10, dtype='double')
+    d1 = time.time()
+    print '\ntime (s):', (d1 - d0) 
     try :
         d0 = time.time()
         Or, info = pt.ERA(I, R, P, None, iters, hardware = 'gpu', mask=mask, alpha=1e-10, dtype='double')
