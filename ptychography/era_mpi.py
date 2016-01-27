@@ -115,13 +115,13 @@ def ERA_mpi(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method
             exits = era.make_exits(O, P, R, exits)
             
             # metrics
-            if update == 'O': temp = O
-            if update == 'P': temp = P
-            
             eMod   = np.sum( (E_bak * E_bak.conj()).real ) 
             eMod   = comm.allreduce(eMod, op=MPI.SUM)
 
             if rank == 0 :
+                if update == 'O': temp = O
+                if update == 'P': temp = P
+                 
                 bak -= temp
                 eCon   = np.sum( (bak * bak.conj()).real ) / np.sum( (temp * temp.conj()).real )
                 eCon   = np.sqrt(eCon)
@@ -129,7 +129,7 @@ def ERA_mpi(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method
                 eMod   = np.sqrt(eMod / I_norm)
                 
                 era.update_progress(i / max(1.0, float(iters-1)), 'ERA', i, eCon, eMod )
-
+                
                 eMods.append(eMod)
                 eCons.append(eCon)
         
@@ -151,10 +151,11 @@ def ERA_mpi(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method
     # method 3
     #---------
     elif method == 3 : 
-        print 'algrithm progress iteration convergence modulus error'
+        if rank == 0 : print 'algrithm progress iteration convergence modulus error'
         for i in range(iters) :
             if rank == 0 : 
                 OP_bak = np.hstack((O.ravel().copy(), P.ravel().copy()))
+            
             E_bak  = exits.copy()
             
             # modulus projection 
@@ -164,36 +165,45 @@ def ERA_mpi(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method
             
             # consistency projection 
             for j in range(OP_iters):
-                O, P_heatmap = psup_O_1(exits, P, R, O.shape, None, alpha = alpha)
-                P, O_heatmap = psup_P_1(exits, O, R, None, alpha = alpha)
+                O, P_heatmap = psup_O(exits, P, R, O.shape, None, alpha = alpha)
+                P, O_heatmap = psup_P(exits, O, R, None, alpha = alpha)
             
-            exits = make_exits(O, P, R, exits)
+            exits = era.make_exits(O, P, R, exits)
             
             # metrics
-            temp = np.hstack((O.ravel(), P.ravel()))
-            
-            OP_bak-= temp
-            eCon   = np.sum( (OP_bak * OP_bak.conj()).real ) / np.sum( (temp * temp.conj()).real )
-            eCon   = np.sqrt(eCon)
-            
-            eMod   = np.sum( (E_bak * E_bak.conj()).real ) / I_norm
-            eMod   = np.sqrt(eMod)
-            
-            update_progress(i / max(1.0, float(iters-1)), 'ERA', i, eCon, eMod )
+            eMod   = np.sum( (E_bak * E_bak.conj()).real ) 
+            eMod   = comm.allreduce(eMod, op=MPI.SUM)
 
-            eMods.append(eMod)
-            eCons.append(eCon)
+            if rank == 0 :
+                temp = np.hstack((O.ravel(), P.ravel()))
+                
+                OP_bak -= temp
+                eCon    = np.sum( (OP_bak * OP_bak.conj()).real ) / np.sum( (temp * temp.conj()).real )
+                eCon    = np.sqrt(eCon)
+                
+                eMod   = np.sqrt(eMod / I_norm)
+                
+                era.update_progress(i / max(1.0, float(iters-1)), 'ERA', i, eCon, eMod )
+
+                eMods.append(eMod)
+                eCons.append(eCon)
         
         if full_output : 
-            info = {}
-            info['exits'] = exits
-            info['I']     = np.abs(np.fft.fftn(exits, axes = (-2, -1)))**2
-            info['eMod']  = eMods
-            info['eCon']  = eCons
-            info['heatmap']  = P_heatmap
-            return O, P, info
+            if rank == 0 :
+                info = {}
+                info['exits'] = exits
+                info['I']     = np.abs(np.fft.fftn(exits, axes = (-2, -1)))**2
+                info['eMod']  = eMods
+                info['eCon']  = eCons
+                info['heatmap']  = P_heatmap
+                return O, P, info
+            else :
+                return None, None, None
         else :
-            return O, P
+            if rank == 0 :
+                return O, P
+            else :
+                return None, None
 
     # method 4 or 5
     #---------

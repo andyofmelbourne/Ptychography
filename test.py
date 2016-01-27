@@ -42,7 +42,6 @@ if rank == 0 :
         print '\ntime (s):', (d1 - d0) 
     except Exception as e:
         print e
-    """
 
     try :
         d0 = time.time()
@@ -52,14 +51,18 @@ if rank == 0 :
         print '\ntime (s):', (d1 - d0) 
     except Exception as e:
         print e
+    """
 
-"""
     try :
+        d0 = time.time()
         print '\nUpdating the object and probe on a single cpu core...'
-        Or, Pr, info = pt.ERA(I, R, None, None, 10, mask=mask, alpha=1e-10)
+        Or, Pr, info = pt.ERA(I, R, None, None, 100, mask=mask, alpha=1e-10)
+        d1 = time.time()
+        print '\ntime (s):', (d1 - d0) 
     except Exception as e:
         print e
 
+"""
     try :
         print '\nUpdating the object a single gpu...'
         Or, info = pt.ERA(I, R, P, None, 10, hardware = 'gpu', mask=mask, alpha=1e-10, dtype='double')
@@ -112,13 +115,8 @@ try :
     if rank == 0 : print '\ntime (s):', (d1 - d0) 
 except Exception as e:
     print e
-"""
 
-d0 = time.time()
-if rank == 0 : print '\nUpdating the probe on a many cpu cores...'
-Or2, info = pt.ERA(I, R, None, O, 100, hardware = 'mpi', mask=mask, method = 2, alpha=1e-10, dtype='double')
-d1 = time.time()
-if rank == 0 : print '\ntime (s):', (d1 - d0) 
+"""
 
 """
 try :
@@ -130,6 +128,15 @@ try :
 except Exception as e:
     print e
 """
+
+try :
+    d0 = time.time()
+    if rank == 0 : print '\nUpdating the probe on a many cpu cores...'
+    Or2, Pr2, info = pt.ERA(I, R, None, None, 100, hardware = 'mpi', mask=mask, method = 3, alpha=1e-10, dtype='double')
+    d1 = time.time()
+    if rank == 0 : print '\ntime (s):', (d1 - d0) 
+except Exception as e:
+    print e
 
 if rank == 0 : print '\n\nDone!'
 
