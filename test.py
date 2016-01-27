@@ -29,8 +29,13 @@ except Exception as e:
 
 if len(sys.argv) == 2 :
     iters = int(sys.argv[1])
+    iters_mpi = iters
+elif len(sys.argv) == 3 :
+    iters = int(sys.argv[1])
+    iters_mpi = int(sys.argv[2])
 else :
     iters = 10
+    iters_mpi = iters
 
 if rank == 0 :
     try :
@@ -109,7 +114,7 @@ if rank == 0 : print '\n------------------------------------------'
 if rank == 0 : print 'Updating the object on a many cpu cores...'
 try :
     d0 = time.time()
-    Or2, info = pt.ERA(I, R, P, None, iters, hardware = 'mpi', mask=mask, method = 1, alpha=1e-10, dtype='double')
+    Or2, info = pt.ERA(I, R, P, None, iters_mpi, hardware = 'mpi', mask=mask, method = 1, alpha=1e-10, dtype='double')
     d1 = time.time()
     if rank == 0 : print '\ntime (s):', (d1 - d0) 
 except Exception as e:
@@ -118,7 +123,7 @@ except Exception as e:
 if rank == 0 : print '\nUpdating the probe on a many cpu cores...'
 try :
     d0 = time.time()
-    Or2, info = pt.ERA(I, R, None, O, iters, hardware = 'mpi', mask=mask, method = 2, alpha=1e-10, dtype='double')
+    Or2, info = pt.ERA(I, R, None, O, iters_mpi, hardware = 'mpi', mask=mask, method = 2, alpha=1e-10, dtype='double')
     d1 = time.time()
     if rank == 0 : print '\ntime (s):', (d1 - d0) 
 except Exception as e:
@@ -126,7 +131,7 @@ except Exception as e:
 
 if rank == 0 : print '\nUpdating the object and probe on a many cpu cores...'
 d0 = time.time()
-Or2, Pr2, info = pt.ERA(I, R, None, None, iters, hardware = 'mpi', mask=mask, method = 3, alpha=1e-10, dtype='double')
+Or2, Pr2, info = pt.ERA(I, R, None, None, iters_mpi, hardware = 'mpi', mask=mask, method = 3, alpha=1e-10, dtype='double')
 d1 = time.time()
 if rank == 0 : print '\ntime (s):', (d1 - d0) 
 try :
@@ -206,7 +211,7 @@ if rank == 0 : print '\n--------------------------------------------------------
 if rank == 0 : print 'Updating the object with background on a many cpu cores...'
 try :
     d0 = time.time()
-    Or2, background, info = pt.ERA(I, R, P, None, iters, hardware = 'mpi', mask=mask, method = 4, alpha=1e-10, dtype='double')
+    Or2, background, info = pt.ERA(I, R, P, None, iters_mpi, hardware = 'mpi', mask=mask, method = 4, alpha=1e-10, dtype='double')
     d1 = time.time()
     if rank == 0 : print '\ntime (s):', (d1 - d0) 
 except Exception as e:
@@ -215,7 +220,7 @@ except Exception as e:
 if rank == 0 : print '\nUpdating the probe with background on a many cpu cores...'
 try :
     d0 = time.time()
-    Or2, background, info = pt.ERA(I, R, None, O, iters, hardware = 'mpi', mask=mask, method = 5, alpha=1e-10, dtype='double')
+    Or2, background, info = pt.ERA(I, R, None, O, iters_mpi, hardware = 'mpi', mask=mask, method = 5, alpha=1e-10, dtype='double')
     d1 = time.time()
     if rank == 0 : print '\ntime (s):', (d1 - d0) 
 except Exception as e:
@@ -224,7 +229,7 @@ except Exception as e:
 if rank == 0 : print '\nUpdating the object and probe with background on a many cpu cores...'
 try :
     d0 = time.time()
-    Or2, Pr2, background, info = pt.ERA(I, R, None, None, iters, OP_iters = 1, hardware = 'mpi', mask=mask, method = 6, alpha=1e-10, dtype='double')
+    Or2, Pr2, background, info = pt.ERA(I, R, None, None, iters_mpi, OP_iters = 1, hardware = 'mpi', mask=mask, method = 6, alpha=1e-10, dtype='double')
     d1 = time.time()
     if rank == 0 : print '\ntime (s):', (d1 - d0) 
 except Exception as e:
