@@ -2,8 +2,10 @@ import numpy as np
 import sys
 from itertools import product
 
+#from era_mpi import ERA_mpi
+from era_gpu import ERA_gpu
 
-def ERA(I, R, P, O, iters, OP_iters = 1, mask = 1, update = 'O', method = None, alpha = 1.0e-10, dtype=None, full_output = True):
+def ERA(I, R, P, O, iters, OP_iters = 1, mask = 1, method = None, hardware = 'cpu', alpha = 1.0e-10, dtype=None, full_output = True):
     """
     Find the phases of 'I' given O, P, R using the Error Reduction Algorithm (Ptychography).
     
@@ -48,23 +50,32 @@ def ERA(I, R, P, O, iters, OP_iters = 1, mask = 1, update = 'O', method = None, 
         The valid detector pixels. Mask[i, j] = 1 (or True) when the detector pixel 
         i, j is valid, Mask[i, j] = 0 otherwise.
     
-    update : ('O', 'P' or 'OP'), optional, default ('O')
-        Specifies wither to update the object transmission function ('O') or the probe 
-        wavefront ('P') or both ('OP').
-
-    method : (1, 2, 3, 4), optional
+    method : (None, 1, 2, 3, 4), optional, default (None)
+        method = None :
+            Automattically choose method 1, 2 or 3 based on the contents of 'O' and 'P'.
+            if   O == None and P == None then method = 3
+            elif O == None then method = 1
+            elif P == None then method = 2
         method = 1 :
-            Just update 'O' using a single cpu core
+            Just update 'O'
         method = 2 :
-            Just update 'P' using a single cpu core
+            Just update 'P'
         method = 3 :
-            Update 'O' and 'P' using a single cpu core
+            Update 'O' and 'P'
         method = 4 :
-            Update 'O' using a single gpu core
-
+            Update 'O' and 'background'
+        method = 5 :
+            Update 'P' and 'background'
+        method = 6 :
+            Update 'O', 'P' and 'background'
+    
+    hardware : ('cpu', 'gpu', 'mpi'), optional, default ('cpu') 
+        Choose to run the reconstruction on a single cpu core ('cpu'), a single gpu
+        ('gpu') or many cpu's ('mpi'). The numerical results should be identical.
+    
     alpha : float, optional, default (1.0e-10)
         A floating point number to regularise array division (prevents 1/0 errors).
-
+    
     dtype : (None, 'single' or 'double'), optional, default ('single')
         Determines the numerical precision of the calculation. If dtype==None, then
         it is determined from the datatype of I.
@@ -110,6 +121,25 @@ def ERA(I, R, P, O, iters, OP_iters = 1, mask = 1, update = 'O', method = None, 
     Examples 
     --------
     """
+    if hardware == 'gpu':
+        return ERA_gpu(I, R, P, O, iters, OP_iters, mask, method, hardware, alpha, dtype, full_output)
+    elif hardware == 'mpi':
+        return ERA_mpi(I, R, P, O, iters, OP_iters, mask, method, hardware, alpha, dtype, full_output)
+
+    if method == None :
+        if O is None and P is None :
+            method = 3
+        elif O is None :
+            method = 1
+        elif P is None :
+            method = 2
+    elif method == 1 : 
+        update = 'O'
+    elif method == 2 : 
+        update = 'P'
+    elif method == 3 : 
+        update = 'OP'
+    
     if dtype is None :
         dtype   = I.dtype
         c_dtype = (I[0,0,0] + 1J * I[0, 0, 0]).dtype
@@ -147,31 +177,6 @@ def ERA(I, R, P, O, iters, OP_iters = 1, mask = 1, update = 'O', method = None, 
     # subtract an overall offset from R's
     R[:, 0] -= R[:, 0].max()
     R[:, 1] -= R[:, 1].max()
-
-    if method == None :
-        if update == 'O' :
-            method = 1
-        elif update == 'P' :
-            method = 2
-        elif update == 'OP' :
-            method = 3
-    
-    if method == 1 : 
-        update = 'O'
-    elif method == 2 : 
-        update = 'P'
-    elif method == 3 : 
-        update = 'OP'
-    elif method == 4 : 
-        update = 'O'
-    elif method == 5 : 
-        update = 'P'
-    elif method == 7 :
-        update = 'O'
-    elif method == 8 :
-        update = 'P'
-    elif method == 9 :
-        update = 'OP'
     
     # method 1 and 2, update O or P
     #---------
@@ -232,201 +237,6 @@ def ERA(I, R, P, O, iters, OP_iters = 1, mask = 1, update = 'O', method = None, 
             
             # modulus projection 
             exits        = pmod_1(amp, exits, mask, alpha = alpha)
-            
-            E_bak       -= exits
-            
-            # consistency projection 
-            for j in range(OP_iters):
-                O, P_heatmap = psup_O_1(exits, P, R, O.shape, None, alpha = alpha)
-                P, O_heatmap = psup_P_1(exits, O, R, None, alpha = alpha)
-            
-            exits = make_exits(O, P, R, exits)
-            
-            # metrics
-            temp = np.hstack((O.ravel(), P.ravel()))
-            
-            OP_bak-= temp
-            eCon   = np.sum( (OP_bak * OP_bak.conj()).real ) / np.sum( (temp * temp.conj()).real )
-            eCon   = np.sqrt(eCon)
-            
-            eMod   = np.sum( (E_bak * E_bak.conj()).real ) / I_norm
-            eMod   = np.sqrt(eMod)
-            
-            update_progress(i / max(1.0, float(iters-1)), 'ERA', i, eCon, eMod )
-
-            eMods.append(eMod)
-            eCons.append(eCon)
-        
-        if full_output : 
-            info = {}
-            info['exits'] = exits
-            info['I']     = np.abs(np.fft.fftn(exits, axes = (-2, -1)))**2
-            info['eMod']  = eMods
-            info['eCon']  = eCons
-            info['heatmap']  = P_heatmap
-            return O, P, info
-        else :
-            return O, P
-
-    # method 4 or 5
-    #---------
-    elif method == 4 or method == 5 :
-        # set up the gpu
-        #---------------
-        import pyfft
-        import pyopencl
-        import pyopencl.array
-        from   pyfft.cl import Plan
-        import pyopencl.clmath 
-
-        # get the CUDA platform
-        print 'opencl platforms found:'
-        platforms = pyopencl.get_platforms()
-        for p in platforms:
-            print '\t', p.name
-            if p.name == 'NVIDIA CUDA':
-                platform = p
-                print '\tChoosing', p.name
-        
-        # get one of the gpu's device id
-        print '\nopencl devices found:'
-        devices = platform.get_devices()
-        for d in devices:
-            print '\t', d.name
-
-        print '\tChoosing', devices[0].name
-        device = devices[0]
-        
-        # create a context for the device
-        context = pyopencl.Context([device])
-        
-        # create a command queue for the device
-        queue = pyopencl.CommandQueue(context)
-        
-        # make a plan for the ffts
-        print I.shape
-        plan = Plan(I[0].shape, dtype=c_dtype, queue=queue)
-
-        # We will just be doing pmod on the gpu
-        # so it needs to know the detector mask and
-        # diffraction amplitudes. It also needs memory  
-        # for the exit waves.
-        exits_g = pyopencl.array.to_device(queue, np.ascontiguousarray(exits))
-        amp_g   = pyopencl.array.to_device(queue, np.ascontiguousarray(amp))
-        if mask is not 1 :
-            mask_g    = np.empty(I.shape, dtype=np.uint8)
-            mask_g[:] = mask
-            mask_g    = pyopencl.array.to_device(queue, np.ascontiguousarray(mask_g))
-        else :
-            mask_g  = 1
-        
-        print 'algrithm progress iteration convergence modulus error'
-        for i in range(iters) :
-            if update == 'O': bak = O.copy()
-            if update == 'P': bak = P.copy()
-            E_bak        = exits.copy()
-            
-            # modulus projection 
-            exits_g.set(exits)
-            exits        = pmod_4(amp_g, exits_g, plan, mask_g, alpha = alpha).get()
-            
-            E_bak       -= exits
-
-            # consistency projection 
-            if update == 'O': O, P_heatmap = psup_O_1(exits, P, R, O.shape, P_heatmap, alpha = alpha)
-            if update == 'P': P, O_heatmap = psup_P_1(exits, O, R, O_heatmap, alpha = alpha)
-            
-            exits = make_exits(O, P, R, exits)
-            
-            # metrics
-            if update == 'O': temp = O
-            if update == 'P': temp = P
-            
-            bak -= temp
-            eCon   = np.sum( (bak * bak.conj()).real ) / np.sum( (temp * temp.conj()).real )
-            eCon   = np.sqrt(eCon)
-            
-            eMod   = np.sum( (E_bak * E_bak.conj()).real ) / I_norm
-            eMod   = np.sqrt(eMod)
-            
-            update_progress(i / max(1.0, float(iters-1)), 'ERA', i, eCon, eMod )
-
-            eMods.append(eMod)
-            eCons.append(eCon)
-        
-        if full_output : 
-            info = {}
-            info['exits'] = exits
-            info['I']     = np.abs(np.fft.fftn(exits, axes = (-2, -1)))**2
-            info['eMod']  = eMods
-            info['eCon']  = eCons
-            info['heatmap']  = P_heatmap
-            if update == 'O': return O, info
-            if update == 'P': return P, info
-        else :
-            if update == 'O': return O
-            if update == 'P': return P
-
-    # method 6
-    #---------
-    elif method == 6 :
-        # set up the gpu
-        #---------------
-        import pyfft
-        import pyopencl
-        import pyopencl.array
-        from   pyfft.cl import Plan
-        import pyopencl.clmath 
-
-        # get the CUDA platform
-        print 'opencl platforms found:'
-        platforms = pyopencl.get_platforms()
-        for p in platforms:
-            print '\t', p.name
-            if p.name == 'NVIDIA CUDA':
-                platform = p
-                print '\tChoosing', p.name
-        
-        # get one of the gpu's device id
-        print '\nopencl devices found:'
-        devices = platform.get_devices()
-        for d in devices:
-            print '\t', d.name
-
-        print '\tChoosing', devices[0].name
-        device = devices[0]
-        
-        # create a context for the device
-        context = pyopencl.Context([device])
-        
-        # create a command queue for the device
-        queue = pyopencl.CommandQueue(context)
-        
-        # make a plan for the ffts
-        print I.shape
-        plan = Plan(I[0].shape, dtype=c_dtype, queue=queue)
-
-        # We will just be doing pmod on the gpu
-        # so it needs to know the detector mask and
-        # diffraction amplitudes. It also needs memory  
-        # for the exit waves.
-        exits_g = pyopencl.array.to_device(queue, np.ascontiguousarray(exits))
-        amp_g   = pyopencl.array.to_device(queue, np.ascontiguousarray(amp))
-        if mask is not 1 :
-            mask_g    = np.empty(I.shape, dtype=np.int8)
-            mask_g[:] = mask.astype(np.int8)*2 - 1
-            mask_g    = pyopencl.array.to_device(queue, np.ascontiguousarray(mask_g))
-        else :
-            mask_g  = 1
-
-        print 'algrithm progress iteration convergence modulus error'
-        for i in range(iters) :
-            OP_bak = np.hstack((O.ravel().copy(), P.ravel().copy()))
-            E_bak  = exits.copy()
-            
-            # modulus projection 
-            exits_g.set(exits)
-            exits        = pmod_4(amp_g, exits_g, plan, mask_g, alpha = alpha).get()
             
             E_bak       -= exits
             
@@ -583,7 +393,6 @@ def update_progress(progress, algorithm, i, emod, esup):
     sys.stdout.write(text)
     sys.stdout.flush()
 
-
 def make_exits(O, P, R, exits = None):
     if exits is None :
         exits = np.empty((len(R),) + P.shape, dtype = P.dtype)
@@ -591,7 +400,6 @@ def make_exits(O, P, R, exits = None):
     for i, r in enumerate(R) : 
         exits[i] = multiroll(O, [r[0], r[1]])[:P.shape[0], :P.shape[1]] * P
     return exits
-
 
 def psup_O_1(exits, P, R, O_shape, P_heatmap = None, alpha = 1.0e-10):
     O = np.zeros(O_shape, P.dtype)
@@ -661,23 +469,6 @@ def pmod_1(amp, exits, mask = 1, alpha = 1.0e-10):
 def Pmod_1(amp, exits, mask = 1, alpha = 1.0e-10):
     exits  = mask * exits * amp / (abs(exits) + alpha)
     exits += (1 - mask) * exits
-    return exits
-
-def pmod_4(amp, exits, plan, mask = 1, alpha = 1.0e-10):
-    plan.execute(exits.data, batch = exits.shape[0])
-    exits = Pmod_4(amp, exits, mask = mask, alpha = alpha)
-    plan.execute(exits.data, batch = exits.shape[0], inverse = True)
-    return exits
-    
-def Pmod_4(amp, exits, mask = 1, alpha = 1.0e-10):
-    import pyopencl.array
-    if mask is 1 :
-        exits  = exits * amp / (abs(exits) + alpha)
-    else :
-        #exits  = mask * exits * amp / (abs(exits) + alpha)
-        exits2 = exits * amp / (abs(exits) + alpha)
-        pyopencl.array.if_positive(mask, exits2, exits, out = exits)
-        #exits.mul_add(mask * amp / (abs(exits) + alpha), (1 - mask), exits)
     return exits
 
 def pmod_7(amp, background, exits, mask = 1, alpha = 1.0e-10):
