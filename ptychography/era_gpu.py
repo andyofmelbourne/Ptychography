@@ -2,17 +2,13 @@ import numpy as np
 import sys
 from itertools import product
 
+import ptychography as pt
 from era import *
 
 def ERA_gpu(I, R, P, O, iters, OP_iters = 1, mask = 1, method = None, hardware = 'cpu', alpha = 1.0e-10, dtype=None, full_output = True):
     """
     GPU variant of ptychography.ERA
     """
-    if hardware == 'gpu':
-        return ERA_gpu(I, R, P, O, iters, OP_iters, mask, method, hardware, alpha, dtype, full_output)
-    elif hardware == 'mpi':
-        return ERA_mpi(I, R, P, O, iters, OP_iters, mask, method, hardware, alpha, dtype, full_output)
-
     if method == None :
         if O is None and P is None :
             method = 3
@@ -20,7 +16,8 @@ def ERA_gpu(I, R, P, O, iters, OP_iters = 1, mask = 1, method = None, hardware =
             method = 1
         elif P is None :
             method = 2
-    elif method == 1 : 
+    
+    if method == 1 : 
         update = 'O'
     elif method == 2 : 
         update = 'P'
@@ -127,7 +124,7 @@ def ERA_gpu(I, R, P, O, iters, OP_iters = 1, mask = 1, method = None, hardware =
 
     # method 1 and 2, update O or P
     #---------
-    elif method == 1 or method == 2 :
+    if method == 1 or method == 2 :
         
         print 'algrithm progress iteration convergence modulus error'
         for i in range(iters) :

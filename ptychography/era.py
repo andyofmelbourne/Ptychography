@@ -133,7 +133,8 @@ def ERA(I, R, P, O, iters, OP_iters = 1, mask = 1, method = None, hardware = 'cp
             method = 1
         elif P is None :
             method = 2
-    elif method == 1 : 
+    
+    if method == 1 : 
         update = 'O'
     elif method == 2 : 
         update = 'P'
