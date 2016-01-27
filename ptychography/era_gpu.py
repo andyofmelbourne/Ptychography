@@ -1,9 +1,7 @@
 import numpy as np
 import sys
-from itertools import product
 
-import ptychography as pt
-from era import *
+import era
 
 def ERA_gpu(I, R, P, O, iters, OP_iters = 1, mask = 1, method = None, hardware = 'cpu', alpha = 1.0e-10, dtype=None, full_output = True):
     """
@@ -52,7 +50,7 @@ def ERA_gpu(I, R, P, O, iters, OP_iters = 1, mask = 1, method = None, hardware =
     
     I_norm    = np.sum(mask * I)
     amp       = np.sqrt(I).astype(dtype)
-    exits     = make_exits(O, P, R)
+    exits     = era.make_exits(O, P, R)
     P_heatmap = None
     O_heatmap = None
     eMods     = []

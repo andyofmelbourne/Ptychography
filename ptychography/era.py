@@ -2,10 +2,10 @@ import numpy as np
 import sys
 from itertools import product
 
-#from era_mpi import ERA_mpi
+from era_mpi import ERA_mpi
 from era_gpu import ERA_gpu
 
-def ERA(I, R, P, O, iters, OP_iters = 1, mask = 1, method = None, hardware = 'cpu', alpha = 1.0e-10, dtype=None, full_output = True):
+def ERA(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method = None, hardware = 'cpu', alpha = 1.0e-10, dtype=None, full_output = True):
     """
     Find the phases of 'I' given O, P, R using the Error Reduction Algorithm (Ptychography).
     
@@ -122,9 +122,9 @@ def ERA(I, R, P, O, iters, OP_iters = 1, mask = 1, method = None, hardware = 'cp
     --------
     """
     if hardware == 'gpu':
-        return ERA_gpu(I, R, P, O, iters, OP_iters, mask, method, hardware, alpha, dtype, full_output)
+        return ERA_gpu(I, R, P, O, iters, OP_iters, mask, background, method, hardware, alpha, dtype, full_output)
     elif hardware == 'mpi':
-        return ERA_mpi(I, R, P, O, iters, OP_iters, mask, method, hardware, alpha, dtype, full_output)
+        return ERA_mpi(I, R, P, O, iters, OP_iters, mask, background, method, hardware, alpha, dtype, full_output)
 
     if method == None :
         if O is None and P is None :
@@ -133,12 +133,15 @@ def ERA(I, R, P, O, iters, OP_iters = 1, mask = 1, method = None, hardware = 'cp
             method = 1
         elif P is None :
             method = 2
+
+        if background is not None :
+            method += 3
     
-    if method == 1 : 
+    if method == 1 or method == 4 : 
         update = 'O'
-    elif method == 2 : 
+    elif method == 2 or method == 5 : 
         update = 'P'
-    elif method == 3 : 
+    elif method == 3 or method == 6 : 
         update = 'OP'
     
     if dtype is None :
@@ -274,11 +277,17 @@ def ERA(I, R, P, O, iters, OP_iters = 1, mask = 1, method = None, hardware = 'cp
         else :
             return O, P
 
-    # method 7
+    # method 4 or 5
     #---------
     # update the object with background retrieval
-    elif method == 7 or method == 8 :
-        background = np.random.random((I.shape)).astype(dtype)
+    elif method == 4 or method == 5 :
+        if background is None :
+            background = np.random.random((I.shape)).astype(dtype)
+        else :
+            temp       = np.empty(I.shape, dtype = dtype)
+            temp[:]    = np.sqrt(background)
+            background = temp
+        
         print 'algrithm progress iteration convergence modulus error'
         for i in range(iters) :
             if update == 'O': bak = O.copy()
@@ -327,9 +336,14 @@ def ERA(I, R, P, O, iters, OP_iters = 1, mask = 1, method = None, hardware = 'cp
             if update == 'O': return O, background**2
             if update == 'P': return P, background**2
 
-    elif method == 9 : 
-        background = np.random.random((I.shape)).astype(dtype)
-        print 'method 9:'
+    elif method == 6 : 
+        if background is None :
+            background = np.random.random((I.shape)).astype(dtype)
+        else :
+            temp       = np.empty(I.shape, dtype = dtype)
+            temp[:]    = np.sqrt(background)
+            background = temp
+        
         print 'algrithm progress iteration convergence modulus error'
         for i in range(iters) :
             OP_bak = np.hstack((O.ravel().copy(), P.ravel().copy()))

@@ -24,3 +24,12 @@ $ %timeit -n10 pt.era.multiroll(a, [0, 5, 10])
 $ np.allclose(np.roll(np.roll(a, 5, 1), 10, 2), pt.era.multiroll(a, [0,5,10]))
 True
 ```
+
+MPI native vs pickle allreduce:
+    use native
+```
+$ mpirun -n 4 python ptychography/test_MPI.py
+numpy:  delta t: 2.09517788887
+pickle: delta t: 16.0462508202
+```
+about 8 x faster
