@@ -3,7 +3,7 @@ import sys
 
 import era
 
-def ERA_gpu(I, R, P, O, iters, OP_iters = 1, mask = 1, method = None, hardware = 'cpu', alpha = 1.0e-10, dtype=None, full_output = True):
+def ERA_gpu(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method = None, hardware = 'cpu', alpha = 1.0e-10, dtype=None, full_output = True):
     """
     GPU variant of ptychography.ERA
     """
@@ -97,20 +97,6 @@ def ERA_gpu(I, R, P, O, iters, OP_iters = 1, mask = 1, method = None, hardware =
     print I.shape
     plan = Plan(I[0].shape, dtype=c_dtype, queue=queue)
 
-    """
-    # We will just be doing pmod on the gpu
-    # so it needs to know the detector mask and
-    # diffraction amplitudes. It also needs memory  
-    # for the exit waves.
-    exits_g = pyopencl.array.to_device(queue, np.ascontiguousarray(exits))
-    amp_g   = pyopencl.array.to_device(queue, np.ascontiguousarray(amp))
-    if mask is not 1 :
-        mask_g    = np.empty(I.shape, dtype=np.uint8)
-        mask_g[:] = mask
-        mask_g    = pyopencl.array.to_device(queue, np.ascontiguousarray(mask_g))
-    else :
-        mask_g  = 1
-    """
     exits_g = pyopencl.array.to_device(queue, np.ascontiguousarray(exits))
     amp_g   = pyopencl.array.to_device(queue, np.ascontiguousarray(amp))
     if mask is not 1 :
