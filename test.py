@@ -182,6 +182,10 @@ if rank == 0 :
     #--------------------------------
     print '\n---------------------------------------------------'
     print 'Updating the object a single gpu with background...'
+    d0 = time.time()
+    Or, info = pt.ERA(I, R, P, None, iters, hardware = 'gpu', method = 4, mask=mask, alpha=1e-10, dtype='double')
+    d1 = time.time()
+    print '\ntime (s):', (d1 - d0) 
     try :
         d0 = time.time()
         Or, info = pt.ERA(I, R, P, None, iters, hardware = 'gpu', method = 4, mask=mask, alpha=1e-10, dtype='double')
@@ -202,7 +206,7 @@ if rank == 0 :
     print '\nUpdating the object and probe a single gpu with background...'
     try :
         d0 = time.time()
-        Or, Pr, info = pt.ERA(I, R, None, None, iters, hardware = 'gpu', method = 5, mask=mask, alpha=1e-10)
+        Or, Pr, info = pt.ERA(I, R, None, None, iters, hardware = 'gpu', method = 6, mask=mask, alpha=1e-10)
         d1 = time.time()
         print '\ntime (s):', (d1 - d0) 
     except Exception as e:

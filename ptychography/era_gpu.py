@@ -15,11 +15,11 @@ def ERA_gpu(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method
         elif P is None :
             method = 2
     
-    if method == 1 : 
+    if method == 1 or method == 4: 
         update = 'O'
-    elif method == 2 : 
+    elif method == 2 or method == 5: 
         update = 'P'
-    elif method == 3 : 
+    elif method == 3 or method == 6: 
         update = 'OP'
     
     if dtype is None :
@@ -94,7 +94,6 @@ def ERA_gpu(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method
     queue = pyopencl.CommandQueue(context)
     
     # make a plan for the ffts
-    print I.shape
     plan = Plan(I[0].shape, dtype=c_dtype, queue=queue)
 
     exits_g = pyopencl.array.to_device(queue, np.ascontiguousarray(exits))
@@ -166,6 +165,82 @@ def ERA_gpu(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method
             if update == 'P' : return P
             if update == 'OP': return O, P
 
+    # method 4, 5 or 6, update O or P or 'OP' with background
+    #---------
+    if method == 4 or method == 5 or method == 6:
+        if background is None :
+            background = np.random.random((I.shape)).astype(dtype)
+        else :
+            temp       = np.empty(I.shape, dtype = dtype)
+            temp[:]    = np.sqrt(background)
+            background = temp
+
+        background_g   = pyopencl.array.to_device(queue, np.ascontiguousarray(background))
+        
+        print 'algrithm progress iteration convergence modulus error'
+        print 'iters:', iters
+        for i in range(iters) :
+            print 'hello'
+            if update == 'O' : bak = O.copy()
+            if update == 'P' : bak = P.copy()
+            if update == 'OP': bak = np.hstack((O.ravel().copy(), P.ravel().copy()))
+		
+            E_bak        = exits.copy()
+            
+            # modulus projection 
+            exits_g.set(exits)
+            background_g.set(background)
+            #exits        = pmod_4(amp_g, exits_g, plan, mask_g, alpha = alpha).get()
+            exits_g, background_g = pmod_back(amp_g, background_g, exits_g, plan, mask_g, alpha = alpha)
+            exits      = exits_g.get()
+            background = background_g.get()
+            
+            E_bak       -= exits
+
+            # consistency projection 
+            if update == 'O' : O, P_heatmap = era.psup_O_1(exits, P, R, O.shape, P_heatmap, alpha = alpha)
+            if update == 'P' : P, O_heatmap = era.psup_P_1(exits, O, R, O_heatmap, alpha = alpha)
+            if update == 'OP': 
+                for j in range(OP_iters):
+                    O, P_heatmap = era.psup_O_1(exits, P, R, O.shape, None, alpha = alpha)
+                    P, O_heatmap = era.psup_P_1(exits, O, R, None, alpha = alpha)
+            
+            exits = era.make_exits(O, P, R, exits)
+            
+            background[:] = np.mean(background, axis=0)
+            
+            # metrics
+            if update == 'O' : temp = O
+            if update == 'P' : temp = P
+            if update == 'OP': temp = np.hstack((O.ravel(), P.ravel()))
+            
+            bak -= temp
+            eCon   = np.sum( (bak * bak.conj()).real ) / np.sum( (temp * temp.conj()).real )
+            eCon   = np.sqrt(eCon)
+            
+            eMod   = np.sum( (E_bak * E_bak.conj()).real ) / I_norm
+            eMod   = np.sqrt(eMod)
+            
+            print 'hello'
+            era.update_progress(i / max(1.0, float(iters-1)), 'ERA', i, eCon, eMod )
+
+            eMods.append(eMod)
+            eCons.append(eCon)
+        
+        if full_output : 
+            info = {}
+            info['exits'] = exits
+            info['I']     = np.abs(np.fft.fftn(exits, axes = (-2, -1)))**2
+            info['eMod']  = eMods
+            info['eCon']  = eCons
+            info['heatmap']  = P_heatmap
+            if update == 'O' : return O, info
+            if update == 'P' : return P, info
+            if update == 'OP': return O, P, info
+        else :
+            if update == 'O' : return O
+            if update == 'P' : return P
+            if update == 'OP': return O, P
 
 
 def pmod_4(amp, exits, plan, mask = 1, alpha = 1.0e-10):
@@ -184,3 +259,22 @@ def Pmod_4(amp, exits, mask = 1, alpha = 1.0e-10):
         pyopencl.array.if_positive(mask, exits2, exits, out = exits)
         #exits.mul_add(mask * amp / (abs(exits) + alpha), (1 - mask), exits)
     return exits
+
+def pmod_back(amp, background, exits, plan, mask = 1, alpha = 1.0e-10):
+    plan.execute(exits.data, batch = exits.shape[0])
+    exits, background = Pmod_back(amp, background, exits, mask = mask, alpha = alpha)
+    plan.execute(exits.data, batch = exits.shape[0], inverse = True)
+    return exits, background
+    
+def Pmod_back(amp, background, exits, mask = 1, alpha = 1.0e-10):
+    import pyopencl.array
+    M = amp / np.sqrt((exits.conj() * exits).real + background**2 + alpha)
+    if mask is 1 :
+        exits      *= M
+        background *= M
+    else :
+        M *= mask
+        exits2     = exits * M
+        background = background * M
+        pyopencl.array.if_positive(mask, exits2, exits, out = exits)
+    return exits, background
