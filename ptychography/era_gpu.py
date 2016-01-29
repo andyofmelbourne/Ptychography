@@ -180,7 +180,6 @@ def ERA_gpu(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method
         print 'algrithm progress iteration convergence modulus error'
         print 'iters:', iters
         for i in range(iters) :
-            print 'hello'
             if update == 'O' : bak = O.copy()
             if update == 'P' : bak = P.copy()
             if update == 'OP': bak = np.hstack((O.ravel().copy(), P.ravel().copy()))
@@ -221,7 +220,6 @@ def ERA_gpu(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method
             eMod   = np.sum( (E_bak * E_bak.conj()).real ) / I_norm
             eMod   = np.sqrt(eMod)
             
-            print 'hello'
             era.update_progress(i / max(1.0, float(iters-1)), 'ERA', i, eCon, eMod )
 
             eMods.append(eMod)
@@ -268,7 +266,8 @@ def pmod_back(amp, background, exits, plan, mask = 1, alpha = 1.0e-10):
     
 def Pmod_back(amp, background, exits, mask = 1, alpha = 1.0e-10):
     import pyopencl.array
-    M = amp / np.sqrt((exits.conj() * exits).real + background**2 + alpha)
+    import pyopencl.clmath
+    M = amp / pyopencl.clmath.sqrt((exits.conj() * exits).real + background**2 + alpha)
     if mask is 1 :
         exits      *= M
         background *= M

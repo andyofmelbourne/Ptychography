@@ -333,6 +333,7 @@ def make_exits(O, P, R, exits = None):
         exits = np.empty((len(R),) + P.shape, dtype = P.dtype)
     
     for i, r in enumerate(R) : 
+        #print O.shape, r[0], r[1], P.shape, exits.shape
         exits[i] = multiroll(O, [r[0], r[1]])[:P.shape[0], :P.shape[1]] * P
     return exits
 
