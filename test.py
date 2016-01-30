@@ -28,7 +28,7 @@ else :
     iters = 10
     test = 'all'
 
-if test == 'all' or test == 'mpi':
+if test == 'all' or test == 'mpi' or test == 'mpi_gpu':
     try :
         from mpi4py import MPI
     
@@ -137,15 +137,50 @@ if test == 'all' or test == 'mpi':
         print e
     
     if rank == 0 : print '\nUpdating the object and probe on a many cpu cores...'
-    d0 = time.time()
-    Or2, Pr2, info = pt.ERA(I, R, None, None, iters, hardware = 'mpi', mask=mask, method = 3, alpha=1e-10, dtype='double')
-    d1 = time.time()
-    if rank == 0 : print '\ntime (s):', (d1 - d0) 
     try :
-        pass
+        d0 = time.time()
+        Or2, Pr2, info = pt.ERA(I, R, None, None, iters, hardware = 'mpi', mask=mask, method = 3, alpha=1e-10, dtype='double')
+        d1 = time.time()
+        if rank == 0 : print '\ntime (s):', (d1 - d0) 
     except Exception as e:
         print e
 
+if test == 'all' or test == 'mpi_gpu':
+    # Many cpu cores + gpu
+    #----------------
+    if rank != 0 :
+        I = R = O = P = mask = None
+    
+    """
+    if rank == 0 : print '\n------------------------------------------'
+    if rank == 0 : print 'Updating the object on a many cpu cores and the gpu...'
+    try :
+        d0 = time.time()
+        Or2, info = pt.ERA(I, R, P, None, iters, hardware = 'mpi_gpu', mask=mask, method = 1, alpha=1e-10, dtype='double')
+        d1 = time.time()
+        if rank == 0 : print '\ntime (s):', (d1 - d0) 
+    except Exception as e:
+        print e
+    
+    if rank == 0 : print '\nUpdating the probe on a many cpu cores...'
+    try :
+        d0 = time.time()
+        Or2, info = pt.ERA(I, R, None, O, iters, hardware = 'mpi_gpu', mask=mask, method = 2, alpha=1e-10, dtype='double')
+        d1 = time.time()
+        if rank == 0 : print '\ntime (s):', (d1 - d0) 
+    except Exception as e:
+        print e
+    
+    """
+    if rank == 0 : print '\nUpdating the object and probe on a many cpu cores...'
+    try :
+        d0 = time.time()
+        Or2, Pr2, info = pt.ERA(I, R, None, None, iters, OP_iters = 10, hardware = 'mpi_gpu', mask=mask, method = 3, alpha=1e-10, dtype='double')
+        d1 = time.time()
+        if rank == 0 : print '\ntime (s):', (d1 - d0) 
+    except Exception as e:
+        print e
+    sys.exit()
 
 # Single cpu core with background 
 #--------------------------------
@@ -245,6 +280,37 @@ if test == 'all' or test == 'mpi':
     except Exception as e:
         print e
 
+if test == 'all' or test == 'mpi_gpu':
+    # Many cpu + gpu cores with background 
+    #-------------------------------
+    
+    if rank == 0 : print '\n----------------------------------------------------------'
+    if rank == 0 : print 'Updating the object with background on a many cpu cores + gpu...'
+    try :
+        d0 = time.time()
+        Or2, background, info = pt.ERA(I, R, P, None, iters, hardware = 'mpi_gpu', mask=mask, method = 4, alpha=1e-10, dtype='double')
+        d1 = time.time()
+        if rank == 0 : print '\ntime (s):', (d1 - d0) 
+    except Exception as e:
+        print e
+    
+    if rank == 0 : print '\nUpdating the probe with background on a many cpu cores...'
+    try :
+        d0 = time.time()
+        Or2, background, info = pt.ERA(I, R, None, O, iters, hardware = 'mpi_gpu', mask=mask, method = 5, alpha=1e-10, dtype='double')
+        d1 = time.time()
+        if rank == 0 : print '\ntime (s):', (d1 - d0) 
+    except Exception as e:
+        print e
+    
+    if rank == 0 : print '\nUpdating the object and probe with background on a many cpu cores...'
+    try :
+        d0 = time.time()
+        Or2, Pr2, background, info = pt.ERA(I, R, None, None, iters, OP_iters = 1, hardware = 'mpi_gpu', mask=mask, method = 6, alpha=1e-10, dtype='double')
+        d1 = time.time()
+        if rank == 0 : print '\ntime (s):', (d1 - d0) 
+    except Exception as e:
+        print e
 
 if rank == 0 : print '\n\nDone!'
 

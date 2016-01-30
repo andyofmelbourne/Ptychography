@@ -2,8 +2,6 @@ import numpy as np
 import sys
 from itertools import product
 
-from era_mpi import ERA_mpi
-from era_gpu import ERA_gpu
 
 def ERA(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method = None, hardware = 'cpu', alpha = 1.0e-10, dtype=None, full_output = True):
     """
@@ -122,9 +120,14 @@ def ERA(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method = N
     --------
     """
     if hardware == 'gpu':
+        from era_gpu import ERA_gpu
         return ERA_gpu(I, R, P, O, iters, OP_iters, mask, background, method, hardware, alpha, dtype, full_output)
     elif hardware == 'mpi':
+        from era_mpi import ERA_mpi
         return ERA_mpi(I, R, P, O, iters, OP_iters, mask, background, method, hardware, alpha, dtype, full_output)
+    elif hardware == 'mpi_gpu':
+        from era_mpi_gpu import ERA_mpi_gpu
+        return ERA_mpi_gpu(I, R, P, O, iters, OP_iters, mask, background, method, hardware, alpha, dtype, full_output)
 
     if method == None :
         if O is None and P is None :
