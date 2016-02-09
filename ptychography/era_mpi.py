@@ -13,6 +13,7 @@ def ERA_mpi(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method
     """
     MPI variant of ptychography.ERA
     """
+    print 'era_mpi'
     if method == None :
         if O is None and P is None :
             method = 3

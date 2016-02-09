@@ -1,14 +1,3 @@
-"""
-scan.cxi --> Ptychography
-
-Get a pupil function
-
-Do a few iterations on the gpu
-    see if the run fits on the gpu (use float32)
-    I can also truncate the data probably
-
-"""
-
 import numpy as np
 import time
 import sys
