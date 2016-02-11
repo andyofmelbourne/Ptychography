@@ -2,6 +2,8 @@ import numpy as np
 import sys
 from itertools import product
 
+import ptychography as pt
+from ptychography.era import *
 
 def DM(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method = None, hardware = 'cpu', alpha = 1.0e-10, dtype=None, full_output = True):
     """
@@ -39,10 +41,13 @@ def DM(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method = No
     iters : int
         The number of ERA iterations to perform.
 
-    OP_iters : int, optional, default (1)
+    OP_iters : int or tuple, optional, default (1)
         The number of projections onto the sample and probe consistency constraints 
         before doing the modulus projection when update = 'OP' has been selected. 
-        Ideally OP_iters should be large enough so that convergence has been acheived.
+        If OP_iters is a tuple (say) (5, 10) then the probe and object will only be
+        updated every 10 iterations, for the other 9 iterations the object alone
+        is updated. Ideally OP_iters should be large enough so that convergence has 
+        been acheived.
 
     mask : numpy.ndarray, (M, K), optional, default (1)
         The valid detector pixels. Mask[i, j] = 1 (or True) when the detector pixel 
@@ -148,16 +153,6 @@ def DM(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method = No
     [1] Veit Elser, "Phase retrieval by iterated projections," J. Opt. Soc. Am. A 
         20, 40-55 (2003)
     """
-    if hardware == 'gpu':
-        from era_gpu import ERA_gpu
-        return ERA_gpu(I, R, P, O, iters, OP_iters, mask, background, method, hardware, alpha, dtype, full_output)
-    elif hardware == 'mpi':
-        from era_mpi import ERA_mpi
-        return ERA_mpi(I, R, P, O, iters, OP_iters, mask, background, method, hardware, alpha, dtype, full_output)
-    elif hardware == 'mpi_gpu':
-        from era_mpi_gpu import ERA_mpi_gpu
-        return ERA_mpi_gpu(I, R, P, O, iters, OP_iters, mask, background, method, hardware, alpha, dtype, full_output)
-
     if method == None :
         if O is None and P is None :
             method = 3
@@ -188,13 +183,17 @@ def DM(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method = No
         dtype   = np.float64
         c_dtype = np.complex128
 
+    if type(OP_iters) == int :
+        OP_iters = (OP_iters, 1)
+
     if O is None :
         # find the smallest array that fits O
         # This is just U = M + R[:, 0].max() - R[:, 0].min()
         #              V = K + R[:, 1].max() - R[:, 1].min()
         shape = (I.shape[1] + R[:, 0].max() - R[:, 0].min(),\
                  I.shape[2] + R[:, 1].max() - R[:, 1].min())
-        O = 0.5 + np.random.random(shape) + 1J*np.random.random(shape)
+        #O = 0.5 + np.random.random(shape) + 1J*np.random.random(shape)
+        O = np.ones(shape, dtype = c_dtype)
     
     if P is None :
         P = np.random.random(I[0].shape) + 1J*np.random.random(I[0].shape)
@@ -222,40 +221,35 @@ def DM(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method = No
     #---------
     if method == 1 or method == 2 or method == 3 :
         ex_0 = np.empty_like(exits)
-        print 'hello'
         print 'algrithm progress iteration convergence modulus error'
         for i in range(iters) :
             
             # projection 
-            # f_i+1 = f_i + Ps f_i - Pm (2 Ps f - f)
-            # e0 = Ps f_i
-            # e  = e + e0       f_i + Ps f_i
-            # e0 = 3 e0 - e     3 Ps f_i - f_i - Ps f_i = 2 Ps f_i - f_i
-            # e0 = Pm e0        Pm (2 Ps f_i - f) 
-            # e -= e0           f_i + Ps f_i - Pm (2 Ps f_i - f)
+            # f_i+1 = f_i - Ps f_i + Pm (2 Ps f - f)
+            # e0  = Ps f_i
+            # e  -= e0           f_i - Ps f_i
+            # e0 -= e            Ps f_i - f_i + Ps f_i = 2 Ps f_i - f_i
+            # e0  = Pm e0        Pm (2 Ps f_i - f) 
+            # e  += e0           f_i - Ps f_i + Pm (2 Ps f_i - f)
             
             # consistency projection 
             if update == 'O': O, P_heatmap = psup_O_1(exits, P, R, O.shape, P_heatmap, alpha = alpha)
             if update == 'P': P, O_heatmap = psup_P_1(exits, O, R, O_heatmap, alpha = alpha)
             if update == 'OP':
-                for j in range(OP_iters):
-                    O, P_heatmap = psup_O_1(exits, P, R, O.shape, None, alpha = alpha)
-                    P, O_heatmap = psup_P_1(exits, O, R, None, alpha = alpha)
+                if i % OP_iters[1] == 0 :
+                    for j in range(OP_iters[0]):
+                        O, P_heatmap = psup_O_1(exits, P, R, O.shape, None, alpha = alpha)
+                        P, O_heatmap = psup_P_1(exits, O, R, None, alpha = alpha)
+                else :
+                        O, P_heatmap = psup_O_1(exits, P, R, O.shape, P_heatmap, alpha = alpha)
             
-            """
-            ex_0   = make_exits(O, P, R, ex_0)
-                        
-            exits += ex_0
-            
-            ex_0   = 3*ex_0 - exits
-            
-            ex_0   = pmod_1(amp, ex_0, mask, alpha = alpha)
-            
-            exits -= ex_0
-            """
             ex_0  = make_exits(O, P, R, ex_0)
-            exits = exits.copy() - ex_0.copy() + pmod_1(amp, (2*ex_0 - exits).copy(), mask, alpha = alpha)
-            #exits = pmod_1(amp, ex_0, mask, alpha = alpha)
+
+            #exits = exits.copy() - ex_0.copy() + pmod_1(amp, (2*ex_0 - exits).copy(), mask, alpha = alpha)
+            exits -= ex_0
+            ex_0  -= exits
+            ex_0   = pmod_1(amp, ex_0, mask, alpha = alpha)
+            exits += ex_0
             
             # metrics
             #--------
@@ -267,31 +261,17 @@ def DM(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method = No
             if update == 'O': Os, P_heatmap = psup_O_1(exits, Ps, R, O.shape, P_heatmap, alpha = alpha)
             if update == 'P': Ps, O_heatmap = psup_P_1(exits, Os, R, O_heatmap, alpha = alpha)
             if update == 'OP':
-                for j in range(OP_iters):
-                    Os, Ph_t = psup_O_1(exits, Ps, R, O.shape, None, alpha = alpha)
-                    Ps, Oh_t = psup_P_1(exits, Os, R, None, alpha = alpha)
+                if i % OP_iters[1] == 0 :
+                    for j in range(OP_iters[0]):
+                        Os, Ph_t = psup_O_1(exits, Ps, R, O.shape, None, alpha = alpha)
+                        Ps, Oh_t = psup_P_1(exits, Os, R, None, alpha = alpha)
+                else :
+                        Os, P_heatmap = psup_O_1(exits, P, R, O.shape, P_heatmap, alpha = alpha)
             
             ex_0 = make_exits(Os, Ps, R, ex_0)
-            eMod = model_error_1(amp, ex_0, mask, I_norm)
+            eMod = model_error_1(amp, ex_0, mask)
             #eMod = model_error_1(amp, pmod_1(amp, ex_0, mask, alpha=alpha), mask, I_norm)
 
-            """
-            # f* = PM (2 Ps f_i - f_i)
-            Os = O.copy()
-            Ps = P.copy()
-            if update == 'O': Os, P_heatmap = psup_O_1(exits, Ps, R, O.shape, P_heatmap, alpha = alpha)
-            if update == 'P': Ps, O_heatmap = psup_P_1(exits, Os, R, O_heatmap, alpha = alpha)
-            if update == 'OP':
-                for j in range(OP_iters):
-                    Os, Ph_t = psup_O_1(exits, Ps, R, O.shape, None, alpha = alpha)
-                    Ps, Oh_t = psup_P_1(exits, Os, R, None, alpha = alpha)
-            
-            ex_0 = 2 * make_exits(Os, Ps, R, ex_0) - exits
-            ex_0 = pmod_1(amp, ex_0, mask, alpha=alpha)
-
-            eMod = model_error_1(amp, ex_0, mask, I_norm)
-            """
-            
             if update == 'O' : temp = Os
             if update == 'P' : temp = Ps
             if update == 'OP': temp = np.hstack((Os.ravel(), Ps.ravel()))
@@ -299,6 +279,8 @@ def DM(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method = No
             bak   -= temp
             eCon   = np.sum( (bak * bak.conj()).real ) / np.sum( (temp * temp.conj()).real )
             eCon   = np.sqrt(eCon)
+
+            eMod = np.sqrt( eMod / I_norm)
             
             update_progress(i / max(1.0, float(iters-1)), 'DM', i, eCon, eMod )
 
@@ -324,7 +306,7 @@ def DM(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method = No
             if update == 'P' : return Ps
             if update == 'OP': return Os, Ps
 
-    # method 4 or 5
+    # method 4 or 5 or 6
     #---------
     # update the object with background retrieval
     elif method == 4 or method == 5 or method == 6 :
@@ -335,47 +317,77 @@ def DM(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method = No
             temp[:]    = np.sqrt(background)
             background = temp
         
+        ex_0 = np.empty_like(exits)
+        b_0  = np.empty_like(background)
         print 'algrithm progress iteration convergence modulus error'
         for i in range(iters) :
-            if update == 'O' : bak = O.copy()
-            if update == 'P' : bak = P.copy()
-            if update == 'OP': bak = np.hstack((O.ravel().copy(), P.ravel().copy()))
-            
-            E_bak        = exits.copy()
-            
             # modulus projection 
             exits, background  = pmod_7(amp, background, exits, mask, alpha = alpha)
             
-            E_bak       -= exits
-
+            background[:] = np.mean(background, axis=0)
+            
             # consistency projection 
             if update == 'O': O, P_heatmap = psup_O_1(exits, P, R, O.shape, P_heatmap, alpha = alpha)
             if update == 'P': P, O_heatmap = psup_P_1(exits, O, R, O_heatmap, alpha = alpha)
             if update == 'OP':
-                for j in range(OP_iters):
-                    O, P_heatmap = psup_O_1(exits, P, R, O.shape, None, alpha = alpha)
-                    P, O_heatmap = psup_P_1(exits, O, R, None, alpha = alpha)
+                if i % OP_iters[1] == 0 :
+                    for j in range(OP_iters[0]):
+                        O, P_heatmap = psup_O_1(exits, P, R, O.shape, None, alpha = alpha)
+                        P, O_heatmap = psup_P_1(exits, O, R, None, alpha = alpha)
+                else :
+                        O, P_heatmap = psup_O_1(exits, P, R, O.shape, P_heatmap, alpha = alpha)
+            
+            b_0[:]  = np.mean(background, axis=0)
+            ex_0    = make_exits(O, P, R, ex_0)
 
-            background[:] = np.mean(background, axis=0)
-            
-            exits = make_exits(O, P, R, exits)
-            
+            exits      -= ex_0
+            background -= b_0
+            ex_0       -= exits
+            b_0        -= background
+            ex_0, b_0   = pmod_7(amp, b_0, ex_0, mask, alpha = alpha)
+            exits      += ex_0
+            background += b_0
+
             # metrics
-            if update == 'O' : temp = O
-            if update == 'P' : temp = P
-            if update == 'OP': temp = np.hstack((O.ravel(), P.ravel()))
+            #--------
+            # These are quite expensive, we should only output this every n'th iter to save time
+            # f* = Ps f_i = PM (2 Ps f_i - f_i)
+            # consistency projection 
+            Os = O.copy()
+            Ps = P.copy()
+            if update == 'O': Os, P_heatmap = psup_O_1(exits, Ps, R, O.shape, P_heatmap, alpha = alpha)
+            if update == 'P': Ps, O_heatmap = psup_P_1(exits, Os, R, O_heatmap, alpha = alpha)
+            if update == 'OP':
+                if i % OP_iters[1] == 0 :
+                    for j in range(OP_iters[0]):
+                        Os, Ph_t = psup_O_1(exits, Ps, R, O.shape, None, alpha = alpha)
+                        Ps, Oh_t = psup_P_1(exits, Os, R, None, alpha = alpha)
+                else :
+                        Os, P_heatmap = psup_O_1(exits, P, R, O.shape, P_heatmap, alpha = alpha)
+            b_0[:]  = np.mean(background, axis=0)
+            
+            ex_0 = make_exits(Os, Ps, R, ex_0)
+            eMod = model_error_1(amp, ex_0, mask, b_0)
+            #eMod = model_error_1(amp, pmod_1(amp, ex_0, mask, alpha=alpha), mask, I_norm)
+
+            if update == 'O' : temp = Os
+            if update == 'P' : temp = Ps
+            if update == 'OP': temp = np.hstack((Os.ravel(), Ps.ravel()))
             
             bak   -= temp
             eCon   = np.sum( (bak * bak.conj()).real ) / np.sum( (temp * temp.conj()).real )
             eCon   = np.sqrt(eCon)
             
-            eMod   = np.sum( (E_bak * E_bak.conj()).real ) / I_norm
-            eMod   = np.sqrt(eMod)
-            
-            update_progress(i / max(1.0, float(iters-1)), 'ERA', i, eCon, eMod )
+            eMod = np.sqrt( eMod / I_norm)
+
+            update_progress(i / max(1.0, float(iters-1)), 'DM', i, eCon, eMod )
 
             eMods.append(eMod)
             eCons.append(eCon)
+        
+            if update == 'O' : bak = Os.copy()
+            if update == 'P' : bak = Ps.copy()
+            if update == 'OP': bak = np.hstack((Os.ravel().copy(), Ps.ravel().copy()))
         
         if full_output : 
             info = {}
@@ -393,232 +405,13 @@ def DM(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method = No
             if update == 'OP': return O, P, background**2
 
 
-def update_progress(progress, algorithm, i, emod, esup):
-    barLength = 15 # Modify this to change the length of the progress bar
-    status = ""
-    if isinstance(progress, int):
-        progress = float(progress)
-    if not isinstance(progress, float):
-        progress = 0
-        status = "error: progress var must be float\r\n"
-    if progress < 0:
-        progress = 0
-        status = "Halt...\r\n"
-    if progress >= 1:
-        progress = 1
-        status = "Done...\r\n"
-    block = int(round(barLength*progress))
-    text = "\r{0}: [{1}] {2}% {3} {4} {5} {6} {7}".format(algorithm, "#"*block + "-"*(barLength-block), int(progress*100), i, emod, esup, status, " " * 5) # this last bit clears the line
-    sys.stdout.write(text)
-    sys.stdout.flush()
 
-def make_exits(O, P, R, exits = None):
-    if exits is None :
-        exits = np.empty((len(R),) + P.shape, dtype = P.dtype)
-    
-    for i, r in enumerate(R) : 
-        #print O.shape, r[0], r[1], P.shape, exits.shape
-        exits[i] = multiroll(O, [r[0], r[1]])[:P.shape[0], :P.shape[1]] * P
-    return exits
-
-def psup_O_1(exits, P, R, O_shape, P_heatmap = None, alpha = 1.0e-10):
-    O = np.zeros(O_shape, P.dtype)
-    
-    # Calculate denominator
-    #----------------------
-    # but only do this if it hasn't been done already
-    # (we must set P_heatmap = None when the probe/coords has changed)
-    if P_heatmap is None : 
-        P_heatmap = make_P_heatmap(P, R, O_shape)
-
-    # Calculate numerator
-    #--------------------
-    for r, exit in zip(R, exits):
-        #print exit.shape, P.shape, O.shape, -r[0],P.shape[0]-r[0], -r[1],P.shape[1]-r[1], O[-r[0]:P.shape[0]-r[0], -r[1]:P.shape[1]-r[1]].shape
-        O[-r[0]:P.shape[0]-r[0], -r[1]:P.shape[1]-r[1]] += exit * P.conj()
-         
-    # divide
-    #-------
-    O  = O / (P_heatmap + alpha)
-    
-    return O, P_heatmap
-
-def psup_P_1(exits, O, R, O_heatmap = None, alpha = 1.0e-10):
-    P = np.zeros(exits[0].shape, exits.dtype)
-    
-    # Calculate denominator
-    #----------------------
-    # but only do this if it hasn't been done already
-    # (we must set O_heatmap = None when the object/coords has changed)
-    if O_heatmap is None : 
-        O_heatmap = make_O_heatmap(O, R, P.shape)
-
-    # Calculate numerator
-    #--------------------
-    Oc = O.conj()
-    for r, exit in zip(R, exits):
-        P += exit * Oc[-r[0]:P.shape[0]-r[0], -r[1]:P.shape[1]-r[1]] 
-         
-    # divide
-    #-------
-    P  = P / (O_heatmap + alpha)
-    
-    return P, O_heatmap
-
-def make_P_heatmap(P, R, shape):
-    P_heatmap = np.zeros(shape, dtype = P.real.dtype)
-    P_temp    = np.zeros(shape, dtype = P.real.dtype)
-    P_temp[:P.shape[0], :P.shape[1]] = (P.conj() * P).real
-    for r in R : 
-        P_heatmap += multiroll(P_temp, [-r[0], -r[1]]) 
-    return P_heatmap
-    
-def make_O_heatmap(O, R, shape):
-    O_heatmap = np.zeros(O.shape, dtype = O.real.dtype)
-    O_temp    = (O * O.conj()).real
-    for r in R : 
-        O_heatmap += multiroll(O_temp, [r[0], r[1]]) 
-    return O_heatmap[:shape[0], :shape[1]]
-
-def pmod_1(amp, exits, mask = 1, alpha = 1.0e-10):
+def model_error_1(amp, exits, mask, background = 0):
     exits = np.fft.fftn(exits, axes = (-2, -1))
-    exits = Pmod_1(amp, exits, mask = mask, alpha = alpha)
-    exits = np.fft.ifftn(exits, axes = (-2, -1))
-    return exits
-    
-def Pmod_1(amp, exits, mask = 1, alpha = 1.0e-10):
-    exits  = mask * exits * amp / (abs(exits) + alpha)
-    exits += (1 - mask) * exits
-    return exits
+    M     = np.sqrt((exits.conj() * exits).real + background**2)
+    err   = np.sum( mask * (M - amp)**2 ) 
+    return err
 
-def model_error_1(amp, exits, mask, I_norm):
-    exits = np.fft.fftn(exits, axes = (-2, -1))
-    err = np.sum( mask * (np.abs(exits) - amp)**2 ) / I_norm
-    return np.sqrt(err)
-
-def pmod_7(amp, background, exits, mask = 1, alpha = 1.0e-10):
-    exits = np.fft.fftn(exits, axes = (-2, -1))
-    exits, background = Pmod_7(amp, background, exits, mask = mask, alpha = alpha)
-    exits = np.fft.ifftn(exits, axes = (-2, -1))
-    return exits, background
-    
-def Pmod_7(amp, background, exits, mask = 1, alpha = 1.0e-10):
-    M = mask * amp / np.sqrt((exits.conj() * exits).real + background**2 + alpha)
-    exits      *= M
-    background *= M
-    exits += (1 - mask) * exits
-    return exits, background
-
-def multiroll(x, shift, axis=None):
-    """Roll an array along each axis.
-
-    Thanks to: Warren Weckesser, 
-    http://stackoverflow.com/questions/30639656/numpy-roll-in-several-dimensions
-    
-    
-    Parameters
-    ----------
-    x : array_like
-        Array to be rolled.
-    shift : sequence of int
-        Number of indices by which to shift each axis.
-    axis : sequence of int, optional
-        The axes to be rolled.  If not given, all axes is assumed, and
-        len(shift) must equal the number of dimensions of x.
-
-    Returns
-    -------
-    y : numpy array, with the same type and size as x
-        The rolled array.
-
-    Notes
-    -----
-    The length of x along each axis must be positive.  The function
-    does not handle arrays that have axes with length 0.
-
-    See Also
-    --------
-    numpy.roll
-
-    Example
-    -------
-    Here's a two-dimensional array:
-
-    >>> x = np.arange(20).reshape(4,5)
-    >>> x 
-    array([[ 0,  1,  2,  3,  4],
-           [ 5,  6,  7,  8,  9],
-           [10, 11, 12, 13, 14],
-           [15, 16, 17, 18, 19]])
-
-    Roll the first axis one step and the second axis three steps:
-
-    >>> multiroll(x, [1, 3])
-    array([[17, 18, 19, 15, 16],
-           [ 2,  3,  4,  0,  1],
-           [ 7,  8,  9,  5,  6],
-           [12, 13, 14, 10, 11]])
-
-    That's equivalent to:
-
-    >>> np.roll(np.roll(x, 1, axis=0), 3, axis=1)
-    array([[17, 18, 19, 15, 16],
-           [ 2,  3,  4,  0,  1],
-           [ 7,  8,  9,  5,  6],
-           [12, 13, 14, 10, 11]])
-
-    Not all the axes must be rolled.  The following uses
-    the `axis` argument to roll just the second axis:
-
-    >>> multiroll(x, [2], axis=[1])
-    array([[ 3,  4,  0,  1,  2],
-           [ 8,  9,  5,  6,  7],
-           [13, 14, 10, 11, 12],
-           [18, 19, 15, 16, 17]])
-
-    which is equivalent to:
-
-    >>> np.roll(x, 2, axis=1)
-    array([[ 3,  4,  0,  1,  2],
-           [ 8,  9,  5,  6,  7],
-           [13, 14, 10, 11, 12],
-           [18, 19, 15, 16, 17]])
-
-    """
-    x = np.asarray(x)
-    if axis is None:
-        if len(shift) != x.ndim:
-            raise ValueError("The array has %d axes, but len(shift) is only "
-                             "%d. When 'axis' is not given, a shift must be "
-                             "provided for all axes." % (x.ndim, len(shift)))
-        axis = range(x.ndim)
-    else:
-        # axis does not have to contain all the axes.  Here we append the
-        # missing axes to axis, and for each missing axis, append 0 to shift.
-        missing_axes = set(range(x.ndim)) - set(axis)
-        num_missing = len(missing_axes)
-        axis = tuple(axis) + tuple(missing_axes)
-        shift = tuple(shift) + (0,)*num_missing
-
-    # Use mod to convert all shifts to be values between 0 and the length
-    # of the corresponding axis.
-    shift = [s % x.shape[ax] for s, ax in zip(shift, axis)]
-
-    # Reorder the values in shift to correspond to axes 0, 1, ..., x.ndim-1.
-    shift = np.take(shift, np.argsort(axis))
-
-    # Create the output array, and copy the shifted blocks from x to y.
-    y = np.empty_like(x)
-    src_slices = [(slice(n-shft, n), slice(0, n-shft))
-                  for shft, n in zip(shift, x.shape)]
-    dst_slices = [(slice(0, shft), slice(shft, n))
-                  for shft, n in zip(shift, x.shape)]
-    src_blks = product(*src_slices)
-    dst_blks = product(*dst_slices)
-    for src_blk, dst_blk in zip(src_blks, dst_blks):
-        y[dst_blk] = x[src_blk]
-
-    return y
 
 
 if __name__ == '__main__' :

@@ -286,25 +286,23 @@ class Ptychography(object):
         return eSup
 
 
-def forward_sim():
+def forward_sim(shape_sample = (128, 256), shape_illum = (64, 128), nx = 8, ny = 8):
     # sample
-    shape_sample = (80, 180)
-    amp          = bg.scale(bg.brog(shape_sample), 0.0, 1.0)
-    phase        = bg.scale(bg.twain(shape_sample), -np.pi, np.pi)
+    shape_sample0 = shape_sample
+    amp          = bg.scale(bg.brog(shape_sample0), 0.0, 1.0)
+    phase        = bg.scale(bg.twain(shape_sample0), -np.pi, np.pi)
     sample       = amp * np.exp(1J * phase)
     sample_support = np.ones_like(sample, dtype=np.bool)
 
-    shape_sample = (128, 256)
     sample         = bg.zero_pad(sample,         shape_sample, fillvalue=1.0)
     sample_support = bg.zero_pad(sample_support, shape_sample)
     
     # probe
-    shape_illum = (64, 128)
     probe       = bg.circle_new(shape_illum, radius=0.5, origin='centre') + 0J
         
     # make some sample positions
-    xs = range(shape_illum[1] - shape_sample[1], 1, 8)
-    ys = range(shape_illum[0] - shape_sample[0], 1, 8)
+    xs = range(shape_illum[1] - shape_sample[1], 1, nx)
+    ys = range(shape_illum[0] - shape_sample[0], 1, ny)
     xs, ys = np.meshgrid( xs, ys )
     coords = np.array(zip(ys.ravel(), xs.ravel()))
 
