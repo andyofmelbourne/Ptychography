@@ -13,7 +13,6 @@ def ERA_mpi(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method
     """
     MPI variant of ptychography.ERA
     """
-    print 'era_mpi'
     if method == None :
         if O is None and P is None :
             method = 3
@@ -34,16 +33,22 @@ def ERA_mpi(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method
     
     if rank == 0 :
         if dtype is None :
-            dtype   = I.dtype
-            c_dtype = (I[0,0,0] + 1J * I[0, 0, 0]).dtype
+            if I.dtype == np.float32 :
+                dtype = 'single'
+            else :
+                dtype = 'double'
         
-        elif dtype == 'single':
-            dtype   = np.float32
-            c_dtype = np.complex64
+        if dtype == 'single':
+            dtype       = np.float32
+            MPI_dtype   = MPI.FLOAT
+            c_dtype     = np.complex64
+            MPI_c_dtype = MPI.COMPLEX
 
         elif dtype == 'double':
-            dtype   = np.float64
-            c_dtype = np.complex128
+            dtype       = np.float64
+            MPI_dtype   = MPI.DOUBLE
+            c_dtype     = np.complex128
+            MPI_c_dtype = MPI.DOUBLE_COMPLEX
 
         if O is None :
             # find the smallest array that fits O
@@ -80,7 +85,15 @@ def ERA_mpi(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method
     O       = comm.bcast(O, root=0)
     P       = comm.bcast(P, root=0)
     mask    = comm.bcast(mask, root=0)
-
+    
+    # for some reason these don't like to be bcast?
+    if dtype == np.float32:
+        MPI_dtype   = MPI.FLOAT
+        MPI_c_dtype = MPI.COMPLEX
+    else :
+        MPI_dtype   = MPI.DOUBLE
+        MPI_c_dtype = MPI.DOUBLE_COMPLEX
+    
     # split the coords 
     if rank == 0 :
         R = chunkIt(R, size)
@@ -112,12 +125,12 @@ def ERA_mpi(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method
             E_bak       -= exits
 
             # consistency projection 
-            if update == 'O': O, P_heatmap = psup_O(exits, P, R, O.shape, P_heatmap, alpha = alpha)
-            if update == 'P': P, O_heatmap = psup_P(exits, O, R, O_heatmap, alpha = alpha)
+            if update == 'O': O, P_heatmap = psup_O(exits, P, R, O.shape, P_heatmap, alpha, MPI_dtype, MPI_c_dtype)
+            if update == 'P': P, O_heatmap = psup_P(exits, O, R, O_heatmap, alpha, MPI_dtype, MPI_c_dtype)
             if update == 'OP':
                 for j in range(OP_iters):
-                    O, P_heatmap = psup_O(exits, P, R, O.shape, None, alpha = alpha)
-                    P, O_heatmap = psup_P(exits, O, R, None, alpha = alpha)
+                    O, P_heatmap = psup_O(exits, P, R, O.shape, None, alpha, MPI_dtype, MPI_c_dtype)
+                    P, O_heatmap = psup_P(exits, O, R, None, alpha, MPI_dtype, MPI_c_dtype)
             
             exits = era.make_exits(O, P, R, exits)
             
@@ -194,18 +207,21 @@ def ERA_mpi(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method
             E_bak       -= exits
             
             # consistency projection 
-            if update == 'O': O, P_heatmap = psup_O(exits, P, R, O.shape, P_heatmap, alpha = alpha)
-            if update == 'P': P, O_heatmap = psup_P(exits, O, R, O_heatmap, alpha = alpha)
+            if update == 'O': O, P_heatmap = psup_O(exits, P, R, O.shape, P_heatmap, alpha, MPI_dtype, MPI_c_dtype)
+            if update == 'P': P, O_heatmap = psup_P(exits, O, R, O_heatmap, alpha, MPI_dtype, MPI_c_dtype)
             if update == 'OP':
                 for j in range(OP_iters):
-                    O, P_heatmap = psup_O(exits, P, R, O.shape, None, alpha = alpha)
-                    P, O_heatmap = psup_P(exits, O, R, None, alpha = alpha)
+                    O, P_heatmap = psup_O(exits, P, R, O.shape, None, alpha, MPI_dtype, MPI_c_dtype)
+                    P, O_heatmap = psup_P(exits, O, R, None, alpha, MPI_dtype, MPI_c_dtype)
 
             #background[:] = np.mean(background, axis=0)
             backgroundT = np.mean(background, axis=0)
             backgroundTT = np.empty_like(backgroundT)
-            comm.Allreduce([backgroundT, MPI.__TypeDict__[backgroundT.dtype.char]], \
-                           [backgroundTT,  MPI.__TypeDict__[backgroundTT.dtype.char]], \
+            #comm.Allreduce([backgroundT, MPI.__TypeDict__[backgroundT.dtype.char]], \
+            #               [backgroundTT,  MPI.__TypeDict__[backgroundTT.dtype.char]], \
+            #               op=MPI.SUM)
+            comm.Allreduce([backgroundT, MPI_dtype], \
+                           [backgroundTT,  MPI_dtype], \
                            op=MPI.SUM)
             background[:] = backgroundTT / float(size)
             
@@ -257,7 +273,7 @@ def ERA_mpi(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method
 
 
 
-def psup_O(exits, P, R, O_shape, P_heatmap = None, alpha = 1.0e-10):
+def psup_O(exits, P, R, O_shape, P_heatmap = None, alpha = 1.0e-10, MPI_dtype = MPI.DOUBLE, MPI_c_dtype = MPI.DOUBLE_COMPLEX):
     OT = np.zeros(O_shape, P.dtype)
     
     # Calculate denominator
@@ -267,8 +283,11 @@ def psup_O(exits, P, R, O_shape, P_heatmap = None, alpha = 1.0e-10):
     if P_heatmap is None : 
         P_heatmapT = era.make_P_heatmap(P, R, O_shape)
         P_heatmap  = np.empty_like(P_heatmapT)
-        comm.Allreduce([P_heatmapT, MPI.__TypeDict__[P_heatmapT.dtype.char]], \
-                       [P_heatmap,  MPI.__TypeDict__[P_heatmap.dtype.char]], \
+        #comm.Allreduce([P_heatmapT, MPI.__TypeDict__[P_heatmapT.dtype.char]], \
+        #               [P_heatmap,  MPI.__TypeDict__[P_heatmap.dtype.char]], \
+        #               op=MPI.SUM)
+        comm.Allreduce([P_heatmapT, MPI_dtype], \
+                       [P_heatmap,  MPI_dtype], \
                        op=MPI.SUM)
 
     # Calculate numerator
@@ -280,13 +299,16 @@ def psup_O(exits, P, R, O_shape, P_heatmap = None, alpha = 1.0e-10):
     # here we need to do an all reduce
     #---------------------------------
     O = np.empty_like(OT)
-    comm.Allreduce([OT, MPI.__TypeDict__[OT.dtype.char]], \
-                   [O, MPI.__TypeDict__[O.dtype.char]],   \
+    #comm.Allreduce([OT, MPI.__TypeDict__[OT.dtype.char]], \
+    #               [O, MPI.__TypeDict__[O.dtype.char]],   \
+    #                op=MPI.SUM)
+    comm.Allreduce([OT, MPI_c_dtype], \
+                   [O, MPI_c_dtype],  \
                     op=MPI.SUM)
     O  = O / (P_heatmap + alpha)
     return O, P_heatmap
 
-def psup_P(exits, O, R, O_heatmap = None, alpha = 1.0e-10):
+def psup_P(exits, O, R, O_heatmap = None, alpha = 1.0e-10, MPI_dtype = MPI.DOUBLE, MPI_c_dtype = MPI.DOUBLE_COMPLEX):
     PT = np.zeros(exits[0].shape, exits.dtype)
     
     # Calculate denominator
@@ -297,8 +319,8 @@ def psup_P(exits, O, R, O_heatmap = None, alpha = 1.0e-10):
         O_heatmapT = np.ascontiguousarray(era.make_O_heatmap(O, R, PT.shape))
         #O_heatmapT = era.make_O_heatmap(O, R, PT.shape) produces a non-contig. array for some reason
         O_heatmap  = np.empty_like(O_heatmapT)
-        comm.Allreduce([O_heatmapT, MPI.__TypeDict__[O_heatmapT.dtype.char]], \
-                       [O_heatmap,  MPI.__TypeDict__[O_heatmap.dtype.char]], \
+        comm.Allreduce([O_heatmapT, MPI_dtype], \
+                       [O_heatmap,  MPI_dtype], \
                        op=MPI.SUM)
 
     # Calculate numerator
@@ -310,8 +332,8 @@ def psup_P(exits, O, R, O_heatmap = None, alpha = 1.0e-10):
     # divide
     #-------
     P = np.empty_like(PT)
-    comm.Allreduce([PT, MPI.__TypeDict__[PT.dtype.char]], \
-                   [P, MPI.__TypeDict__[P.dtype.char]],   \
+    comm.Allreduce([PT, MPI_c_dtype], \
+                   [P, MPI_c_dtype],   \
                     op=MPI.SUM)
     P  = P / (O_heatmap + alpha)
     

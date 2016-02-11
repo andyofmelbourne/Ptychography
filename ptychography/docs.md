@@ -33,3 +33,13 @@ numpy:  delta t: 2.09517788887
 pickle: delta t: 16.0462508202
 ```
 about 8 x faster
+
+
+MPI it-hpc-cxi01 vs max-cfel001 :
+    use max-cfel001
+```
+$ mpirun -np 12 python ptychography/era.py mpi 100
+it-hpc-cxi01, delta t: 3.27306580544
+max-cfel001 , delta t: 0.4412150383
+```
+7.4 x speedup (updating obj, probe and background)

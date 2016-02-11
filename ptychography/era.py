@@ -646,11 +646,13 @@ if __name__ == '__main__' :
         
         if rank == 0 : print '\n------------------------------------------'
         if rank == 0 : print 'Updating the object on a many cpu cores...'
+        d0 = time.time()
+        Or2, info = pt.ERA(I, R, P, None, iters, hardware = 'mpi', mask=mask, method = 1, alpha=1e-10, dtype='double')
+        d1 = time.time()
+        if rank == 0 : print '\ntime (s):', (d1 - d0) 
         try :
             d0 = time.time()
-            print 'hello'
             Or2, info = pt.ERA(I, R, P, None, iters, hardware = 'mpi', mask=mask, method = 1, alpha=1e-10, dtype='double')
-            print 'hello'
             d1 = time.time()
             if rank == 0 : print '\ntime (s):', (d1 - d0) 
         except Exception as e:
