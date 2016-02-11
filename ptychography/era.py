@@ -39,10 +39,13 @@ def ERA(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method = N
     iters : int
         The number of ERA iterations to perform.
 
-    OP_iters : int, optional, default (1)
+    OP_iters : int or tuple, optional, default (1)
         The number of projections onto the sample and probe consistency constraints 
         before doing the modulus projection when update = 'OP' has been selected. 
-        Ideally OP_iters should be large enough so that convergence has been acheived.
+        If OP_iters is a tuple (say) (5, 10) then the probe and object will only be
+        updated every 10 iterations, for the other 9 iterations the object alone
+        is updated. Ideally OP_iters should be large enough so that convergence has 
+        been acheived.
 
     mask : numpy.ndarray, (M, K), optional, default (1)
         The valid detector pixels. Mask[i, j] = 1 (or True) when the detector pixel 
@@ -159,6 +162,9 @@ def ERA(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method = N
         dtype   = np.float64
         c_dtype = np.complex128
 
+    if type(OP_iters) == int :
+        OP_iters = (OP_iters, 1)
+
     if O is None :
         # find the smallest array that fits O
         # This is just U = M + R[:, 0].max() - R[:, 0].min()
@@ -205,9 +211,13 @@ def ERA(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method = N
             if update == 'O': O, P_heatmap = psup_O_1(exits, P, R, O.shape, P_heatmap, alpha = alpha)
             if update == 'P': P, O_heatmap = psup_P_1(exits, O, R, O_heatmap, alpha = alpha)
             if update == 'OP':
-                for j in range(OP_iters):
-                    O, P_heatmap = psup_O_1(exits, P, R, O.shape, None, alpha = alpha)
-                    P, O_heatmap = psup_P_1(exits, O, R, None, alpha = alpha)
+                if i % OP_iters[1] == 0 :
+                    for j in range(OP_iters[0]):
+                        O, P_heatmap = psup_O_1(exits, P, R, O.shape, None, alpha = alpha)
+                        P, O_heatmap = psup_P_1(exits, O, R, None, alpha = alpha)
+                else :
+                        O, P_heatmap = psup_O_1(exits, P, R, O.shape, P_heatmap, alpha = alpha)
+
             
             exits = make_exits(O, P, R, exits)
             
@@ -271,9 +281,12 @@ def ERA(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method = N
             if update == 'O': O, P_heatmap = psup_O_1(exits, P, R, O.shape, P_heatmap, alpha = alpha)
             if update == 'P': P, O_heatmap = psup_P_1(exits, O, R, O_heatmap, alpha = alpha)
             if update == 'OP':
-                for j in range(OP_iters):
-                    O, P_heatmap = psup_O_1(exits, P, R, O.shape, None, alpha = alpha)
-                    P, O_heatmap = psup_P_1(exits, O, R, None, alpha = alpha)
+                if i % OP_iters[1] == 0 :
+                    for j in range(OP_iters[0]):
+                        O, P_heatmap = psup_O_1(exits, P, R, O.shape, None, alpha = alpha)
+                        P, O_heatmap = psup_P_1(exits, O, R, None, alpha = alpha)
+                else :
+                        O, P_heatmap = psup_O_1(exits, P, R, O.shape, P_heatmap, alpha = alpha)
 
             background[:] = np.mean(background, axis=0)
             
@@ -644,12 +657,7 @@ if __name__ == '__main__' :
         if rank != 0 :
             I = R = O = P = mask = None
         
-        if rank == 0 : print '\n------------------------------------------'
-        if rank == 0 : print 'Updating the object on a many cpu cores...'
-        d0 = time.time()
-        Or2, info = pt.ERA(I, R, P, None, iters, hardware = 'mpi', mask=mask, method = 1, alpha=1e-10, dtype='double')
-        d1 = time.time()
-        if rank == 0 : print '\ntime (s):', (d1 - d0) 
+        """
         try :
             d0 = time.time()
             Or2, info = pt.ERA(I, R, P, None, iters, hardware = 'mpi', mask=mask, method = 1, alpha=1e-10, dtype='double')
@@ -666,11 +674,12 @@ if __name__ == '__main__' :
             if rank == 0 : print '\ntime (s):', (d1 - d0) 
         except Exception as e:
             print e
+        """
         
         if rank == 0 : print '\nUpdating the object and probe on a many cpu cores...'
         try :
             d0 = time.time()
-            Or2, Pr2, info = pt.ERA(I, R, None, None, iters, hardware = 'mpi', mask=mask, method = 3, alpha=1e-10, dtype='double')
+            Or2, Pr2, info = pt.ERA(I, R, None, None, iters, OP_iters = (5, 3), hardware = 'mpi', mask=mask, method = 3, alpha=1e-10, dtype='double')
             d1 = time.time()
             if rank == 0 : print '\ntime (s):', (d1 - d0) 
         except Exception as e:

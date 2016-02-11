@@ -30,6 +30,9 @@ def ERA_mpi(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method
         update = 'P'
     elif method == 3 or method == 6 : 
         update = 'OP'
+
+    if type(OP_iters) == int :
+        OP_iters = (OP_iters, 1)
     
     if rank == 0 :
         if dtype is None :
@@ -59,6 +62,7 @@ def ERA_mpi(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method
             O = np.ones(shape, dtype = c_dtype)
         
         if P is None :
+            print 'initialising the probe with random numbers...'
             P = np.random.random(I[0].shape) + 1J*np.random.random(I[0].shape)
         
         P = P.astype(c_dtype)
@@ -128,9 +132,17 @@ def ERA_mpi(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method
             if update == 'O': O, P_heatmap = psup_O(exits, P, R, O.shape, P_heatmap, alpha, MPI_dtype, MPI_c_dtype)
             if update == 'P': P, O_heatmap = psup_P(exits, O, R, O_heatmap, alpha, MPI_dtype, MPI_c_dtype)
             if update == 'OP':
-                for j in range(OP_iters):
-                    O, P_heatmap = psup_O(exits, P, R, O.shape, None, alpha, MPI_dtype, MPI_c_dtype)
-                    P, O_heatmap = psup_P(exits, O, R, None, alpha, MPI_dtype, MPI_c_dtype)
+                if i % OP_iters[1] == 0 :
+                    for j in range(OP_iters[0]):
+                        O, P_heatmap = psup_O(exits, P, R, O.shape, None, alpha, MPI_dtype, MPI_c_dtype)
+                        P, O_heatmap = psup_P(exits, O, R, None, alpha, MPI_dtype, MPI_c_dtype)
+                        # rescale
+                        #Omax = np.max(np.abs(O))
+                        #O = O / Omax
+                        #P = P * Omax
+
+                else :
+                    O, P_heatmap = psup_O(exits, P, R, O.shape, P_heatmap, alpha, MPI_dtype, MPI_c_dtype)
             
             exits = era.make_exits(O, P, R, exits)
             
@@ -210,9 +222,12 @@ def ERA_mpi(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method
             if update == 'O': O, P_heatmap = psup_O(exits, P, R, O.shape, P_heatmap, alpha, MPI_dtype, MPI_c_dtype)
             if update == 'P': P, O_heatmap = psup_P(exits, O, R, O_heatmap, alpha, MPI_dtype, MPI_c_dtype)
             if update == 'OP':
-                for j in range(OP_iters):
-                    O, P_heatmap = psup_O(exits, P, R, O.shape, None, alpha, MPI_dtype, MPI_c_dtype)
-                    P, O_heatmap = psup_P(exits, O, R, None, alpha, MPI_dtype, MPI_c_dtype)
+                if i % OP_iters[1] == 0 :
+                    for j in range(OP_iters[0]):
+                        O, P_heatmap = psup_O(exits, P, R, O.shape, None, alpha, MPI_dtype, MPI_c_dtype)
+                        P, O_heatmap = psup_P(exits, O, R, None, alpha, MPI_dtype, MPI_c_dtype)
+                else :
+                    O, P_heatmap = psup_O(exits, P, R, O.shape, P_heatmap, alpha, MPI_dtype, MPI_c_dtype)
 
             #background[:] = np.mean(background, axis=0)
             backgroundT = np.mean(background, axis=0)
