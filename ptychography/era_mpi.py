@@ -121,13 +121,10 @@ def ERA_mpi(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method
                 if update == 'P' : bak = P.copy()
                 if update == 'OP': bak = np.hstack((O.ravel().copy(), P.ravel().copy()))
             
-            E_bak        = exits.copy()
             
             # modulus projection 
-            exits        = era.pmod_1(amp, exits, mask, alpha = alpha)
+            exits, eMod = era.pmod_1(amp, exits, mask, alpha = alpha, eMod_calc = True)
             
-            E_bak       -= exits
-
             # consistency projection 
             if update == 'O': O, P_heatmap = psup_O(exits, P, R, O.shape, P_heatmap, alpha, MPI_dtype, MPI_c_dtype)
             if update == 'P': P, O_heatmap = psup_P(exits, O, R, O_heatmap, alpha, MPI_dtype, MPI_c_dtype)
@@ -147,7 +144,6 @@ def ERA_mpi(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method
             exits = era.make_exits(O, P, R, exits)
             
             # metrics
-            eMod   = np.sum( (E_bak * E_bak.conj()).real ) 
             eMod   = comm.allreduce(eMod, op=MPI.SUM)
 
             if rank == 0 :
@@ -211,12 +207,8 @@ def ERA_mpi(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method
                 if update == 'P' : bak = P.copy()
                 if update == 'OP': bak = np.hstack((O.ravel().copy(), P.ravel().copy()))
             
-            E_bak        = exits.copy()
-            
             # modulus projection 
-            exits, background  = era.pmod_7(amp, background, exits, mask, alpha = alpha)
-            
-            E_bak       -= exits
+            exits, background, eMod = era.pmod_7(amp, background, exits, mask, alpha = alpha, eMod_calc = True)
             
             # consistency projection 
             if update == 'O': O, P_heatmap = psup_O(exits, P, R, O.shape, P_heatmap, alpha, MPI_dtype, MPI_c_dtype)
@@ -243,7 +235,6 @@ def ERA_mpi(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method
             exits = era.make_exits(O, P, R, exits)
             
             # metrics
-            eMod   = np.sum( (E_bak * E_bak.conj()).real ) 
             eMod   = comm.allreduce(eMod, op=MPI.SUM)
 
             if rank == 0 :

@@ -200,13 +200,9 @@ def ERA(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method = N
             if update == 'P' : bak = P.copy()
             if update == 'OP': bak = np.hstack((O.ravel().copy(), P.ravel().copy()))
             
-            E_bak        = exits.copy()
-            
             # modulus projection 
-            exits        = pmod_1(amp, exits, mask, alpha = alpha)
+            exits, eMod = pmod_1(amp, exits, mask, alpha = alpha, eMod_calc = True)
             
-            E_bak       -= exits
-
             # consistency projection 
             if update == 'O': O, P_heatmap = psup_O_1(exits, P, R, O.shape, P_heatmap, alpha = alpha)
             if update == 'P': P, O_heatmap = psup_P_1(exits, O, R, O_heatmap, alpha = alpha)
@@ -230,8 +226,7 @@ def ERA(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method = N
             eCon   = np.sum( (bak * bak.conj()).real ) / np.sum( (temp * temp.conj()).real )
             eCon   = np.sqrt(eCon)
             
-            eMod   = np.sum( (E_bak * E_bak.conj()).real ) / I_norm
-            eMod   = np.sqrt(eMod)
+            eMod   = np.sqrt(eMod / I_norm)
             
             update_progress(i / max(1.0, float(iters-1)), 'ERA', i, eCon, eMod )
 
@@ -270,13 +265,9 @@ def ERA(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method = N
             if update == 'P' : bak = P.copy()
             if update == 'OP': bak = np.hstack((O.ravel().copy(), P.ravel().copy()))
             
-            E_bak        = exits.copy()
-            
             # modulus projection 
-            exits, background  = pmod_7(amp, background, exits, mask, alpha = alpha)
+            exits, background, eMod = pmod_7(amp, background, exits, mask, alpha = alpha, eMod_calc = True)
             
-            E_bak       -= exits
-
             # consistency projection 
             if update == 'O': O, P_heatmap = psup_O_1(exits, P, R, O.shape, P_heatmap, alpha = alpha)
             if update == 'P': P, O_heatmap = psup_P_1(exits, O, R, O_heatmap, alpha = alpha)
@@ -301,8 +292,7 @@ def ERA(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method = N
             eCon   = np.sum( (bak * bak.conj()).real ) / np.sum( (temp * temp.conj()).real )
             eCon   = np.sqrt(eCon)
             
-            eMod   = np.sum( (E_bak * E_bak.conj()).real ) / I_norm
-            eMod   = np.sqrt(eMod)
+            eMod   = np.sqrt(eMod / I_norm)
             
             update_progress(i / max(1.0, float(iters-1)), 'ERA', i, eCon, eMod )
 
@@ -412,29 +402,51 @@ def make_O_heatmap(O, R, shape):
         O_heatmap += multiroll(O_temp, [r[0], r[1]]) 
     return O_heatmap[:shape[0], :shape[1]]
 
-def pmod_1(amp, exits, mask = 1, alpha = 1.0e-10):
+def pmod_1(amp, exits, mask = 1, alpha = 1.0e-10, eMod_calc = False):
     exits = np.fft.fftn(exits, axes = (-2, -1))
-    exits = Pmod_1(amp, exits, mask = mask, alpha = alpha)
+    exits, eMod = Pmod_1(amp, exits, mask, alpha, eMod_calc)
     exits = np.fft.ifftn(exits, axes = (-2, -1))
-    return exits
     
-def Pmod_1(amp, exits, mask = 1, alpha = 1.0e-10):
-    exits  = mask * exits * amp / (abs(exits) + alpha)
-    exits += (1 - mask) * exits
-    return exits
+    if eMod_calc : 
+        return exits, eMod
+    else :
+        return exits
+    
+def Pmod_1(amp, exits, mask = 1, alpha = 1.0e-10, eMod_calc = False):
+    M = np.sqrt((exits.conj() * exits).real + alpha)
+    if eMod_calc :
+        eMod = np.sum((M - amp)**2 * mask)
+    else :
+        eMod = None
+    M = mask * amp / M
+    if mask is 1 :
+        i = np.where(1-mask)
+        M[:, i[0], i[1]] = 1.
+    exits      *= M
+    return exits, eMod
 
-def pmod_7(amp, background, exits, mask = 1, alpha = 1.0e-10):
+def pmod_7(amp, background, exits, mask = 1, alpha = 1.0e-10, eMod_calc = False):
     exits = np.fft.fftn(exits, axes = (-2, -1))
-    exits, background = Pmod_7(amp, background, exits, mask = mask, alpha = alpha)
+    exits, background, eMod = Pmod_7(amp, background, exits, mask, alpha, eMod_calc)
     exits = np.fft.ifftn(exits, axes = (-2, -1))
-    return exits, background
+    if eMod_calc :
+        return exits, background, eMod
+    else :
+        return exits, background
     
-def Pmod_7(amp, background, exits, mask = 1, alpha = 1.0e-10):
-    M = mask * amp / np.sqrt((exits.conj() * exits).real + background**2 + alpha)
+def Pmod_7(amp, background, exits, mask = 1, alpha = 1.0e-10, eMod_calc = False):
+    M = np.sqrt((exits.conj() * exits).real + background**2 + alpha)
+    if eMod_calc :
+        eMod = np.sum((M - amp)**2 * mask)
+    else :
+        eMod = None
+    M = mask * amp / M
+    if mask is 1 :
+        i = np.where(1-mask)
+        M[:, i[0], i[1]] = 1.
     exits      *= M
     background *= M
-    exits += (1 - mask) * exits
-    return exits, background
+    return exits, background, eMod
 
 def multiroll(x, shift, axis=None):
     """Roll an array along each axis.
