@@ -351,3 +351,57 @@ def chunkIt(seq, num):
     for i in range(splits.shape[0]-1):
         out.append(seq[splits[i]:splits[i+1]])
     return out
+
+
+if __name__ == '__main__' :
+    import numpy as np
+    import time
+    import sys
+    #import pyqtgraph as pg
+
+    import ptychography as pt
+    from ptychography.forward_models import forward_sim
+
+    from mpi4py import MPI
+
+    comm = MPI.COMM_WORLD
+    rank = comm.Get_rank()
+    size = comm.Get_size()
+
+    if len(sys.argv) == 2 :
+        iters = int(sys.argv[1])
+        test = 'all'
+    elif len(sys.argv) == 3 :
+        iters = int(sys.argv[1])
+        test = sys.argv[2]
+    else :
+        iters = 10
+        test = 'all'
+
+    # Many cpu cores 
+    #----------------
+    if rank != 0 :
+        I = R = O = P = M = B = None
+    else :
+        I, R, M, P, O, B = forward_sim(shape_P = (32, 64), shape_O = (128, 128), A = 32, defocus = 100.,\
+                                          photons_pupil = 1, ny = 10, nx = 10, random_offset = None, \
+                                          background = None, mask = None, counting_statistics = False)
+        M = 1 # np.ones_like(I[0], dtype=np.bool) 
+    
+    if rank == 0 : print '\nUpdating the object on a many cpu cores...'
+    d0 = time.time()
+    Or2, info = pt.ERA(I, R, P, None, iters, hardware = 'mpi', mask=M, method = 1, alpha=1e-10, dtype='double')
+    d1 = time.time()
+    if rank == 0 : print '\ntime (s):', (d1 - d0) 
+    
+    if rank == 0 : print '\nUpdating the probe on a many cpu cores...'
+    d0 = time.time()
+    Or2, info = pt.ERA(I, R, None, O, iters, hardware = 'mpi', mask=M, method = 2, alpha=1e-10, dtype='double')
+    d1 = time.time()
+    if rank == 0 : print '\ntime (s):', (d1 - d0) 
+    
+    if rank == 0 : print '\nUpdating the object and probe on a many cpu cores...'
+    d0 = time.time()
+    Or2, Pr2, info = pt.ERA(I, R, None, None, iters, OP_iters = (5, 3), hardware = 'mpi', mask=M, method = 3, alpha=1e-10, dtype='double')
+    d1 = time.time()
+    if rank == 0 : print '\ntime (s):', (d1 - d0) 

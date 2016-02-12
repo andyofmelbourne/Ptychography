@@ -419,9 +419,10 @@ def Pmod_1(amp, exits, mask = 1, alpha = 1.0e-10, eMod_calc = False):
     else :
         eMod = None
     M = mask * amp / M
-    if mask is 1 :
+    if mask is not 1 :
         i = np.where(1-mask)
-        M[:, i[0], i[1]] = 1.
+        if len(i[0]) > 0 :
+            M[:, i[0], i[1]] = 1.
     exits      *= M
     return exits, eMod
 

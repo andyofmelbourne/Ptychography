@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """
 Forward simulate Ptychographic problems.
 """
@@ -8,7 +9,7 @@ from numpy.fft import fftn, ifftn, fftshift, ifftshift, fftfreq
 from era import make_exits 
 
 
-def forward_sim(shape_P = (32, 64), shape_O = (128, 128), A = 32, defocus = 100.,\
+def forward_sim(shape_P = (32, 64), shape_O = (128, 128), A = 14, defocus = 10.,\
                 photons_pupil = 1, ny = 10, nx = 10, random_offset = None, \
                 background = None, mask = None, counting_statistics = False):
     """
@@ -33,7 +34,7 @@ def forward_sim(shape_P = (32, 64), shape_O = (128, 128), A = 32, defocus = 100.
     A : integer, optional, default (32)
         The radius of the circular pupil function (pixels) at the detector.
 
-    defocus : float, optional, default (100.)
+    defocus : float, optional, default (10.)
         The distance between the focus of the probe and the sample in 
         pixel units. Note that dx / wavelength has been defined as unity.
         Where dx is the pixel width in the plane of the sample.
@@ -88,9 +89,9 @@ def forward_sim(shape_P = (32, 64), shape_O = (128, 128), A = 32, defocus = 100.
         sample parallel to the slow scan axis of the detector and R[:, 1] 
         to the fast scan axis of the detector.
 
-    M : numpy.ndarray, bool, (N, M)
+    M : numpy.ndarray or 1, bool, (N, M)
         The masked detector pixels, is False if the pixel is bad or 'masked'
-        and True otherwise.
+        and True otherwise. If 'mask' is None then M is 1. 
 
     P : numpy.ndarray, complex128, (N, M)
         The real-space probe in the plane of the sample. The probe is centred.
@@ -98,9 +99,10 @@ def forward_sim(shape_P = (32, 64), shape_O = (128, 128), A = 32, defocus = 100.
     O : numpy.ndarray, complex128, (U, V)
         The real-space sample transmission function.
 
-    B : numpy.ndarray, float64 or int64, (N, M)
+    B : numpy.ndarray or 0, float64 or int64, (N, M)
         The constant (different for every pixel but the same for every diffraction
-        pattern) background. Has the same dtype as I.
+        pattern) background. Has the same dtype as I. If 'background' is None 
+        the B is 0.
 
     Notes 
     -----
@@ -116,15 +118,13 @@ def forward_sim(shape_P = (32, 64), shape_O = (128, 128), A = 32, defocus = 100.
     i     = fftfreq(shape[0], 1/float(shape[0]))
     j     = fftfreq(shape[1], 1/float(shape[1]))
     i, j  = np.meshgrid(i, j, indexing='ij')
-    P     = fftshift(i**2 + j**2) < A
+    P     = fftshift(i**2 + j**2) < A**2
     P     = P.astype(np.complex128) * photons_pupil
     
     # defocus
-    # set dx / wavelength = 1, now defocus is in 'pixels'
-    qy, qx  = fftfreq(shape[0]), fftfreq(shape[1])
-    qy, qx  = np.meshgrid(qy, qx, indexing='ij')
-    qy, qx  = fftshift(qy), fftshift(qx)
-    q2      = qy**2 + qx**2
+    # set wavelength . z / detector pixel size = 1, and set wavelength = 1
+    # now defocus is in units of (wavelength . z / detector pixel size)
+    q2      = fftshift(i**2 + j**2)
     exp     = np.exp(-1.0J * np.pi * defocus * q2)
     
     P *= exp
@@ -139,7 +139,8 @@ def forward_sim(shape_P = (32, 64), shape_O = (128, 128), A = 32, defocus = 100.
     # Sample coords (R)
     #--------------
     #ys, xs = np.arange(P.shape[0] - O.shape[0], 1, ny), np.arange(P.shape[1] - O.shape[1], 1, nx)
-    ys, xs = np.rint(np.linspace(1, P.shape[0] - O.shape[0], ny)), np.rint(np.linspace(1, P.shape[1] - O.shape[1], nx))
+    ys, xs = np.rint(np.linspace(1, P.shape[0] - O.shape[0] + 1, ny)), \
+             np.rint(np.linspace(1, P.shape[1] - O.shape[1] + 1, nx))
     ys, xs = np.meshgrid(ys.astype(np.int), xs.astype(np.int), indexing = 'ij')
     R = np.array(zip(ys.ravel(), xs.ravel()))
 
@@ -157,12 +158,15 @@ def forward_sim(shape_P = (32, 64), shape_O = (128, 128), A = 32, defocus = 100.
     exits = make_exits(O, P, R, exits)
     exits = fftn(exits, axes = (-2, -1))
     I     = (exits.conj() * exits).real
+    I     = ifftshift(I)
     
     # Background (B)
     if background is not None :
         B  = np.random.random(I[0].shape) * background
         B  = np.rint(B)
         I += B
+    else :
+        B = 0
     
     # Detector mask (M)
     if mask is not None :
@@ -170,12 +174,17 @@ def forward_sim(shape_P = (32, 64), shape_O = (128, 128), A = 32, defocus = 100.
         M_fs = (np.random.random(mask) * I.shape[2]).astype(np.int)
         M    = np.ones(I[0].shape, dtype=np.bool)
         M[M_ss, M_fs] = False
+    else :
+        M = 1
 
     # Counting Statistics
     if counting_statistics :
         I = np.random.poisson(lam = I)
     
-    return I, R, mask, P, O, B.astype(I.dtype)
+    if B is not 0 :
+        B = B.astype(I.dtype)
+    
+    return I, R, M, P, O, B
 
 
 
