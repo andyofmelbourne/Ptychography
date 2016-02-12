@@ -355,9 +355,10 @@ def psup_O_1(exits, P, R, O_shape, P_heatmap = None, alpha = 1.0e-10):
 
     # Calculate numerator
     #--------------------
+    Pc = P.conj()
     for r, exit in zip(R, exits):
         #print exit.shape, P.shape, O.shape, -r[0],P.shape[0]-r[0], -r[1],P.shape[1]-r[1], O[-r[0]:P.shape[0]-r[0], -r[1]:P.shape[1]-r[1]].shape
-        O[-r[0]:P.shape[0]-r[0], -r[1]:P.shape[1]-r[1]] += exit * P.conj()
+        O[-r[0]:P.shape[0]-r[0], -r[1]:P.shape[1]-r[1]] += exit * Pc
          
     # divide
     #-------
@@ -389,10 +390,12 @@ def psup_P_1(exits, O, R, O_heatmap = None, alpha = 1.0e-10):
 
 def make_P_heatmap(P, R, shape):
     P_heatmap = np.zeros(shape, dtype = P.real.dtype)
-    P_temp    = np.zeros(shape, dtype = P.real.dtype)
-    P_temp[:P.shape[0], :P.shape[1]] = (P.conj() * P).real
+    #P_temp    = np.zeros(shape, dtype = P.real.dtype)
+    #P_temp[:P.shape[0], :P.shape[1]] = (P.conj() * P).real
+    P_temp = (P.conj() * P).real
     for r in R : 
-        P_heatmap += multiroll(P_temp, [-r[0], -r[1]]) 
+        #P_heatmap += multiroll(P_temp, [-r[0], -r[1]]) 
+        P_heatmap[-r[0]:P.shape[0]-r[0], -r[1]:P.shape[1]-r[1]] += P_temp
     return P_heatmap
     
 def make_O_heatmap(O, R, shape):
@@ -413,17 +416,17 @@ def pmod_1(amp, exits, mask = 1, alpha = 1.0e-10, eMod_calc = False):
         return exits
     
 def Pmod_1(amp, exits, mask = 1, alpha = 1.0e-10, eMod_calc = False):
-    M = np.sqrt((exits.conj() * exits).real + alpha)
+    M = np.sqrt((exits.conj() * exits).real) + alpha
     if eMod_calc :
         eMod = np.sum((M - amp)**2 * mask)
     else :
         eMod = None
-    M = mask * amp / M
+    M = amp / M
     if mask is not 1 :
-        i = np.where(1-mask)
+        i = np.where(mask == 0)
         if len(i[0]) > 0 :
             M[:, i[0], i[1]] = 1.
-    exits      *= M
+    exits *= M
     return exits, eMod
 
 def pmod_7(amp, background, exits, mask = 1, alpha = 1.0e-10, eMod_calc = False):

@@ -6,10 +6,10 @@ Forward simulate Ptychographic problems.
 import numpy as np
 import bagOfns as bg
 from numpy.fft import fftn, ifftn, fftshift, ifftshift, fftfreq
-from era import make_exits 
+from era import make_exits, pmod_1
 
 
-def forward_sim(shape_P = (32, 64), shape_O = (128, 128), A = 14, defocus = 10.,\
+def forward_sim(shape_P = (32, 64), shape_O = (128, 128), A = 14, defocus = 0.,\
                 photons_pupil = 1, ny = 10, nx = 10, random_offset = None, \
                 background = None, mask = None, counting_statistics = False):
     """
@@ -36,9 +36,16 @@ def forward_sim(shape_P = (32, 64), shape_O = (128, 128), A = 14, defocus = 10.,
 
     defocus : float, optional, default (10.)
         The distance between the focus of the probe and the sample in 
-        pixel units. Note that dx / wavelength has been defined as unity.
-        Where dx is the pixel width in the plane of the sample.
-
+        inverse Fresnel numbers. So:
+            defocus = 1/F = wavelength dz / X^2 
+                          = du^2 dz / wavelength z^2 
+        where X is the field of view of the Probe, du is the pixel
+        size (assumed square), z is the detector distance and dz is 
+        the defocus distance in meters. If defocus is 0 then F is 
+        infinite and Probe is not propagated, while if the defocus 
+        is ~ 1 (F ~ 1) then we are in the far-field and the Fresnel
+        propagation is undersampled (your probe will be crap).
+        
     photons_pupil : scalar, optional, default (1)
         The average number of photons per pixel in the pupil function.
         When counting_statistics is True then this parameter effectively
@@ -119,7 +126,7 @@ def forward_sim(shape_P = (32, 64), shape_O = (128, 128), A = 14, defocus = 10.,
     j     = fftfreq(shape[1], 1/float(shape[1]))
     i, j  = np.meshgrid(i, j, indexing='ij')
     P     = fftshift(i**2 + j**2) < A**2
-    P     = P.astype(np.complex128) * photons_pupil
+    P     = P.astype(np.complex128) * np.sqrt(photons_pupil)
     
     # defocus
     # set wavelength . z / detector pixel size = 1, and set wavelength = 1
@@ -152,13 +159,16 @@ def forward_sim(shape_P = (32, 64), shape_O = (128, 128), A = 14, defocus = 10.,
         R[:, 0][np.where(R[:, 0] < shape_illum[0] - shape_O[0])] = shape_illum[0] - shape_O[0]
         R[:, 1][np.where(R[:, 1] < shape_illum[1] - shape_O[1])] = shape_illum[1] - shape_O[1]
 
+    R[:, 0] -= R[:, 0].max()
+    R[:, 1] -= R[:, 1].max()
+    
     # Diffraction patterns (I)
     #-------------------------
     exits = np.zeros((len(R),) + P.shape, dtype=np.complex128)
     exits = make_exits(O, P, R, exits)
     exits = fftn(exits, axes = (-2, -1))
     I     = (exits.conj() * exits).real
-    I     = ifftshift(I)
+    I     = ifftshift(I, axes=(-2, -1))
     
     # Background (B)
     if background is not None :
@@ -184,6 +194,12 @@ def forward_sim(shape_P = (32, 64), shape_O = (128, 128), A = 14, defocus = 10.,
     if B is not 0 :
         B = B.astype(I.dtype)
     
+    # calculate the error
+    amp   = ifftshift(np.sqrt(I), axes=(-2, -1))
+    exits = ifftn(exits, axes = (-2, -1))
+    exits, eMod = pmod_1(amp, exits, M, alpha = 1.0e-10, eMod_calc = True)
+    print np.sqrt(eMod / np.sum(I))
+
     return I, R, M, P, O, B
 
 

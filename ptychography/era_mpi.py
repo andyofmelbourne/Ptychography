@@ -133,10 +133,6 @@ def ERA_mpi(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method
                     for j in range(OP_iters[0]):
                         O, P_heatmap = psup_O(exits, P, R, O.shape, None, alpha, MPI_dtype, MPI_c_dtype)
                         P, O_heatmap = psup_P(exits, O, R, None, alpha, MPI_dtype, MPI_c_dtype)
-                        # rescale
-                        #Omax = np.max(np.abs(O))
-                        #O = O / Omax
-                        #P = P * Omax
 
                 else :
                     O, P_heatmap = psup_O(exits, P, R, O.shape, P_heatmap, alpha, MPI_dtype, MPI_c_dtype)
@@ -144,7 +140,7 @@ def ERA_mpi(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method
             exits = era.make_exits(O, P, R, exits)
             
             # metrics
-            eMod   = comm.allreduce(eMod, op=MPI.SUM)
+            eMod   = comm.reduce(eMod, op=MPI.SUM)
 
             if rank == 0 :
                 if update == 'O' : temp = O
@@ -189,7 +185,7 @@ def ERA_mpi(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method
                 else :
                     return None
 
-    # method 4 or 5
+    # method 4 or 5 or 6
     #---------
     # update the object with background retrieval
     elif method == 4 or method == 5 or method == 6 :
@@ -383,25 +379,64 @@ if __name__ == '__main__' :
     if rank != 0 :
         I = R = O = P = M = B = None
     else :
-        I, R, M, P, O, B = forward_sim(shape_P = (32, 64), shape_O = (128, 128), A = 32, defocus = 100.,\
+        I, R, M, P, O, B = forward_sim(shape_P = (32, 64), shape_O = (128, 128), A = 32, defocus = 1.0e-2,\
                                           photons_pupil = 1, ny = 10, nx = 10, random_offset = None, \
-                                          background = None, mask = None, counting_statistics = False)
-        M = 1 # np.ones_like(I[0], dtype=np.bool) 
+                                          background = None, mask = 100, counting_statistics = False)
+        I = np.fft.ifftshift(I, axes=(-2, -1))
+        # make the masked pixels bad
+        I += 10000. * ~M 
     
+    # initial guess for the probe 
+    if rank == 0 : 
+        P0 = np.fft.fftshift( np.fft.ifftn( np.abs(np.fft.fftn(P)) ) )
+    else :
+        P0 = None
+
     if rank == 0 : print '\nUpdating the object on a many cpu cores...'
     d0 = time.time()
-    Or2, info = pt.ERA(I, R, P, None, iters, hardware = 'mpi', mask=M, method = 1, alpha=1e-10, dtype='double')
+    Or, info = pt.ERA(I, R, P, None, iters, hardware = 'mpi', mask=M, method = 1, alpha=1e-10, dtype='double')
     d1 = time.time()
     if rank == 0 : print '\ntime (s):', (d1 - d0) 
     
     if rank == 0 : print '\nUpdating the probe on a many cpu cores...'
     d0 = time.time()
-    Or2, info = pt.ERA(I, R, None, O, iters, hardware = 'mpi', mask=M, method = 2, alpha=1e-10, dtype='double')
+    #
+    Pr, info = pt.ERA(I, R, P0, O, iters, hardware = 'mpi', mask=M, method = 2, alpha=1e-10, dtype='double')
     d1 = time.time()
     if rank == 0 : print '\ntime (s):', (d1 - d0) 
     
     if rank == 0 : print '\nUpdating the object and probe on a many cpu cores...'
     d0 = time.time()
-    Or2, Pr2, info = pt.ERA(I, R, None, None, iters, OP_iters = (5, 3), hardware = 'mpi', mask=M, method = 3, alpha=1e-10, dtype='double')
+    Or, Pr, info = pt.ERA(I, R, P0, None, iters, OP_iters = (5, 1), hardware = 'mpi', mask=M, method = 3, alpha=1e-10, dtype='double')
+    d1 = time.time()
+    if rank == 0 : print '\ntime (s):', (d1 - d0) 
+
+
+    #--------------------
+    if rank != 0 :
+        I = R = O = P = M = B = None
+    else :
+        I, R, M, P, O, B = forward_sim(shape_P = (32, 64), shape_O = (128, 128), A = 32, defocus = 1.0e-2,\
+                                          photons_pupil = 100, ny = 10, nx = 10, random_offset = None, \
+                                          background = 10, mask = 100, counting_statistics = False)
+        I = np.fft.ifftshift(I, axes=(-2, -1))
+        # make the masked pixels bad
+        I += 10000. * ~M 
+
+    if rank == 0 : print '\nUpdating the object on a many cpu cores...'
+    d0 = time.time()
+    Or, Br, info = pt.ERA(I, R, P, None, iters, hardware = 'mpi', mask=M, method = 4, alpha=1e-10, dtype='double')
+    d1 = time.time()
+    if rank == 0 : print '\ntime (s):', (d1 - d0) 
+    
+    if rank == 0 : print '\nUpdating the probe on a many cpu cores...'
+    d0 = time.time()
+    Or, Br, info = pt.ERA(I, R, P0, O, iters, hardware = 'mpi', mask=M, method = 5, alpha=1e-10, dtype='double')
+    d1 = time.time()
+    if rank == 0 : print '\ntime (s):', (d1 - d0) 
+    
+    if rank == 0 : print '\nUpdating the object and probe on a many cpu cores...'
+    d0 = time.time()
+    Or, Pr, Br, info = pt.ERA(I, R, P0, None, iters, OP_iters = (5, 3), hardware = 'mpi', mask=M, method = 6, alpha=1e-10, dtype='double')
     d1 = time.time()
     if rank == 0 : print '\ntime (s):', (d1 - d0) 

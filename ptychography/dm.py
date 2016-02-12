@@ -217,7 +217,7 @@ def DM(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method = No
     if update == 'P' : bak = P.copy()
     if update == 'OP': bak = np.hstack((O.ravel().copy(), P.ravel().copy()))
     
-    # method 1 and 2, update O or P
+    # method 1 or 2 or 3, update O or P or OP
     #---------
     if method == 1 or method == 2 or method == 3 :
         ex_0 = np.empty_like(exits)
@@ -244,7 +244,7 @@ def DM(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method = No
                         O, P_heatmap = psup_O_1(exits, P, R, O.shape, P_heatmap, alpha = alpha)
             
             ex_0  = make_exits(O, P, R, ex_0)
-
+            
             #exits = exits.copy() - ex_0.copy() + pmod_1(amp, (2*ex_0 - exits).copy(), mask, alpha = alpha)
             exits -= ex_0
             ex_0  -= exits
@@ -421,7 +421,7 @@ if __name__ == '__main__' :
     #import pyqtgraph as pg
     from era import ERA
 
-    from Ptychography_2dsample_2dprobe_farfield import forward_sim
+    from ptychography.forward_models import forward_sim
 
 
     if len(sys.argv) == 2 :
@@ -436,56 +436,65 @@ if __name__ == '__main__' :
 
 
     print '\nMaking the forward simulated data...'
-    I, R, mask, P, O, sample_support = forward_sim()
+    I, R, M, P, O, B = forward_sim(shape_P = (32, 64), shape_O = (128, 128), A = 32, defocus = 1.0e-2,\
+                                      photons_pupil = 1, ny = 10, nx = 10, random_offset = None, \
+                                      background = None, mask = 100, counting_statistics = False)
+    I = np.fft.ifftshift(I, axes=(-2, -1))
+    # make the masked pixels bad
+    I += 10000. * ~M 
     
-    if test == 'all' or test == 'cpu':
-        print '\n-------------------------------------------'
-        print 'Updating the object on a single cpu core...'
+    # initial guess for the probe 
+    P0 = np.fft.fftshift( np.fft.ifftn( np.abs(np.fft.fftn(P)) ) )
+    
+    print '\n-------------------------------------------'
+    print 'Updating the object on a single cpu core...'
 
+    d0 = time.time()
+    Or, info = DM(I, R, P, None, iters, mask=M, method = 1, alpha=1e-10, dtype='double')
+    Or, info = DM(I, R, P, Or, 50     , mask=M, method = 1, alpha=1e-10, dtype='double')
+    d1 = time.time()
+    print '\ntime (s):', (d1 - d0) 
+
+    print '\nUpdating the probe on a single cpu core...'
+    d0 = time.time()
+    Pr, info = DM(I, R, P0, O, iters, mask=M, method = 2, alpha=1e-10)
+    Or, info = DM(I, R, Pr, O, 50   , mask=M, method = 2, alpha=1e-10, dtype='double')
+    d1 = time.time()
+    print '\ntime (s):', (d1 - d0) 
+
+    print '\nUpdating the object and probe on a single cpu core...'
+    d0 = time.time()
+    Or, Pr, info = DM(I, R, P0, None, iters, mask=M, method = 3, alpha=1e-10)
+    d1 = time.time()
+    print '\ntime (s):', (d1 - d0) 
+    """
+    # Single cpu core 
+    #----------------
+    print '\n-------------------------------------------'
+    print 'Updating the object on a single cpu core...'
+    try :
         d0 = time.time()
-        Or, info = DM(I, R, P, None, iters, mask=mask, method = 1, alpha=1e-10, dtype='double')
+        Or, info = pt.ERA(I, R, P, None, iters, mask=mask, alpha=1e-10, dtype='double')
         d1 = time.time()
         print '\ntime (s):', (d1 - d0) 
-    
-        print '\nUpdating the probe on a single cpu core...'
+    except Exception as e:
+        print e
+
+    print '\nUpdating the probe on a single cpu core...'
+    try :
         d0 = time.time()
-        Pr, info = DM(I, R, None, O, iters, mask=mask, method = 2, alpha=1e-10)
+        Pr, info = pt.ERA(I, R, None, O, iters, mask=mask, alpha=1e-10)
         d1 = time.time()
         print '\ntime (s):', (d1 - d0) 
-    
-        print '\nUpdating the object and probe on a single cpu core...'
+    except Exception as e:
+        print e
+
+    print '\nUpdating the object and probe on a single cpu core...'
+    try :
         d0 = time.time()
-        Or, Pr, info = DM(I, R, None, None, iters, mask=mask, method = 3, alpha=1e-10)
+        Or, Pr, info = pt.ERA(I, R, None, None, iters, mask=mask, alpha=1e-10)
         d1 = time.time()
         print '\ntime (s):', (d1 - d0) 
-        """
-        # Single cpu core 
-        #----------------
-        print '\n-------------------------------------------'
-        print 'Updating the object on a single cpu core...'
-        try :
-            d0 = time.time()
-            Or, info = pt.ERA(I, R, P, None, iters, mask=mask, alpha=1e-10, dtype='double')
-            d1 = time.time()
-            print '\ntime (s):', (d1 - d0) 
-        except Exception as e:
-            print e
-    
-        print '\nUpdating the probe on a single cpu core...'
-        try :
-            d0 = time.time()
-            Pr, info = pt.ERA(I, R, None, O, iters, mask=mask, alpha=1e-10)
-            d1 = time.time()
-            print '\ntime (s):', (d1 - d0) 
-        except Exception as e:
-            print e
-    
-        print '\nUpdating the object and probe on a single cpu core...'
-        try :
-            d0 = time.time()
-            Or, Pr, info = pt.ERA(I, R, None, None, iters, mask=mask, alpha=1e-10)
-            d1 = time.time()
-            print '\ntime (s):', (d1 - d0) 
-        except Exception as e:
-            print e
-        """
+    except Exception as e:
+        print e
+    """
