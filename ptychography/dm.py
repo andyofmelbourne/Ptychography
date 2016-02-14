@@ -436,7 +436,7 @@ if __name__ == '__main__' :
 
 
     print '\nMaking the forward simulated data...'
-    I, R, M, P, O, B = forward_sim(shape_P = (32, 64), shape_O = (128, 128), A = 32, defocus = 1.0e-2,\
+    I, R, M, P, O, B = forward_sim(shape_P = (128, 128), shape_O = (128, 128), A = 32, defocus = 1.0e-2,\
                                       photons_pupil = 1, ny = 10, nx = 10, random_offset = None, \
                                       background = None, mask = 100, counting_statistics = False)
     I = np.fft.ifftshift(I, axes=(-2, -1))
@@ -451,14 +451,14 @@ if __name__ == '__main__' :
 
     d0 = time.time()
     Or, info = DM(I, R, P, None, iters, mask=M, method = 1, alpha=1e-10, dtype='double')
-    Or, info = DM(I, R, P, Or, 50     , mask=M, method = 1, alpha=1e-10, dtype='double')
+    Or, info = ERA(I, R, P, Or,   iters, mask=M, method = 1, alpha=1e-10, dtype='double')
     d1 = time.time()
     print '\ntime (s):', (d1 - d0) 
 
     print '\nUpdating the probe on a single cpu core...'
     d0 = time.time()
     Pr, info = DM(I, R, P0, O, iters, mask=M, method = 2, alpha=1e-10)
-    Or, info = DM(I, R, Pr, O, 50   , mask=M, method = 2, alpha=1e-10, dtype='double')
+    Or, info = ERA(I, R, Pr, O, 50   , mask=M, method = 2, alpha=1e-10, dtype='double')
     d1 = time.time()
     print '\ntime (s):', (d1 - d0) 
 

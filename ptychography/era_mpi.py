@@ -217,12 +217,8 @@ def ERA_mpi(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method
                 else :
                     O, P_heatmap = psup_O(exits, P, R, O.shape, P_heatmap, alpha, MPI_dtype, MPI_c_dtype)
 
-            #background[:] = np.mean(background, axis=0)
-            backgroundT = np.mean(background, axis=0)
+            backgroundT  = np.mean(background, axis=0)
             backgroundTT = np.empty_like(backgroundT)
-            #comm.Allreduce([backgroundT, MPI.__TypeDict__[backgroundT.dtype.char]], \
-            #               [backgroundTT,  MPI.__TypeDict__[backgroundTT.dtype.char]], \
-            #               op=MPI.SUM)
             comm.Allreduce([backgroundT, MPI_dtype], \
                            [backgroundTT,  MPI_dtype], \
                            op=MPI.SUM)

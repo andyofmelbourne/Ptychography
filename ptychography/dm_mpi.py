@@ -2,9 +2,9 @@ import numpy as np
 import sys
 from itertools import product
 
-import ptychography as pt
-from ptychography.era import *
-from ptychography.era_mpi import 
+import ptychography 
+from ptychography.era     import pmod_1, make_exits, update_progress
+from ptychography.era_mpi import psup_O, psup_P
 
 def DM_mpi(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method = None, hardware = 'cpu', alpha = 1.0e-10, dtype=None, full_output = True):
     """
@@ -325,6 +325,11 @@ if __name__ == '__main__' :
         iters = 10
         test = 'all'
 
+    from mpi4py import MPI
+
+    comm = MPI.COMM_WORLD
+    rank = comm.Get_rank()
+    size = comm.Get_size()
 
     print '\nMaking the forward simulated data...'
     I, R, M, P, O, B = forward_sim(shape_P = (32, 64), shape_O = (128, 128), A = 32, defocus = 1.0e-2,\
@@ -341,21 +346,21 @@ if __name__ == '__main__' :
     print 'Updating the object on a single cpu core...'
 
     d0 = time.time()
-    Or, info = DM(I, R, P, None, iters, mask=M, method = 1, alpha=1e-10, dtype='double')
-    Or, info = DM(I, R, P, Or, 50     , mask=M, method = 1, alpha=1e-10, dtype='double')
+    Or, info = DM_mpi(I, R, P, None, iters, mask=M, method = 1, alpha=1e-10, dtype='double')
+    Or, info = DM_mpi(I, R, P, Or, 50     , mask=M, method = 1, alpha=1e-10, dtype='double')
     d1 = time.time()
     print '\ntime (s):', (d1 - d0) 
 
     print '\nUpdating the probe on a single cpu core...'
     d0 = time.time()
-    Pr, info = DM(I, R, P0, O, iters, mask=M, method = 2, alpha=1e-10)
-    Or, info = DM(I, R, Pr, O, 50   , mask=M, method = 2, alpha=1e-10, dtype='double')
+    Pr, info = DM_mpi(I, R, P0, O, iters, mask=M, method = 2, alpha=1e-10)
+    Or, info = DM_mpi(I, R, Pr, O, 50   , mask=M, method = 2, alpha=1e-10, dtype='double')
     d1 = time.time()
     print '\ntime (s):', (d1 - d0) 
 
     print '\nUpdating the object and probe on a single cpu core...'
     d0 = time.time()
-    Or, Pr, info = DM(I, R, P0, None, iters, mask=M, method = 3, alpha=1e-10)
+    Or, Pr, info = DM_mpi(I, R, P0, None, iters, mask=M, method = 3, alpha=1e-10)
     d1 = time.time()
     print '\ntime (s):', (d1 - d0) 
     """
