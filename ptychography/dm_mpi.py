@@ -105,7 +105,7 @@ def DM_mpi(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method 
     elif method == 4 or method == 5 or method == 6 :
         ex_0 = np.empty_like(exits)
         b_0  = np.empty_like(background)
-        print 'algrithm progress iteration convergence modulus error'
+        if rank == 0 : print 'algrithm progress iteration convergence modulus error'
         for i in range(iters) :
             # modulus projection 
             exits, background  = era.pmod_7(amp, background, exits, mask, alpha = alpha)
@@ -130,7 +130,7 @@ def DM_mpi(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method 
             background -= b_0
             ex_0       -= exits
             b_0        -= background
-            ex_0, b_0   = pmod_7(amp, b_0, ex_0, mask, alpha = alpha)
+            ex_0, b_0   = era.pmod_7(amp, b_0, ex_0, mask, alpha = alpha)
             exits      += ex_0
             background += b_0
 
