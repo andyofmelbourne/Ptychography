@@ -124,7 +124,7 @@ def DM_mpi(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method 
                         O, P_heatmap = era_mpi.psup_O(exits, P, R, O.shape, P_heatmap, alpha = alpha)
             
             b_0[:]  = np.mean(background, axis=0)
-            ex_0    = make_exits(O, P, R, ex_0)
+            ex_0    = era.make_exits(O, P, R, ex_0)
 
             exits      -= ex_0
             background -= b_0
