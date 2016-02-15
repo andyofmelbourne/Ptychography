@@ -2,8 +2,7 @@ import numpy as np
 import sys
 from itertools import product
 
-import ptychography as pt
-from ptychography.era import *
+import era
 
 def DM(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method = None, hardware = 'cpu', alpha = 1.0e-10, dtype=None, full_output = True):
     """
@@ -153,8 +152,9 @@ def DM(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method = No
     [1] Veit Elser, "Phase retrieval by iterated projections," J. Opt. Soc. Am. A 
         20, 40-55 (2003)
     """
-    method, update, dtype, c_dtype, OP_iters, O, P, amp, R, mask, I_norm, exits  = preamble(I, R, P, O, iters, \
-                             OP_iters, mask, background, method, hardware, alpha, dtype, full_output)
+    method, update, dtype, c_dtype, OP_iters, O, P, amp, background, R, mask, I_norm, exits = \
+            era.preamble(I, R, P, O, iters, OP_iters, mask, background, method, hardware, alpha, dtype, full_output)
+    
     P_heatmap = None
     O_heatmap = None
     eMods     = []
@@ -180,22 +180,22 @@ def DM(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method = No
             # e  += e0           f_i - Ps f_i + Pm (2 Ps f_i - f)
             
             # consistency projection 
-            if update == 'O': O, P_heatmap = psup_O_1(exits, P, R, O.shape, P_heatmap, alpha = alpha)
-            if update == 'P': P, O_heatmap = psup_P_1(exits, O, R, O_heatmap, alpha = alpha)
+            if update == 'O': O, P_heatmap = era.psup_O(exits, P, R, O.shape, P_heatmap, alpha = alpha)
+            if update == 'P': P, O_heatmap = era.psup_P(exits, O, R, O_heatmap, alpha = alpha)
             if update == 'OP':
                 if i % OP_iters[1] == 0 :
                     for j in range(OP_iters[0]):
-                        O, P_heatmap = psup_O_1(exits, P, R, O.shape, None, alpha = alpha)
-                        P, O_heatmap = psup_P_1(exits, O, R, None, alpha = alpha)
+                        O, P_heatmap = era.psup_O(exits, P, R, O.shape, None, alpha = alpha)
+                        P, O_heatmap = era.psup_P(exits, O, R, None, alpha = alpha)
                 else :
-                        O, P_heatmap = psup_O_1(exits, P, R, O.shape, P_heatmap, alpha = alpha)
+                        O, P_heatmap = era.psup_O(exits, P, R, O.shape, P_heatmap, alpha = alpha)
             
-            ex_0  = make_exits(O, P, R, ex_0)
+            ex_0  = era.make_exits(O, P, R, ex_0)
             
             #exits = exits.copy() - ex_0.copy() + pmod_1(amp, (2*ex_0 - exits).copy(), mask, alpha = alpha)
             exits -= ex_0
             ex_0  -= exits
-            ex_0   = pmod_1(amp, ex_0, mask, alpha = alpha)
+            ex_0   = era.pmod_1(amp, ex_0, mask, alpha = alpha)
             exits += ex_0
             
             # metrics
@@ -205,17 +205,17 @@ def DM(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method = No
             # consistency projection 
             Os = O.copy()
             Ps = P.copy()
-            if update == 'O': Os, P_heatmap = psup_O_1(exits, Ps, R, O.shape, P_heatmap, alpha = alpha)
-            if update == 'P': Ps, O_heatmap = psup_P_1(exits, Os, R, O_heatmap, alpha = alpha)
+            if update == 'O': Os, P_heatmap = era.psup_O(exits, Ps, R, O.shape, P_heatmap, alpha = alpha)
+            if update == 'P': Ps, O_heatmap = era.psup_P(exits, Os, R, O_heatmap, alpha = alpha)
             if update == 'OP':
                 if i % OP_iters[1] == 0 :
                     for j in range(OP_iters[0]):
-                        Os, Ph_t = psup_O_1(exits, Ps, R, O.shape, None, alpha = alpha)
-                        Ps, Oh_t = psup_P_1(exits, Os, R, None, alpha = alpha)
+                        Os, Ph_t = era.psup_O(exits, Ps, R, O.shape, None, alpha = alpha)
+                        Ps, Oh_t = era.psup_P(exits, Os, R, None, alpha = alpha)
                 else :
-                        Os, P_heatmap = psup_O_1(exits, P, R, O.shape, P_heatmap, alpha = alpha)
+                        Os, P_heatmap = era.psup_O(exits, P, R, O.shape, P_heatmap, alpha = alpha)
             
-            ex_0 = make_exits(Os, Ps, R, ex_0)
+            ex_0 = era.make_exits(Os, Ps, R, ex_0)
             eMod = model_error_1(amp, ex_0, mask)
             #eMod = model_error_1(amp, pmod_1(amp, ex_0, mask, alpha=alpha), mask, I_norm)
 
@@ -229,7 +229,7 @@ def DM(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method = No
 
             eMod = np.sqrt( eMod / I_norm)
             
-            update_progress(i / max(1.0, float(iters-1)), 'DM', i, eCon, eMod )
+            era.update_progress(i / max(1.0, float(iters-1)), 'DM', i, eCon, eMod )
 
             eMods.append(eMod)
             eCons.append(eCon)
@@ -238,60 +238,40 @@ def DM(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method = No
             if update == 'P' : bak = Ps.copy()
             if update == 'OP': bak = np.hstack((Os.ravel().copy(), Ps.ravel().copy()))
 
-        if full_output : 
-            info = {}
-            info['exits'] = ex_0
-            info['I']     = np.fft.fftshift(np.abs(np.fft.fftn(ex_0, axes = (-2, -1)))**2, axes = (-2, -1))
-            info['eMod']  = eMods
-            info['eCon']  = eCons
-            info['heatmap']  = P_heatmap
-            if update == 'O' : return Os, info
-            if update == 'P' : return Ps, info
-            if update == 'OP': return Os, Ps, info
-        else :
-            if update == 'O' : return Os
-            if update == 'P' : return Ps
-            if update == 'OP': return Os, Ps
 
     # method 4 or 5 or 6
     #---------
     # update the object with background retrieval
     elif method == 4 or method == 5 or method == 6 :
-        if background is None :
-            background = np.random.random((I.shape)).astype(dtype)
-        else :
-            temp       = np.empty(I.shape, dtype = dtype)
-            temp[:]    = np.sqrt(background)
-            background = temp
         
         ex_0 = np.empty_like(exits)
         b_0  = np.empty_like(background)
         print 'algrithm progress iteration convergence modulus error'
         for i in range(iters) :
             # modulus projection 
-            exits, background  = pmod_7(amp, background, exits, mask, alpha = alpha)
+            exits, background  = era.pmod_7(amp, background, exits, mask, alpha = alpha)
             
             background[:] = np.mean(background, axis=0)
             
             # consistency projection 
-            if update == 'O': O, P_heatmap = psup_O_1(exits, P, R, O.shape, P_heatmap, alpha = alpha)
-            if update == 'P': P, O_heatmap = psup_P_1(exits, O, R, O_heatmap, alpha = alpha)
+            if update == 'O': O, P_heatmap = era.psup_O(exits, P, R, O.shape, P_heatmap, alpha = alpha)
+            if update == 'P': P, O_heatmap = era.psup_P(exits, O, R, O_heatmap, alpha = alpha)
             if update == 'OP':
                 if i % OP_iters[1] == 0 :
                     for j in range(OP_iters[0]):
-                        O, P_heatmap = psup_O_1(exits, P, R, O.shape, None, alpha = alpha)
-                        P, O_heatmap = psup_P_1(exits, O, R, None, alpha = alpha)
+                        O, P_heatmap = era.psup_O(exits, P, R, O.shape, None, alpha = alpha)
+                        P, O_heatmap = era.psup_P(exits, O, R, None, alpha = alpha)
                 else :
-                        O, P_heatmap = psup_O_1(exits, P, R, O.shape, P_heatmap, alpha = alpha)
+                        O, P_heatmap = era.psup_O(exits, P, R, O.shape, P_heatmap, alpha = alpha)
             
             b_0[:]  = np.mean(background, axis=0)
-            ex_0    = make_exits(O, P, R, ex_0)
+            ex_0    = era.make_exits(O, P, R, ex_0)
 
             exits      -= ex_0
             background -= b_0
             ex_0       -= exits
             b_0        -= background
-            ex_0, b_0   = pmod_7(amp, b_0, ex_0, mask, alpha = alpha)
+            ex_0, b_0   = era.pmod_7(amp, b_0, ex_0, mask, alpha = alpha)
             exits      += ex_0
             background += b_0
 
@@ -302,18 +282,18 @@ def DM(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method = No
             # consistency projection 
             Os = O.copy()
             Ps = P.copy()
-            if update == 'O': Os, P_heatmap = psup_O_1(exits, Ps, R, O.shape, P_heatmap, alpha = alpha)
-            if update == 'P': Ps, O_heatmap = psup_P_1(exits, Os, R, O_heatmap, alpha = alpha)
+            if update == 'O': Os, P_heatmap = era.psup_O(exits, Ps, R, O.shape, P_heatmap, alpha = alpha)
+            if update == 'P': Ps, O_heatmap = era.psup_P(exits, Os, R, O_heatmap, alpha = alpha)
             if update == 'OP':
                 if i % OP_iters[1] == 0 :
                     for j in range(OP_iters[0]):
-                        Os, Ph_t = psup_O_1(exits, Ps, R, O.shape, None, alpha = alpha)
-                        Ps, Oh_t = psup_P_1(exits, Os, R, None, alpha = alpha)
+                        Os, Ph_t = era.psup_O(exits, Ps, R, O.shape, None, alpha = alpha)
+                        Ps, Oh_t = era.psup_P(exits, Os, R, None, alpha = alpha)
                 else :
-                        Os, P_heatmap = psup_O_1(exits, P, R, O.shape, P_heatmap, alpha = alpha)
+                        Os, P_heatmap = era.psup_O(exits, P, R, O.shape, P_heatmap, alpha = alpha)
             b_0[:]  = np.mean(background, axis=0)
             
-            ex_0 = make_exits(Os, Ps, R, ex_0)
+            ex_0 = era.make_exits(Os, Ps, R, ex_0)
             eMod = model_error_1(amp, ex_0, mask, b_0)
             #eMod = model_error_1(amp, pmod_1(amp, ex_0, mask, alpha=alpha), mask, I_norm)
 
@@ -327,7 +307,7 @@ def DM(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method = No
             
             eMod = np.sqrt( eMod / I_norm)
 
-            update_progress(i / max(1.0, float(iters-1)), 'DM', i, eCon, eMod )
+            era.update_progress(i / max(1.0, float(iters-1)), 'DM', i, eCon, eMod )
 
             eMods.append(eMod)
             eCons.append(eCon)
@@ -336,20 +316,22 @@ def DM(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method = No
             if update == 'P' : bak = Ps.copy()
             if update == 'OP': bak = np.hstack((Os.ravel().copy(), Ps.ravel().copy()))
         
-        if full_output : 
-            info = {}
-            info['exits'] = exits
-            info['I']     = np.fft.fftshift(np.abs(np.fft.fftn(exits, axes = (-2, -1)))**2, axes = (-2, -1))
-            info['eMod']  = eMods
-            info['eCon']  = eCons
-            info['heatmap']  = P_heatmap
-            if update == 'O' : return O, background**2, info
-            if update == 'P' : return P, background**2, info
-            if update == 'OP': return O, P, background**2, info
-        else :
-            if update == 'O':  return O, background**2
-            if update == 'P':  return P, background**2
-            if update == 'OP': return O, P, background**2
+    if full_output : 
+        info = {}
+        info['exits'] = ex_0
+        info['I']     = np.fft.fftshift(np.abs(np.fft.fftn(ex_0, axes = (-2, -1)))**2, axes = (-2, -1))
+        info['eMod']  = eMods
+        info['eCon']  = eCons
+        info['heatmap']  = P_heatmap
+        if background is not None :
+            info['background'] = np.fft.fftshift(b_0[0])**2
+        if update == 'O' : return Os, info
+        if update == 'P' : return Ps, info
+        if update == 'OP': return Os, Ps, info
+    else :
+        if update == 'O' : return Os
+        if update == 'P' : return Ps
+        if update == 'OP': return Os, Ps
 
 
 
@@ -383,23 +365,23 @@ if __name__ == '__main__' :
         test = 'all'
 
 
-    print '\nMaking the forward simulated data...'
-    I, R, M, P, O, B = forward_sim(shape_P = (128, 128), shape_O = (256, 256), A = 32, defocus = 1.0e-2,\
-                                      photons_pupil = 1, ny = 10, nx = 10, random_offset = None, \
-                                      background = None, mask = 100, counting_statistics = False)
-    # make the masked pixels bad
-    I += 10000. * ~M 
-    
-    # initial guess for the probe 
-    P0 = np.fft.fftshift( np.fft.ifftn( np.abs(np.fft.fftn(P)) ) )
-    
+    if test in ['1', '2', '3', 'all']:
+        print '\nMaking the forward simulated data...'
+        I, R, M, P, O, B = forward_sim(shape_P = (128, 128), shape_O = (256, 256), A = 32, defocus = 1.0e-2,\
+                                          photons_pupil = 1, ny = 10, nx = 10, random_offset = None, \
+                                          background = None, mask = 100, counting_statistics = False)
+        # make the masked pixels bad
+        I += 10000. * ~M 
+        
+        # initial guess for the probe 
+        P0 = np.fft.fftshift( np.fft.ifftn( np.abs(np.fft.fftn(P)) ) )
+
     if test == 'all' or test == '1':
         print '\n-------------------------------------------'
         print 'Updating the object on a single cpu core...'
 
         d0 = time.time()
         Or, info = DM(I, R, P, None, iters, mask=M, method = 1, alpha=1e-10, dtype='double')
-        Or, info = ERA(I, R, P, Or,   iters, mask=M, method = 1, alpha=1e-10, dtype='double')
         d1 = time.time()
         print '\ntime (s):', (d1 - d0) 
 
@@ -411,7 +393,6 @@ if __name__ == '__main__' :
         print '\nUpdating the probe on a single cpu core...'
         d0 = time.time()
         Pr, info = DM(I, R, P0, O, iters, mask=M, method = 2, alpha=1e-10)
-        Pr, info = ERA(I, R, Pr, O, 50   , mask=M, method = 2, alpha=1e-10, dtype='double')
         d1 = time.time()
         print '\ntime (s):', (d1 - d0) 
         
@@ -428,34 +409,49 @@ if __name__ == '__main__' :
         
         write_cxi(I, info['I'], P, Pr, O, Or, \
                   R, None, None, None, M, info['eMod'], fnam = 'output_method3.cxi')
-    """
-    # Single cpu core 
-    #----------------
-    print '\n-------------------------------------------'
-    print 'Updating the object on a single cpu core...'
-    try :
-        d0 = time.time()
-        Or, info = pt.ERA(I, R, P, None, iters, mask=mask, alpha=1e-10, dtype='double')
-        d1 = time.time()
-        print '\ntime (s):', (d1 - d0) 
-    except Exception as e:
-        print e
+    
 
-    print '\nUpdating the probe on a single cpu core...'
-    try :
-        d0 = time.time()
-        Pr, info = pt.ERA(I, R, None, O, iters, mask=mask, alpha=1e-10)
-        d1 = time.time()
-        print '\ntime (s):', (d1 - d0) 
-    except Exception as e:
-        print e
+    if test in ['4', '5', '6', 'all']:
+        print '\n\n\nMaking the forward simulated data with background...'
+        I, R, M, P, O, B = forward_sim(shape_P = (128, 128), shape_O = (256, 256), A = 32, defocus = 1.0e-2,\
+                                          photons_pupil = 100, ny = 10, nx = 10, random_offset = None, \
+                                          background = 10, mask = 100, counting_statistics = False)
+        # make the masked pixels bad
+        I += 10000. * ~M 
+        
+        # initial guess for the probe 
+        P0 = np.fft.fftshift( np.fft.ifftn( np.abs(np.fft.fftn(P)) ) )
+    
+    if test == 'all' or test == '4':
+        print '\n-------------------------------------------'
+        print 'Updating the object and background on a single cpu core...'
 
-    print '\nUpdating the object and probe on a single cpu core...'
-    try :
         d0 = time.time()
-        Or, Pr, info = pt.ERA(I, R, None, None, iters, mask=mask, alpha=1e-10)
+        Or, info = DM(I, R, P, None, iters, mask=M, method = 4, alpha=1e-10, dtype='double')
         d1 = time.time()
         print '\ntime (s):', (d1 - d0) 
-    except Exception as e:
-        print e
-    """
+
+        write_cxi(I, info['I'], P, P, O, Or, \
+                  R, None, B, info['background'], M, info['eMod'], fnam = 'output_method4.cxi')
+
+    if test == 'all' or test == '5':
+        print '\n-------------------------------------------'
+        print '\nUpdating the probe and background on a single cpu core...'
+        d0 = time.time()
+        Pr, info = DM(I, R, P0, O, iters, mask=M, method = 5, alpha=1e-10)
+        d1 = time.time()
+        print '\ntime (s):', (d1 - d0) 
+        
+        write_cxi(I, info['I'], P, Pr, O, O, \
+                  R, None, B, info['background'], M, info['eMod'], fnam = 'output_method5.cxi')
+
+    if test == 'all' or test == '6':
+        print '\n-------------------------------------------'
+        print '\nUpdating the object and probe and background on a single cpu core...'
+        d0 = time.time()
+        Or, Pr, info = DM(I, R, P0, None, iters, mask=M, method = 6, alpha=1e-10)
+        d1 = time.time()
+        print '\ntime (s):', (d1 - d0) 
+        
+        write_cxi(I, info['I'], P, Pr, O, Or, \
+                  R, None, B, info['background'], M, info['eMod'], fnam = 'output_method6.cxi')

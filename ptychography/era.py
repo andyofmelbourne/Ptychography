@@ -133,7 +133,7 @@ def ERA(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method = N
     #    from era_mpi_gpu import ERA_mpi_gpu
     #    return ERA_mpi_gpu(I, R, P, O, iters, OP_iters, mask, background, method, hardware, alpha, dtype, full_output)
 
-    method, update, dtype, c_dtype, OP_iters, O, P, amp, R, mask, I_norm, exits  = preamble(I, R, P, O, iters, \
+    method, update, dtype, c_dtype, OP_iters, O, P, amp, background, R, mask, I_norm, exits  = preamble(I, R, P, O, iters, \
                              OP_iters, mask, background, method, hardware, alpha, dtype, full_output)
     
     P_heatmap = None
@@ -154,15 +154,15 @@ def ERA(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method = N
             exits, eMod = pmod_1(amp, exits, mask, alpha = alpha, eMod_calc = True)
             
             # consistency projection 
-            if update == 'O': O, P_heatmap = psup_O_1(exits, P, R, O.shape, P_heatmap, alpha = alpha)
-            if update == 'P': P, O_heatmap = psup_P_1(exits, O, R, O_heatmap, alpha = alpha)
+            if update == 'O': O, P_heatmap = psup_O(exits, P, R, O.shape, P_heatmap, alpha = alpha)
+            if update == 'P': P, O_heatmap = psup_P(exits, O, R, O_heatmap, alpha = alpha)
             if update == 'OP':
                 if i % OP_iters[1] == 0 :
                     for j in range(OP_iters[0]):
-                        O, P_heatmap = psup_O_1(exits, P, R, O.shape, None, alpha = alpha)
-                        P, O_heatmap = psup_P_1(exits, O, R, None, alpha = alpha)
+                        O, P_heatmap = psup_O(exits, P, R, O.shape, None, alpha = alpha)
+                        P, O_heatmap = psup_P(exits, O, R, None, alpha = alpha)
                 else :
-                        O, P_heatmap = psup_O_1(exits, P, R, O.shape, P_heatmap, alpha = alpha)
+                        O, P_heatmap = psup_O(exits, P, R, O.shape, P_heatmap, alpha = alpha)
 
             
             exits = make_exits(O, P, R, exits)
@@ -204,15 +204,15 @@ def ERA(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method = N
             exits, background, eMod = pmod_7(amp, background, exits, mask, alpha = alpha, eMod_calc = True)
             
             # consistency projection 
-            if update == 'O': O, P_heatmap = psup_O_1(exits, P, R, O.shape, P_heatmap, alpha = alpha)
-            if update == 'P': P, O_heatmap = psup_P_1(exits, O, R, O_heatmap, alpha = alpha)
+            if update == 'O': O, P_heatmap = psup_O(exits, P, R, O.shape, P_heatmap, alpha = alpha)
+            if update == 'P': P, O_heatmap = psup_P(exits, O, R, O_heatmap, alpha = alpha)
             if update == 'OP':
                 if i % OP_iters[1] == 0 :
                     for j in range(OP_iters[0]):
-                        O, P_heatmap = psup_O_1(exits, P, R, O.shape, None, alpha = alpha)
-                        P, O_heatmap = psup_P_1(exits, O, R, None, alpha = alpha)
+                        O, P_heatmap = psup_O(exits, P, R, O.shape, None, alpha = alpha)
+                        P, O_heatmap = psup_P(exits, O, R, None, alpha = alpha)
                 else :
-                        O, P_heatmap = psup_O_1(exits, P, R, O.shape, P_heatmap, alpha = alpha)
+                        O, P_heatmap = psup_O(exits, P, R, O.shape, P_heatmap, alpha = alpha)
 
             background[:] = np.mean(background, axis=0)
             
@@ -242,7 +242,7 @@ def ERA(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method = N
         info['eCon']       = eCons
         info['heatmap']    = P_heatmap
         if background is not None :
-            info['background'] = background**2
+            info['background'] = np.fft.fftshift(background[0])**2
         if update == 'O' : return O, info
         if update == 'P' : return P, info
         if update == 'OP': return O, P, info
@@ -280,7 +280,7 @@ def make_exits(O, P, R, exits = None):
         exits[i] = multiroll(O, [r[0], r[1]])[:P.shape[0], :P.shape[1]] * P
     return exits
 
-def psup_O_1(exits, P, R, O_shape, P_heatmap = None, alpha = 1.0e-10):
+def psup_O(exits, P, R, O_shape, P_heatmap = None, alpha = 1.0e-10):
     O = np.zeros(O_shape, P.dtype)
     
     # Calculate denominator
@@ -303,7 +303,7 @@ def psup_O_1(exits, P, R, O_shape, P_heatmap = None, alpha = 1.0e-10):
     
     return O, P_heatmap
 
-def psup_P_1(exits, O, R, O_heatmap = None, alpha = 1.0e-10):
+def psup_P(exits, O, R, O_heatmap = None, alpha = 1.0e-10):
     P = np.zeros(exits[0].shape, exits.dtype)
     
     # Calculate denominator
@@ -553,26 +553,33 @@ def preamble(I, R, P, O, iters, OP_iters, mask, background, method, hardware, al
     P = P.astype(c_dtype)
     O = O.astype(c_dtype)
     
+    # subtract an overall offset from R's
+    R[:, 0] -= R[:, 0].max()
+    R[:, 1] -= R[:, 1].max()
+    
     I_norm    = np.sum(mask * I)
     amp       = np.sqrt(I).astype(dtype)
     amp       = np.fft.ifftshift(amp, axes=(-2, -1))
     mask      = np.fft.ifftshift(mask)
     exits     = make_exits(O, P, R)
     
-    # subtract an overall offset from R's
-    R[:, 0] -= R[:, 0].max()
-    R[:, 1] -= R[:, 1].max()
-    
-    return method, update, dtype, c_dtype, OP_iters, O, P, amp, R, mask, I_norm, exits
+    # background
+    if background is None and method in [4,5,6]:
+        background = np.random.random((I.shape)).astype(dtype)
+    elif method in [4,5,6]:
+        temp       = np.empty(I.shape, dtype = dtype)
+        temp[:]    = np.sqrt(np.fft.ifftshift(background))
+        background = temp
+
+    return method, update, dtype, c_dtype, OP_iters, O, P, amp, background, R, mask, I_norm, exits
 
 if __name__ == '__main__' :
     import numpy as np
     import time
     import sys
-    #import pyqtgraph as pg
 
-    import ptychography as pt
-    from ptychography.Ptychography_2dsample_2dprobe_farfield import forward_sim
+    from ptychography.forward_models import forward_sim
+    from ptychography.display import write_cxi
 
 
     if len(sys.argv) == 2 :
@@ -585,290 +592,94 @@ if __name__ == '__main__' :
         iters = 10
         test = 'all'
 
-    if test == 'all' or test == 'mpi' or test == 'mpi_gpu':
-        try :
-            from mpi4py import MPI
-        
-            comm = MPI.COMM_WORLD
-            rank = comm.Get_rank()
-            size = comm.Get_size()
-        except Exception as e:
-            print e
-    else : 
-        rank = 0
-        size = 1
 
-    if rank == 0 :
-        try :
-            print '\nMaking the forward simulated data...'
-            I, R, mask, P, O, sample_support = forward_sim()
-        except Exception as e:
-            print e
+    if test in ['1', '2', '3', 'all']:
+        print '\nMaking the forward simulated data...'
+        I, R, M, P, O, B = forward_sim(shape_P = (128, 128), shape_O = (256, 256), A = 32, defocus = 1.0e-2,\
+                                          photons_pupil = 1, ny = 10, nx = 10, random_offset = None, \
+                                          background = None, mask = 100, counting_statistics = False)
+        # make the masked pixels bad
+        I += 10000. * ~M 
+        
+        # initial guess for the probe 
+        P0 = np.fft.fftshift( np.fft.ifftn( np.abs(np.fft.fftn(P)) ) )
 
-        if test == 'all' or test == 'cpu':
-            # Single cpu core 
-            #----------------
-            print '\n-------------------------------------------'
-            print 'Updating the object on a single cpu core...'
-            try :
-                d0 = time.time()
-                Or, info = pt.ERA(I, R, P, None, iters, mask=mask, alpha=1e-10, dtype='double')
-                d1 = time.time()
-                print '\ntime (s):', (d1 - d0) 
-            except Exception as e:
-                print e
-        
-            print '\nUpdating the probe on a single cpu core...'
-            try :
-                d0 = time.time()
-                Pr, info = pt.ERA(I, R, None, O, iters, mask=mask, alpha=1e-10)
-                d1 = time.time()
-                print '\ntime (s):', (d1 - d0) 
-            except Exception as e:
-                print e
-        
-            print '\nUpdating the object and probe on a single cpu core...'
-            try :
-                d0 = time.time()
-                Or, Pr, info = pt.ERA(I, R, None, None, iters, mask=mask, alpha=1e-10)
-                d1 = time.time()
-                print '\ntime (s):', (d1 - d0) 
-            except Exception as e:
-                print e
+    if test == 'all' or test == '1':
+        print '\n-------------------------------------------'
+        print 'Updating the object on a single cpu core...'
 
+        d0 = time.time()
+        Or, info = ERA(I, R, P, None, iters, mask=M, method = 1, alpha=1e-10, dtype='double')
+        d1 = time.time()
+        print '\ntime (s):', (d1 - d0) 
 
-        if test == 'all' or test == 'gpu':
-            # Single gpu core 
-            #----------------
-            print '\n-----------------------------------'
-            print 'Updating the object a single gpu...'
-            try :
-                d0 = time.time()
-                Or, info = pt.ERA(I, R, P, None, iters, hardware = 'gpu', method=1, mask=mask, alpha=1e-10, dtype='double')
-                d1 = time.time()
-                print '\ntime (s):', (d1 - d0) 
-            except Exception as e:
-                print e
-        
-            print '\nUpdating the probe a single gpu...'
-            try :
-                d0 = time.time()
-                Pr, info = pt.ERA(I, R, None, O, iters, hardware = 'gpu', method=2, mask=mask, alpha=1e-10, dtype='double')
-                d1 = time.time()
-                print '\ntime (s):', (d1 - d0) 
-            except Exception as e:
-                print e
-        
-            print '\nUpdating the object and probe a single gpu...'
-            try :
-                d0 = time.time()
-                Or, Pr, info = pt.ERA(I, R, None, None, iters, hardware = 'gpu', method = 3, mask=mask, alpha=1e-10)
-                d1 = time.time()
-                print '\ntime (s):', (d1 - d0) 
-            except Exception as e:
-                print e
+        write_cxi(I, info['I'], P, P, O, Or, \
+                  R, None, None, None, M, info['eMod'], fnam = 'output_method1.cxi')
 
-    if test == 'all' or test == 'mpi':
-        # Many cpu cores 
-        #----------------
-        if rank != 0 :
-            I = R = O = P = mask = None
+    if test == 'all' or test == '2':
+        print '\n-------------------------------------------'
+        print '\nUpdating the probe on a single cpu core...'
+        d0 = time.time()
+        Pr, info = ERA(I, R, P0, O, iters, mask=M, method = 2, alpha=1e-10)
+        d1 = time.time()
+        print '\ntime (s):', (d1 - d0) 
         
-        """
-        try :
-            d0 = time.time()
-            Or2, info = pt.ERA(I, R, P, None, iters, hardware = 'mpi', mask=mask, method = 1, alpha=1e-10, dtype='double')
-            d1 = time.time()
-            if rank == 0 : print '\ntime (s):', (d1 - d0) 
-        except Exception as e:
-            print e
-        
-        if rank == 0 : print '\nUpdating the probe on a many cpu cores...'
-        try :
-            d0 = time.time()
-            Or2, info = pt.ERA(I, R, None, O, iters, hardware = 'mpi', mask=mask, method = 2, alpha=1e-10, dtype='double')
-            d1 = time.time()
-            if rank == 0 : print '\ntime (s):', (d1 - d0) 
-        except Exception as e:
-            print e
-        """
-        
-        if rank == 0 : print '\nUpdating the object and probe on a many cpu cores...'
-        try :
-            d0 = time.time()
-            Or2, Pr2, info = pt.ERA(I, R, None, None, iters, OP_iters = (5, 3), hardware = 'mpi', mask=mask, method = 3, alpha=1e-10, dtype='double')
-            d1 = time.time()
-            if rank == 0 : print '\ntime (s):', (d1 - d0) 
-        except Exception as e:
-            print e
+        write_cxi(I, info['I'], P, Pr, O, O, \
+                  R, None, None, None, M, info['eMod'], fnam = 'output_method2.cxi')
 
-    if test == 'all' or test == 'mpi_gpu':
-        # Many cpu cores + gpu
-        #----------------
-        if rank != 0 :
-            I = R = O = P = mask = None
+    if test == 'all' or test == '3':
+        print '\n-------------------------------------------'
+        print '\nUpdating the object and probe on a single cpu core...'
+        d0 = time.time()
+        Or, Pr, info = ERA(I, R, P0, None, iters, mask=M, method = 3, alpha=1e-10)
+        d1 = time.time()
+        print '\ntime (s):', (d1 - d0) 
         
-        """
-        if rank == 0 : print '\n------------------------------------------'
-        if rank == 0 : print 'Updating the object on a many cpu cores and the gpu...'
-        try :
-            d0 = time.time()
-            Or2, info = pt.ERA(I, R, P, None, iters, hardware = 'mpi_gpu', mask=mask, method = 1, alpha=1e-10, dtype='double')
-            d1 = time.time()
-            if rank == 0 : print '\ntime (s):', (d1 - d0) 
-        except Exception as e:
-            print e
+        write_cxi(I, info['I'], P, Pr, O, Or, \
+                  R, None, None, None, M, info['eMod'], fnam = 'output_method3.cxi')
+    
+
+    if test in ['4', '5', '6', 'all']:
+        print '\n\n\nMaking the forward simulated data with background...'
+        I, R, M, P, O, B = forward_sim(shape_P = (128, 128), shape_O = (256, 256), A = 32, defocus = 1.0e-2,\
+                                          photons_pupil = 100, ny = 10, nx = 10, random_offset = None, \
+                                          background = 10, mask = 100, counting_statistics = False)
+        # make the masked pixels bad
+        I += 10000. * ~M 
         
-        if rank == 0 : print '\nUpdating the probe on a many cpu cores...'
-        try :
-            d0 = time.time()
-            Or2, info = pt.ERA(I, R, None, O, iters, hardware = 'mpi_gpu', mask=mask, method = 2, alpha=1e-10, dtype='double')
-            d1 = time.time()
-            if rank == 0 : print '\ntime (s):', (d1 - d0) 
-        except Exception as e:
-            print e
+        # initial guess for the probe 
+        P0 = np.fft.fftshift( np.fft.ifftn( np.abs(np.fft.fftn(P)) ) )
+    
+    if test == 'all' or test == '4':
+        print '\n-------------------------------------------'
+        print 'Updating the object and background on a single cpu core...'
+
+        d0 = time.time()
+        Or, info = ERA(I, R, P, None, iters, mask=M, method = 4, alpha=1e-10, dtype='double')
+        d1 = time.time()
+        print '\ntime (s):', (d1 - d0) 
+
+        write_cxi(I, info['I'], P, P, O, Or, \
+                  R, None, B, info['background'], M, info['eMod'], fnam = 'output_method4.cxi')
+
+    if test == 'all' or test == '5':
+        print '\n-------------------------------------------'
+        print '\nUpdating the probe and background on a single cpu core...'
+        d0 = time.time()
+        Pr, info = ERA(I, R, P0, O, iters, mask=M, method = 5, alpha=1e-10)
+        d1 = time.time()
+        print '\ntime (s):', (d1 - d0) 
         
-        """
-        if rank == 0 : print '\nUpdating the object and probe on a many cpu cores...'
-        try :
-            d0 = time.time()
-            Or2, Pr2, info = pt.ERA(I, R, None, None, iters, OP_iters = 10, hardware = 'mpi_gpu', mask=mask, method = 3, alpha=1e-10, dtype='double')
-            d1 = time.time()
-            if rank == 0 : print '\ntime (s):', (d1 - d0) 
-        except Exception as e:
-            print e
-        sys.exit()
+        write_cxi(I, info['I'], P, Pr, O, O, \
+                  R, None, B, info['background'], M, info['eMod'], fnam = 'output_method5.cxi')
 
-    # Single cpu core with background 
-    #--------------------------------
-    if rank == 0 :
-        if test == 'all' or test == 'cpu':
-            back = (np.random.random(I[0].shape) * 10.0 * np.mean(I))**2
-            I   += back
-
-            print '\n---------------------------------------------------------------------'
-            print 'Updating the object on a single cpu core with background retrieval...'
-            try :
-                d0 = time.time()
-                Or2, background, info = pt.ERA(I, R, P, None, iters, mask=mask, method = 4, alpha=1e-10, dtype='double')
-                d1 = time.time()
-                print '\ntime (s):', (d1 - d0) 
-            except Exception as e:
-                print e
-
-            print '\nUpdating the probe on a single cpu core with background retrieval...'
-            try :
-                d0 = time.time()
-                Pr2, background, info = pt.ERA(I, R, None, O, iters, mask=mask, method = 5, alpha=1e-10, dtype='double')
-                d1 = time.time()
-                print '\ntime (s):', (d1 - d0) 
-            except Exception as e:
-                print e
-
-            print '\nUpdating the object and probe on a single cpu core with background retrieval...'
-            try :
-                d0 = time.time()
-                Or2, Pr2, background, info = pt.ERA(I, R, None, None, iters, mask=mask, method = 6, alpha=1e-10, dtype='double')
-                d1 = time.time()
-                print '\ntime (s):', (d1 - d0) 
-            except Exception as e:
-                print e
-
-        if test == 'all' or test == 'gpu':
-            # Single gpu core with background
-            #--------------------------------
-            print '\n---------------------------------------------------'
-            print 'Updating the object a single gpu with background...'
-            try :
-                d0 = time.time()
-                Or, info = pt.ERA(I, R, P, None, iters, hardware = 'gpu', method = 4, mask=mask, alpha=1e-10, dtype='double')
-                d1 = time.time()
-                print '\ntime (s):', (d1 - d0) 
-            except Exception as e:
-                print e
+    if test == 'all' or test == '6':
+        print '\n-------------------------------------------'
+        print '\nUpdating the object and probe and background on a single cpu core...'
+        d0 = time.time()
+        Or, Pr, info = ERA(I, R, P0, None, iters, mask=M, method = 6, alpha=1e-10)
+        d1 = time.time()
+        print '\ntime (s):', (d1 - d0) 
         
-            print '\nUpdating the probe a single gpu with background...'
-            try :
-                d0 = time.time()
-                Pr, info = pt.ERA(I, R, None, O, iters, hardware = 'gpu', method = 5, mask=mask, alpha=1e-10, dtype='double')
-                d1 = time.time()
-                print '\ntime (s):', (d1 - d0) 
-            except Exception as e:
-                print e
-            
-            print '\nUpdating the object and probe a single gpu with background...'
-            try :
-                d0 = time.time()
-                Or, Pr, info = pt.ERA(I, R, None, None, iters, hardware = 'gpu', method = 6, mask=mask, alpha=1e-10)
-                d1 = time.time()
-                print '\ntime (s):', (d1 - d0) 
-            except Exception as e:
-                print e
-
-    if test == 'all' or test == 'mpi':
-        # Many cpu cores with background 
-        #-------------------------------
-        
-        if rank == 0 : print '\n----------------------------------------------------------'
-        if rank == 0 : print 'Updating the object with background on a many cpu cores...'
-        try :
-            d0 = time.time()
-            Or2, background, info = pt.ERA(I, R, P, None, iters, hardware = 'mpi', mask=mask, method = 4, alpha=1e-10, dtype='double')
-            d1 = time.time()
-            if rank == 0 : print '\ntime (s):', (d1 - d0) 
-        except Exception as e:
-            print e
-        
-        if rank == 0 : print '\nUpdating the probe with background on a many cpu cores...'
-        try :
-            d0 = time.time()
-            Or2, background, info = pt.ERA(I, R, None, O, iters, hardware = 'mpi', mask=mask, method = 5, alpha=1e-10, dtype='double')
-            d1 = time.time()
-            if rank == 0 : print '\ntime (s):', (d1 - d0) 
-        except Exception as e:
-            print e
-        
-        if rank == 0 : print '\nUpdating the object and probe with background on a many cpu cores...'
-        try :
-            d0 = time.time()
-            Or2, Pr2, background, info = pt.ERA(I, R, None, None, iters, OP_iters = 1, hardware = 'mpi', mask=mask, method = 6, alpha=1e-10, dtype='double')
-            d1 = time.time()
-            if rank == 0 : print '\ntime (s):', (d1 - d0) 
-        except Exception as e:
-            print e
-
-    if test == 'all' or test == 'mpi_gpu':
-        # Many cpu + gpu cores with background 
-        #-------------------------------
-        
-        if rank == 0 : print '\n----------------------------------------------------------'
-        if rank == 0 : print 'Updating the object with background on a many cpu cores + gpu...'
-        try :
-            d0 = time.time()
-            Or2, background, info = pt.ERA(I, R, P, None, iters, hardware = 'mpi_gpu', mask=mask, method = 4, alpha=1e-10, dtype='double')
-            d1 = time.time()
-            if rank == 0 : print '\ntime (s):', (d1 - d0) 
-        except Exception as e:
-            print e
-        
-        if rank == 0 : print '\nUpdating the probe with background on a many cpu cores...'
-        try :
-            d0 = time.time()
-            Or2, background, info = pt.ERA(I, R, None, O, iters, hardware = 'mpi_gpu', mask=mask, method = 5, alpha=1e-10, dtype='double')
-            d1 = time.time()
-            if rank == 0 : print '\ntime (s):', (d1 - d0) 
-        except Exception as e:
-            print e
-        
-        if rank == 0 : print '\nUpdating the object and probe with background on a many cpu cores...'
-        try :
-            d0 = time.time()
-            Or2, Pr2, background, info = pt.ERA(I, R, None, None, iters, OP_iters = 1, hardware = 'mpi_gpu', mask=mask, method = 6, alpha=1e-10, dtype='double')
-            d1 = time.time()
-            if rank == 0 : print '\ntime (s):', (d1 - d0) 
-        except Exception as e:
-            print e
-
-    if rank == 0 : print '\n\nDone!'
-
-
+        write_cxi(I, info['I'], P, Pr, O, Or, \
+                  R, None, B, info['background'], M, info['eMod'], fnam = 'output_method6.cxi')

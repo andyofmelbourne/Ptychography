@@ -2,117 +2,31 @@ import numpy as np
 import sys
 from itertools import product
 
-import ptychography 
-from ptychography.era     import pmod_1, make_exits, update_progress
-from ptychography.era_mpi import psup_O, psup_P
+import era
+import era_mpi
 
 def DM_mpi(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method = None, hardware = 'cpu', alpha = 1.0e-10, dtype=None, full_output = True):
     """
     MPI variant of ptychography.DM
     """
-    if method == None :
-        if O is None and P is None :
-            method = 3
-        elif O is None :
-            method = 1
-        elif P is None :
-            method = 2
-
-        if background is not None :
-            method += 3
+    method, update, dtype, c_dtype, MPI_dtype, MPI_c_dtype, OP_iters, O, P, amp, background, R, mask, I_norm, exits = \
+            era_mpi.preamble(I, R, P, O, iters, OP_iters, mask, background, method, hardware, alpha, dtype, full_output)
     
-    if method == 1 or method == 4 : 
-        update = 'O'
-    elif method == 2 or method == 5 : 
-        update = 'P'
-    elif method == 3 or method == 6 : 
-        update = 'OP'
-
-    if type(OP_iters) == int :
-        OP_iters = (OP_iters, 1)
-    
-    if rank == 0 :
-        if dtype is None :
-            if I.dtype == np.float32 :
-                dtype = 'single'
-            else :
-                dtype = 'double'
-        
-        if dtype == 'single':
-            dtype       = np.float32
-            MPI_dtype   = MPI.FLOAT
-            c_dtype     = np.complex64
-            MPI_c_dtype = MPI.COMPLEX
-
-        elif dtype == 'double':
-            dtype       = np.float64
-            MPI_dtype   = MPI.DOUBLE
-            c_dtype     = np.complex128
-            MPI_c_dtype = MPI.DOUBLE_COMPLEX
-
-        if O is None :
-            # find the smallest array that fits O
-            # This is just U = M + R[:, 0].max() - R[:, 0].min()
-            #              V = K + R[:, 1].max() - R[:, 1].min()
-            shape = (I.shape[1] + R[:, 0].max() - R[:, 0].min(),\
-                     I.shape[2] + R[:, 1].max() - R[:, 1].min())
-            O = np.ones(shape, dtype = c_dtype)
-        
-        if P is None :
-            print 'initialising the probe with random numbers...'
-            P = np.random.random(I[0].shape) + 1J*np.random.random(I[0].shape)
-        
-        P = P.astype(c_dtype)
-        O = O.astype(c_dtype)
-        
-        I_norm    = np.sum(mask * I)
-        amp       = np.sqrt(I).astype(dtype)
-
-        # subtract an overall offset from R's
-        R[:, 0] -= R[:, 0].max()
-        R[:, 1] -= R[:, 1].max()
-
-    else :
-        amp = dtype = c_dtype = None
-
     P_heatmap = None
     O_heatmap = None
     eMods     = []
     eCons     = []
     
-    # now we need to share the info with everyone
-    dtype   = comm.bcast(dtype, root=0)
-    c_dtype = comm.bcast(c_dtype, root=0)
-    O       = comm.bcast(O, root=0)
-    P       = comm.bcast(P, root=0)
-    mask    = comm.bcast(mask, root=0)
-    
-    # for some reason these don't like to be bcast?
-    if dtype == np.float32:
-        MPI_dtype   = MPI.FLOAT
-        MPI_c_dtype = MPI.COMPLEX
-    else :
-        MPI_dtype   = MPI.DOUBLE
-        MPI_c_dtype = MPI.DOUBLE_COMPLEX
-    
-    # split the coords 
     if rank == 0 :
-        R = chunkIt(R, size)
-    R = comm.scatter(R, root=0)
-
-    # split the diffraction ampiltudes
-    if rank == 0 :
-        amp = chunkIt(amp, size)
-    amp = comm.scatter(amp, root=0)
-
-    # make our exit waves
-    exits     = era.make_exits(O, P, R)
+        if update == 'O' : bak = O.copy()
+        if update == 'P' : bak = P.copy()
+        if update == 'OP': bak = np.hstack((O.ravel().copy(), P.ravel().copy()))
     
     # method 1 or 2 or 3, update O or P or OP
     #---------
     if method == 1 or method == 2 or method == 3 :
         ex_0 = np.empty_like(exits)
-        print 'algrithm progress iteration convergence modulus error'
+        if rank == 0 : print 'algrithm progress iteration convergence modulus error'
         for i in range(iters) :
             
             # projection 
@@ -124,22 +38,22 @@ def DM_mpi(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method 
             # e  += e0           f_i - Ps f_i + Pm (2 Ps f_i - f)
             
             # consistency projection 
-            if update == 'O': O, P_heatmap = psup_O_1(exits, P, R, O.shape, P_heatmap, alpha = alpha)
-            if update == 'P': P, O_heatmap = psup_P_1(exits, O, R, O_heatmap, alpha = alpha)
+            if update == 'O': O, P_heatmap = era_mpi.psup_O(exits, P, R, O.shape, P_heatmap, alpha = alpha)
+            if update == 'P': P, O_heatmap = era_mpi.psup_P(exits, O, R, O_heatmap, alpha = alpha)
             if update == 'OP':
                 if i % OP_iters[1] == 0 :
                     for j in range(OP_iters[0]):
-                        O, P_heatmap = psup_O_1(exits, P, R, O.shape, None, alpha = alpha)
-                        P, O_heatmap = psup_P_1(exits, O, R, None, alpha = alpha)
+                        O, P_heatmap = era_mpi.psup_O(exits, P, R, O.shape, None, alpha = alpha)
+                        P, O_heatmap = era_mpi.psup_P(exits, O, R, None, alpha = alpha)
                 else :
-                        O, P_heatmap = psup_O_1(exits, P, R, O.shape, P_heatmap, alpha = alpha)
+                        O, P_heatmap = era_mpi.psup_O(exits, P, R, O.shape, P_heatmap, alpha = alpha)
             
-            ex_0  = make_exits(O, P, R, ex_0)
+            ex_0  = era.make_exits(O, P, R, ex_0)
             
             #exits = exits.copy() - ex_0.copy() + pmod_1(amp, (2*ex_0 - exits).copy(), mask, alpha = alpha)
             exits -= ex_0
             ex_0  -= exits
-            ex_0   = pmod_1(amp, ex_0, mask, alpha = alpha)
+            ex_0   = era.pmod_1(amp, ex_0, mask, alpha = alpha)
             exits += ex_0
             
             # metrics
@@ -149,84 +63,65 @@ def DM_mpi(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method 
             # consistency projection 
             Os = O.copy()
             Ps = P.copy()
-            if update == 'O': Os, P_heatmap = psup_O_1(exits, Ps, R, O.shape, P_heatmap, alpha = alpha)
-            if update == 'P': Ps, O_heatmap = psup_P_1(exits, Os, R, O_heatmap, alpha = alpha)
+            if update == 'O': Os, P_heatmap = era_mpi.psup_O(exits, Ps, R, O.shape, P_heatmap, alpha = alpha)
+            if update == 'P': Ps, O_heatmap = era_mpi.psup_P(exits, Os, R, O_heatmap, alpha = alpha)
             if update == 'OP':
                 if i % OP_iters[1] == 0 :
                     for j in range(OP_iters[0]):
-                        Os, Ph_t = psup_O_1(exits, Ps, R, O.shape, None, alpha = alpha)
-                        Ps, Oh_t = psup_P_1(exits, Os, R, None, alpha = alpha)
+                        Os, Ph_t = era_mpi.psup_O(exits, Ps, R, O.shape, None, alpha = alpha)
+                        Ps, Oh_t = era_mpi.psup_P(exits, Os, R, None, alpha = alpha)
                 else :
-                        Os, P_heatmap = psup_O_1(exits, P, R, O.shape, P_heatmap, alpha = alpha)
+                        Os, P_heatmap = era_mpi.psup_O(exits, P, R, O.shape, P_heatmap, alpha = alpha)
             
-            ex_0 = make_exits(Os, Ps, R, ex_0)
+            ex_0 = era.make_exits(Os, Ps, R, ex_0)
             eMod = model_error_1(amp, ex_0, mask)
             #eMod = model_error_1(amp, pmod_1(amp, ex_0, mask, alpha=alpha), mask, I_norm)
-
-            if update == 'O' : temp = Os
-            if update == 'P' : temp = Ps
-            if update == 'OP': temp = np.hstack((Os.ravel(), Ps.ravel()))
             
-            bak   -= temp
-            eCon   = np.sum( (bak * bak.conj()).real ) / np.sum( (temp * temp.conj()).real )
-            eCon   = np.sqrt(eCon)
-
-            eMod = np.sqrt( eMod / I_norm)
+            eMod   = comm.reduce(eMod, op=MPI.SUM)
             
-            update_progress(i / max(1.0, float(iters-1)), 'DM', i, eCon, eMod )
+            if rank == 0 :
+                if update == 'O' : temp = Os
+                if update == 'P' : temp = Ps
+                if update == 'OP': temp = np.hstack((Os.ravel(), Ps.ravel()))
+                
+                bak   -= temp
+                eCon   = np.sum( (bak * bak.conj()).real ) / np.sum( (temp * temp.conj()).real )
+                eCon   = np.sqrt(eCon)
 
-            eMods.append(eMod)
-            eCons.append(eCon)
-        
-            if update == 'O' : bak = Os.copy()
-            if update == 'P' : bak = Ps.copy()
-            if update == 'OP': bak = np.hstack((Os.ravel().copy(), Ps.ravel().copy()))
+                eMod = np.sqrt( eMod / I_norm)
+                
+                era.update_progress(i / max(1.0, float(iters-1)), 'DM', i, eCon, eMod )
 
-        if full_output : 
-            info = {}
-            info['exits'] = exits
-            info['I']     = np.abs(np.fft.fftn(exits, axes = (-2, -1)))**2
-            info['eMod']  = eMods
-            info['eCon']  = eCons
-            info['heatmap']  = P_heatmap
-            if update == 'O' : return Os, info
-            if update == 'P' : return Ps, info
-            if update == 'OP': return Os, Ps, info
-        else :
-            if update == 'O' : return Os
-            if update == 'P' : return Ps
-            if update == 'OP': return Os, Ps
+                eMods.append(eMod)
+                eCons.append(eCon)
+            
+                if update == 'O' : bak = Os.copy()
+                if update == 'P' : bak = Ps.copy()
+                if update == 'OP': bak = np.hstack((Os.ravel().copy(), Ps.ravel().copy()))
 
     # method 4 or 5 or 6
     #---------
     # update the object with background retrieval
     elif method == 4 or method == 5 or method == 6 :
-        if background is None :
-            background = np.random.random((I.shape)).astype(dtype)
-        else :
-            temp       = np.empty(I.shape, dtype = dtype)
-            temp[:]    = np.sqrt(background)
-            background = temp
-        
         ex_0 = np.empty_like(exits)
         b_0  = np.empty_like(background)
         print 'algrithm progress iteration convergence modulus error'
         for i in range(iters) :
             # modulus projection 
-            exits, background  = pmod_7(amp, background, exits, mask, alpha = alpha)
+            exits, background  = era.pmod_7(amp, background, exits, mask, alpha = alpha)
             
             background[:] = np.mean(background, axis=0)
             
             # consistency projection 
-            if update == 'O': O, P_heatmap = psup_O_1(exits, P, R, O.shape, P_heatmap, alpha = alpha)
-            if update == 'P': P, O_heatmap = psup_P_1(exits, O, R, O_heatmap, alpha = alpha)
+            if update == 'O': O, P_heatmap = era_mpi.psup_O(exits, P, R, O.shape, P_heatmap, alpha = alpha)
+            if update == 'P': P, O_heatmap = era.psup_P_1(exits, O, R, O_heatmap, alpha = alpha)
             if update == 'OP':
                 if i % OP_iters[1] == 0 :
                     for j in range(OP_iters[0]):
-                        O, P_heatmap = psup_O_1(exits, P, R, O.shape, None, alpha = alpha)
-                        P, O_heatmap = psup_P_1(exits, O, R, None, alpha = alpha)
+                        O, P_heatmap = era_mpi.psup_O(exits, P, R, O.shape, None, alpha = alpha)
+                        P, O_heatmap = era_mpi.psup_P(exits, O, R, None, alpha = alpha)
                 else :
-                        O, P_heatmap = psup_O_1(exits, P, R, O.shape, P_heatmap, alpha = alpha)
+                        O, P_heatmap = era_mpi.psup_O(exits, P, R, O.shape, P_heatmap, alpha = alpha)
             
             b_0[:]  = np.mean(background, axis=0)
             ex_0    = make_exits(O, P, R, ex_0)
@@ -246,54 +141,74 @@ def DM_mpi(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method 
             # consistency projection 
             Os = O.copy()
             Ps = P.copy()
-            if update == 'O': Os, P_heatmap = psup_O_1(exits, Ps, R, O.shape, P_heatmap, alpha = alpha)
-            if update == 'P': Ps, O_heatmap = psup_P_1(exits, Os, R, O_heatmap, alpha = alpha)
+            if update == 'O': Os, P_heatmap = era_mpi.psup_O(exits, Ps, R, O.shape, P_heatmap, alpha = alpha)
+            if update == 'P': Ps, O_heatmap = era_mpi.psup_P(exits, Os, R, O_heatmap, alpha = alpha)
             if update == 'OP':
                 if i % OP_iters[1] == 0 :
                     for j in range(OP_iters[0]):
-                        Os, Ph_t = psup_O_1(exits, Ps, R, O.shape, None, alpha = alpha)
-                        Ps, Oh_t = psup_P_1(exits, Os, R, None, alpha = alpha)
+                        Os, Ph_t = era_mpi.psup_O(exits, Ps, R, O.shape, None, alpha = alpha)
+                        Ps, Oh_t = era_mpi.psup_P(exits, Os, R, None, alpha = alpha)
                 else :
-                        Os, P_heatmap = psup_O_1(exits, P, R, O.shape, P_heatmap, alpha = alpha)
+                        Os, P_heatmap = era_mpi.psup_O(exits, P, R, O.shape, P_heatmap, alpha = alpha)
             b_0[:]  = np.mean(background, axis=0)
             
-            ex_0 = make_exits(Os, Ps, R, ex_0)
+            ex_0 = era.make_exits(Os, Ps, R, ex_0)
             eMod = model_error_1(amp, ex_0, mask, b_0)
             #eMod = model_error_1(amp, pmod_1(amp, ex_0, mask, alpha=alpha), mask, I_norm)
+             
+            eMod   = comm.reduce(eMod, op=MPI.SUM)
+               
+            if rank == 0 :
+                if update == 'O' : temp = Os
+                if update == 'P' : temp = Ps
+                if update == 'OP': temp = np.hstack((Os.ravel(), Ps.ravel()))
+                
+                bak   -= temp
+                eCon   = np.sum( (bak * bak.conj()).real ) / np.sum( (temp * temp.conj()).real )
+                eCon   = np.sqrt(eCon)
+                
+                eMod = np.sqrt( eMod / I_norm)
 
-            if update == 'O' : temp = Os
-            if update == 'P' : temp = Ps
-            if update == 'OP': temp = np.hstack((Os.ravel(), Ps.ravel()))
+                era.update_progress(i / max(1.0, float(iters-1)), 'DM', i, eCon, eMod )
+
+                eMods.append(eMod)
+                eCons.append(eCon)
             
-            bak   -= temp
-            eCon   = np.sum( (bak * bak.conj()).real ) / np.sum( (temp * temp.conj()).real )
-            eCon   = np.sqrt(eCon)
+                if update == 'O' : bak = Os.copy()
+                if update == 'P' : bak = Ps.copy()
+                if update == 'OP': bak = np.hstack((Os.ravel().copy(), Ps.ravel().copy()))
+        
+    if full_output : 
+        exits = comm.gather(exits, root = 0)
+        if rank == 0 :
+            exits = np.array([e for es in exits for e in es])
             
-            eMod = np.sqrt( eMod / I_norm)
-
-            update_progress(i / max(1.0, float(iters-1)), 'DM', i, eCon, eMod )
-
-            eMods.append(eMod)
-            eCons.append(eCon)
-        
-            if update == 'O' : bak = Os.copy()
-            if update == 'P' : bak = Ps.copy()
-            if update == 'OP': bak = np.hstack((Os.ravel().copy(), Ps.ravel().copy()))
-        
-        if full_output : 
             info = {}
-            info['exits'] = exits
-            info['I']     = np.abs(np.fft.fftn(exits, axes = (-2, -1)))**2
-            info['eMod']  = eMods
-            info['eCon']  = eCons
-            info['heatmap']  = P_heatmap
-            if update == 'O' : return O, background**2, info
-            if update == 'P' : return P, background**2, info
-            if update == 'OP': return O, P, background**2, info
+            info['exits']   = exits
+            info['I']       = np.fft.fftshift(np.abs(np.fft.fftn(exits, axes = (-2, -1)))**2, axes = (-2, -1))
+            info['eMod']    = eMods
+            info['eCon']    = eCons
+            info['heatmap'] = P_heatmap
+            if background is not None :
+                info['background'] = np.fft.fftshift(b_0[0])**2
+            if update == 'O': return O, info
+            if update == 'P': return P, info
+            if update == 'OP': return O, P, info
         else :
-            if update == 'O':  return O, background**2
-            if update == 'P':  return P, background**2
-            if update == 'OP': return O, P, background**2
+            if update == 'OP': 
+                return None, None, None
+            else :
+                return None, None
+    else :
+        if rank == 0 :
+            if update == 'O' : return O
+            if update == 'P' : return P
+            if update == 'OP': return O, P
+        else :
+            if update == 'OP': 
+                return None, None
+            else :
+                return None
 
 
 
@@ -309,11 +224,15 @@ if __name__ == '__main__' :
     import numpy as np
     import time
     import sys
-    #import pyqtgraph as pg
-    from era import ERA
 
     from ptychography.forward_models import forward_sim
+    from ptychography.display import write_cxi
 
+    from mpi4py import MPI
+
+    comm = MPI.COMM_WORLD
+    rank = comm.Get_rank()
+    size = comm.Get_size()
 
     if len(sys.argv) == 2 :
         iters = int(sys.argv[1])
@@ -325,72 +244,123 @@ if __name__ == '__main__' :
         iters = 10
         test = 'all'
 
-    from mpi4py import MPI
-
-    comm = MPI.COMM_WORLD
-    rank = comm.Get_rank()
-    size = comm.Get_size()
-
-    print '\nMaking the forward simulated data...'
-    I, R, M, P, O, B = forward_sim(shape_P = (32, 64), shape_O = (128, 128), A = 32, defocus = 1.0e-2,\
-                                      photons_pupil = 1, ny = 10, nx = 10, random_offset = None, \
-                                      background = None, mask = 100, counting_statistics = False)
-    I = np.fft.ifftshift(I, axes=(-2, -1))
-    # make the masked pixels bad
-    I += 10000. * ~M 
-    
-    # initial guess for the probe 
-    P0 = np.fft.fftshift( np.fft.ifftn( np.abs(np.fft.fftn(P)) ) )
-    
-    print '\n-------------------------------------------'
-    print 'Updating the object on a single cpu core...'
-
-    d0 = time.time()
-    Or, info = DM_mpi(I, R, P, None, iters, mask=M, method = 1, alpha=1e-10, dtype='double')
-    Or, info = DM_mpi(I, R, P, Or, 50     , mask=M, method = 1, alpha=1e-10, dtype='double')
-    d1 = time.time()
-    print '\ntime (s):', (d1 - d0) 
-
-    print '\nUpdating the probe on a single cpu core...'
-    d0 = time.time()
-    Pr, info = DM_mpi(I, R, P0, O, iters, mask=M, method = 2, alpha=1e-10)
-    Or, info = DM_mpi(I, R, Pr, O, 50   , mask=M, method = 2, alpha=1e-10, dtype='double')
-    d1 = time.time()
-    print '\ntime (s):', (d1 - d0) 
-
-    print '\nUpdating the object and probe on a single cpu core...'
-    d0 = time.time()
-    Or, Pr, info = DM_mpi(I, R, P0, None, iters, mask=M, method = 3, alpha=1e-10)
-    d1 = time.time()
-    print '\ntime (s):', (d1 - d0) 
-    """
-    # Single cpu core 
+    # Many cpu cores 
     #----------------
-    print '\n-------------------------------------------'
-    print 'Updating the object on a single cpu core...'
-    try :
-        d0 = time.time()
-        Or, info = pt.ERA(I, R, P, None, iters, mask=mask, alpha=1e-10, dtype='double')
-        d1 = time.time()
-        print '\ntime (s):', (d1 - d0) 
-    except Exception as e:
-        print e
+    if test in ['1', '2', '3', 'all']:
+        if rank == 0 :
+            print '\nMaking the forward simulated data...'
+            I, R, M, P, O, B = forward_sim(shape_P = (128, 128), shape_O = (256, 256), A = 32, defocus = 1.0e-2,\
+                                              photons_pupil = 1, ny = 10, nx = 10, random_offset = None, \
+                                              background = None, mask = 100, counting_statistics = False)
+            # make the masked pixels bad
+            I += 10000. * ~M 
+            
+            # initial guess for the probe 
+            P0 = np.fft.fftshift( np.fft.ifftn( np.abs(np.fft.fftn(P)) ) )
+        else :
+            I = R = O = P = P0 = M = B = None
+    
+    if test == 'all' or test == '1':
+        if rank == 0 : 
+            print '\n-------------------------------------------'
+            print 'Updating the object on ',size ,' cpu cores...'
+            d0 = time.time()
 
-    print '\nUpdating the probe on a single cpu core...'
-    try :
-        d0 = time.time()
-        Pr, info = pt.ERA(I, R, None, O, iters, mask=mask, alpha=1e-10)
-        d1 = time.time()
-        print '\ntime (s):', (d1 - d0) 
-    except Exception as e:
-        print e
+        Or, info = DM_mpi(I, R, P, None, iters, mask=M, method = 1, hardware = 'mpi', alpha=1e-10, dtype='double')
+        
+        if rank == 0 : 
+            d1 = time.time()
+            print '\ntime (s):', (d1 - d0) 
+            
+            write_cxi(I, info['I'], P, P, O, Or, \
+                      R, None, None, None, M, info['eMod'], fnam = 'output_method1.cxi')
 
-    print '\nUpdating the object and probe on a single cpu core...'
-    try :
-        d0 = time.time()
-        Or, Pr, info = pt.ERA(I, R, None, None, iters, mask=mask, alpha=1e-10)
-        d1 = time.time()
-        print '\ntime (s):', (d1 - d0) 
-    except Exception as e:
-        print e
-    """
+    if test == 'all' or test == '2':
+        if rank == 0 : 
+            print '\n-------------------------------------------'
+            print '\nUpdating the probe on a single cpu core...'
+            d0 = time.time()
+
+        Pr, info = DM_mpi(I, R, P0, O, iters, mask=M, method = 2, hardware = 'mpi', alpha=1e-10)
+        
+        if rank == 0 : 
+            d1 = time.time()
+            print '\ntime (s):', (d1 - d0) 
+            
+            write_cxi(I, info['I'], P, Pr, O, O, \
+                      R, None, None, None, M, info['eMod'], fnam = 'output_method2.cxi')
+
+    if test == 'all' or test == '3':
+        if rank == 0 : 
+            print '\n-------------------------------------------'
+            print '\nUpdating the object and probe on a single cpu core...'
+            d0 = time.time()
+
+        Or, Pr, info = DM_mpi(I, R, P0, None, iters, mask=M, method = 3, hardware = 'mpi', alpha=1e-10)
+
+        if rank == 0 : 
+            d1 = time.time()
+            print '\ntime (s):', (d1 - d0) 
+            
+            write_cxi(I, info['I'], P, Pr, O, Or, \
+                      R, None, None, None, M, info['eMod'], fnam = 'output_method3.cxi')
+    
+
+    if test in ['4', '5', '6', 'all']:
+        if rank == 0 :
+            print '\n\n\nMaking the forward simulated data with background...'
+            I, R, M, P, O, B = forward_sim(shape_P = (128, 128), shape_O = (256, 256), A = 32, defocus = 1.0e-2,\
+                                              photons_pupil = 100, ny = 10, nx = 10, random_offset = None, \
+                                              background = 10, mask = 100, counting_statistics = False)
+            # make the masked pixels bad
+            I += 10000. * ~M 
+            
+            # initial guess for the probe 
+            P0 = np.fft.fftshift( np.fft.ifftn( np.abs(np.fft.fftn(P)) ) )
+        else :
+            I = R = O = P = P0 = M = B = None
+    
+    if test == 'all' or test == '4':
+        if rank == 0 : 
+            print '\n-------------------------------------------'
+            print 'Updating the object and background on a single cpu core...'
+            d0 = time.time()
+
+        Or, info = DM_mpi(I, R, P, None, iters, mask=M, method = 4, hardware = 'mpi', alpha=1e-10, dtype='double')
+
+        if rank == 0 : 
+            d1 = time.time()
+            print '\ntime (s):', (d1 - d0) 
+            
+            write_cxi(I, info['I'], P, P, O, Or, \
+                      R, None, B, info['background'], M, info['eMod'], fnam = 'output_method4.cxi')
+
+    if test == 'all' or test == '5':
+        if rank == 0 : 
+            print '\n-------------------------------------------'
+            print '\nUpdating the probe and background on a single cpu core...'
+            d0 = time.time()
+
+        Pr, info = DM_mpi(I, R, P0, O, iters, mask=M, method = 5, hardware = 'mpi', alpha=1e-10)
+
+        if rank == 0 : 
+            d1 = time.time()
+            print '\ntime (s):', (d1 - d0) 
+            
+            write_cxi(I, info['I'], P, Pr, O, O, \
+                      R, None, B, info['background'], M, info['eMod'], fnam = 'output_method5.cxi')
+
+    if test == 'all' or test == '6':
+        if rank == 0 : 
+            print '\n-------------------------------------------'
+            print '\nUpdating the object and probe and background on a single cpu core...'
+            d0 = time.time()
+
+        Or, Pr, info = DM_mpi(I, R, P0, None, iters, mask=M, method = 6, hardware = 'mpi', alpha=1e-10)
+
+        if rank == 0 : 
+            d1 = time.time()
+            print '\ntime (s):', (d1 - d0) 
+            
+            write_cxi(I, info['I'], P, Pr, O, Or, \
+                      R, None, B, info['background'], M, info['eMod'], fnam = 'output_method6.cxi')
