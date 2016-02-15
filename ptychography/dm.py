@@ -153,61 +153,8 @@ def DM(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method = No
     [1] Veit Elser, "Phase retrieval by iterated projections," J. Opt. Soc. Am. A 
         20, 40-55 (2003)
     """
-    if method == None :
-        if O is None and P is None :
-            method = 3
-        elif O is None :
-            method = 1
-        elif P is None :
-            method = 2
-
-        if background is not None :
-            method += 3
-    
-    if method == 1 or method == 4 : 
-        update = 'O'
-    elif method == 2 or method == 5 : 
-        update = 'P'
-    elif method == 3 or method == 6 : 
-        update = 'OP'
-    
-    if dtype is None :
-        dtype   = I.dtype
-        c_dtype = (I[0,0,0] + 1J * I[0, 0, 0]).dtype
-    
-    elif dtype == 'single':
-        dtype   = np.float32
-        c_dtype = np.complex64
-
-    elif dtype == 'double':
-        dtype   = np.float64
-        c_dtype = np.complex128
-
-    if type(OP_iters) == int :
-        OP_iters = (OP_iters, 1)
-
-    if O is None :
-        # find the smallest array that fits O
-        # This is just U = M + R[:, 0].max() - R[:, 0].min()
-        #              V = K + R[:, 1].max() - R[:, 1].min()
-        shape = (I.shape[1] + R[:, 0].max() - R[:, 0].min(),\
-                 I.shape[2] + R[:, 1].max() - R[:, 1].min())
-        #O = 0.5 + np.random.random(shape) + 1J*np.random.random(shape)
-        O = np.ones(shape, dtype = c_dtype)
-    
-    if P is None :
-        P = np.random.random(I[0].shape) + 1J*np.random.random(I[0].shape)
-    
-    P = P.astype(c_dtype)
-    O = O.astype(c_dtype)
-    
-    # subtract an overall offset from R's
-    R[:, 0] -= R[:, 0].max()
-    R[:, 1] -= R[:, 1].max()
-    
-    I_norm    = np.sum(mask * I)
-    amp       = np.sqrt(I).astype(dtype)
-    exits     = make_exits(O, P, R)
+    method, update, dtype, c_dtype, OP_iters,shape, O, P, amp, R, mask, I_norm, exits  = preamble(I, R, P, O, iters, \
+                             OP_iters, mask, background, method, hardware, alpha, dtype, full_output)
     P_heatmap = None
     O_heatmap = None
     eMods     = []
@@ -293,8 +240,8 @@ def DM(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method = No
 
         if full_output : 
             info = {}
-            info['exits'] = exits
-            info['I']     = np.abs(np.fft.fftn(exits, axes = (-2, -1)))**2
+            info['exits'] = ex_0
+            info['I']     = np.fft.fftshift(np.abs(np.fft.fftn(ex_0, axes = (-2, -1)))**2, axes = (-2, -1))
             info['eMod']  = eMods
             info['eCon']  = eCons
             info['heatmap']  = P_heatmap
@@ -392,7 +339,7 @@ def DM(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method = No
         if full_output : 
             info = {}
             info['exits'] = exits
-            info['I']     = np.abs(np.fft.fftn(exits, axes = (-2, -1)))**2
+            info['I']     = np.fft.fftshift(np.abs(np.fft.fftn(exits, axes = (-2, -1)))**2, axes = (-2, -1))
             info['eMod']  = eMods
             info['eCon']  = eCons
             info['heatmap']  = P_heatmap
@@ -422,6 +369,7 @@ if __name__ == '__main__' :
     from era import ERA
 
     from ptychography.forward_models import forward_sim
+    from ptychography.display import write_cxi
 
 
     if len(sys.argv) == 2 :
@@ -436,37 +384,50 @@ if __name__ == '__main__' :
 
 
     print '\nMaking the forward simulated data...'
-    I, R, M, P, O, B = forward_sim(shape_P = (128, 128), shape_O = (128, 128), A = 32, defocus = 1.0e-2,\
+    I, R, M, P, O, B = forward_sim(shape_P = (128, 128), shape_O = (256, 256), A = 32, defocus = 1.0e-2,\
                                       photons_pupil = 1, ny = 10, nx = 10, random_offset = None, \
                                       background = None, mask = 100, counting_statistics = False)
-    I = np.fft.ifftshift(I, axes=(-2, -1))
     # make the masked pixels bad
     I += 10000. * ~M 
     
     # initial guess for the probe 
     P0 = np.fft.fftshift( np.fft.ifftn( np.abs(np.fft.fftn(P)) ) )
     
-    print '\n-------------------------------------------'
-    print 'Updating the object on a single cpu core...'
+    if test == 'all' or test == '1':
+        print '\n-------------------------------------------'
+        print 'Updating the object on a single cpu core...'
 
-    d0 = time.time()
-    Or, info = DM(I, R, P, None, iters, mask=M, method = 1, alpha=1e-10, dtype='double')
-    Or, info = ERA(I, R, P, Or,   iters, mask=M, method = 1, alpha=1e-10, dtype='double')
-    d1 = time.time()
-    print '\ntime (s):', (d1 - d0) 
+        d0 = time.time()
+        Or, info = DM(I, R, P, None, iters, mask=M, method = 1, alpha=1e-10, dtype='double')
+        #Or, info = ERA(I, R, P, Or,   iters, mask=M, method = 1, alpha=1e-10, dtype='double')
+        d1 = time.time()
+        print '\ntime (s):', (d1 - d0) 
 
-    print '\nUpdating the probe on a single cpu core...'
-    d0 = time.time()
-    Pr, info = DM(I, R, P0, O, iters, mask=M, method = 2, alpha=1e-10)
-    Or, info = ERA(I, R, Pr, O, 50   , mask=M, method = 2, alpha=1e-10, dtype='double')
-    d1 = time.time()
-    print '\ntime (s):', (d1 - d0) 
+        write_cxi(I, info['I'], P, P, O, Or, \
+                  R, None, None, None, M, info['eMod'], fnam = 'output_method1.cxi')
 
-    print '\nUpdating the object and probe on a single cpu core...'
-    d0 = time.time()
-    Or, Pr, info = DM(I, R, P0, None, iters, mask=M, method = 3, alpha=1e-10)
-    d1 = time.time()
-    print '\ntime (s):', (d1 - d0) 
+    if test == 'all' or test == '2':
+        print '\n-------------------------------------------'
+        print '\nUpdating the probe on a single cpu core...'
+        d0 = time.time()
+        Pr, info = DM(I, R, P0, O, iters, mask=M, method = 2, alpha=1e-10)
+        Pr, info = ERA(I, R, Pr, O, 50   , mask=M, method = 2, alpha=1e-10, dtype='double')
+        d1 = time.time()
+        print '\ntime (s):', (d1 - d0) 
+        
+        write_cxi(I, info['I'], P, Pr, O, O, \
+                  R, None, None, None, M, info['eMod'], fnam = 'output_method2.cxi')
+
+    if test == 'all' or test == '3':
+        print '\n-------------------------------------------'
+        print '\nUpdating the object and probe on a single cpu core...'
+        d0 = time.time()
+        Or, Pr, info = DM(I, R, P0, None, iters, mask=M, method = 3, alpha=1e-10)
+        d1 = time.time()
+        print '\ntime (s):', (d1 - d0) 
+        
+        write_cxi(I, info['I'], P, Pr, O, Or, \
+                  R, None, None, None, M, info['eMod'], fnam = 'output_method3.cxi')
     """
     # Single cpu core 
     #----------------

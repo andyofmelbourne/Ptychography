@@ -1,5 +1,22 @@
 import numpy as np
 import h5py
+import sys
+
+def if_exists_del(fnam):
+    import os
+    # check that the directory exists and is a directory
+    output_dir = os.path.split( os.path.realpath(fnam) )[0]
+    if os.path.exists(output_dir) == False :
+        raise ValueError('specified path does not exist: ', output_dir)
+    
+    if os.path.isdir(output_dir) == False :
+        raise ValueError('specified path is not a path you dummy: ', output_dir)
+    
+    # see if it exists and if so delete it 
+    # (probably dangerous but otherwise this gets really anoying for debuging)
+    if os.path.exists(fnam):
+        print '\n', fnam ,'file already exists, deleting the old one and making a new one'
+        os.remove(fnam)
 
 def write_cxi(I_in, I_out, P_in, P_out, O_in, O_out, \
               R_in, R_out, B_in, B_out, M, eMod, fnam = 'output.cxi'):
@@ -8,7 +25,8 @@ def write_cxi(I_in, I_out, P_in, P_out, O_in, O_out, \
     
     Warning: this will overwrite any existing file.
     """
-    f = h5py.File(fnam, 'a')
+    if_exists_del(fnam)
+    f = h5py.File(fnam, 'w')
     gin = f.create_group('input')
     gin.create_dataset('I', data = I_in)
     gin.create_dataset('M', data = M)
@@ -40,57 +58,124 @@ def read_cxi(fnam = 'output.cxi'):
     """
     Read a psudo cxi file for loading and displaying later.
     """
-    f = h5py.File(fnam, 'r')
+    if type(fnam) == str :
+        f = h5py.File(f, 'r')
+    else :
+        f = fnam
+    
     gin  = f['input']
     I_in = gin['I'].value
-    M    = gin['M']
-    if gin.has_key('P'):
+    M    = gin['M'].value
+    keys = gin.keys()
+    if 'P' in keys:
         P_in = gin['P'].value
     else :
         P_in = None
-    if gin.has_key('O'):
+    if 'O' in keys:
         O_in = gin['O'].value
     else :
         O_in = None
-    if gin.has_key('R'):
+    if 'R' in keys:
         R_in = gin['R'].value
     else :
         R_in = None
-    if gin.has_key('B'):
+    if 'B' in keys:
         B_in = gin['B'].value
     else :
         B_in = None
 
     gout  = f['output']
     I_out = gout['I'].value
-    if gout.has_key('P'):
+    keys  = gout.keys()
+    if 'P' in keys:
         P_out = gout['P'].value
     else :
         P_out = None
-    if gout.has_key('O'):
+    if 'O' in keys:
         O_out = gout['O'].value
     else :
         O_out = None
-    if gout.has_key('R'):
+    if 'R' in keys:
         R_out = gout['R'].value
     else :
         R_out = None
-    if gout.has_key('B'):
+    if 'B' in keys:
         B_out = gout['B'].value
     else :
         B_out = None
-    if gout.has_key('eMod'):
+    if 'eMod' in keys:
         eMod  = gout['eMod'].value
     else :
         eMod = None
     f.close()
     return I_in, I_out, P_in, P_out, O_in, O_out, R_in, R_out, B_in, B_out, M, eMod
 
+def hstack_if_not_None(A, B):
+    if (A is not None) and (B is not None) :
+        C = np.hstack((A, B))
+    elif (A is not None):
+        C = A
+    elif (B is not None):
+        C = B
+    return C
+
+def in_vs_out_widget(A, B, title = ''):
+    if (A is None) and (B is None) :
+        return None
+    import pyqtgraph as pg
+    A_in_out_plots = pg.image(title = title)
+
+    A_in_out = hstack_if_not_None(A, B)
+    
+    if len(A_in_out.shape) == 2 :
+        A_in_out_plots.setImage(A_in_out.T)
+    elif len(A_in_out.shape) == 3 :
+        A_in_out_plots.setImage(A_in_out)
+    
+    return A_in_out_plots
+
+def Application(I_in, I_out, P_in, P_out, O_in,  \
+                O_out, R_in, R_out, B_in, B_out, \
+                M, eMod, maxlen = 100):
+
+    # start a pyqtgraph application (sigh...)
+    import pyqtgraph as pg
+    from PyQt4 import QtGui, QtCore
+    import signal
+    
+    # Always start by initializing Qt (only once per application)
+    app = QtGui.QApplication([])
+
+    wI  = in_vs_out_widget(M*I_in[:maxlen]**0.5, I_out[:maxlen]**0.5, 'input / output diffraction intensities')
+    wP  = in_vs_out_widget(np.abs(P_in), np.abs(P_out), 'input / output |Probe|')
+    wOa = in_vs_out_widget(np.abs(O_in), np.abs(O_out), 'input / output |Object|')
+    wOp = in_vs_out_widget(np.angle(O_in), np.angle(O_out), 'input / output angle(Object)')
+    wB  = in_vs_out_widget(B_in, B_out, 'input / output background')
+    wM  = in_vs_out_widget(M, None, 'detector mask')
+
+    eMod_plot = pg.plot(eMod, title = 'Modulus error')
+    eMod_plot.setLabel('bottom', 'iteration')
+    eMod_plot.setLabel('left', 'error')
+    
+    ## Start the Qt event loop
+    signal.signal(signal.SIGINT, signal.SIG_DFL)    # allow Control-C
+    sys.exit(app.exec_())
+
 
 def display_cxi(f):
     if type(f) == str :
         f = h5py.File(f, 'r')
    
-    # start a pyqtgraph application (sigh...)
+    from PyQt4 import QtGui, QtCore
+    
+    I_in, I_out, P_in, P_out, O_in, O_out, R_in, R_out, B_in, B_out, M, eMod = read_cxi(f)
+    
+    Application(I_in, I_out, P_in, P_out, O_in, O_out, R_in, R_out, B_in, B_out, M, eMod)
+
+
+if __name__ == '__main__':
+    
+    fnam = sys.argv[1]
+    display_cxi(fnam)
 
 

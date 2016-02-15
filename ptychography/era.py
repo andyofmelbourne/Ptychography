@@ -72,7 +72,8 @@ def ERA(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method = N
     
     hardware : ('cpu', 'gpu', 'mpi'), optional, default ('cpu') 
         Choose to run the reconstruction on a single cpu core ('cpu'), a single gpu
-        ('gpu') or many cpu's ('mpi'). The numerical results should be identical.
+        ('gpu') or many cpu's ('mpi'). The numerical results should be identical. 
+        The gpu routines are currently experimental so they are disabled by default.
     
     alpha : float, optional, default (1.0e-10)
         A floating point number to regularise array division (prevents 1/0 errors).
@@ -128,69 +129,18 @@ def ERA(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method = N
     elif hardware == 'mpi':
         from era_mpi import ERA_mpi
         return ERA_mpi(I, R, P, O, iters, OP_iters, mask, background, method, hardware, alpha, dtype, full_output)
-    elif hardware == 'mpi_gpu':
-        from era_mpi_gpu import ERA_mpi_gpu
-        return ERA_mpi_gpu(I, R, P, O, iters, OP_iters, mask, background, method, hardware, alpha, dtype, full_output)
+    #elif hardware == 'mpi_gpu':
+    #    from era_mpi_gpu import ERA_mpi_gpu
+    #    return ERA_mpi_gpu(I, R, P, O, iters, OP_iters, mask, background, method, hardware, alpha, dtype, full_output)
 
-    if method == None :
-        if O is None and P is None :
-            method = 3
-        elif O is None :
-            method = 1
-        elif P is None :
-            method = 2
-
-        if background is not None :
-            method += 3
+    method, update, dtype, c_dtype, OP_iters,shape, O, P, amp, R, mask, I_norm, exits  = preamble(I, R, P, O, iters, \
+                             OP_iters, mask, background, method, hardware, alpha, dtype, full_output)
     
-    if method == 1 or method == 4 : 
-        update = 'O'
-    elif method == 2 or method == 5 : 
-        update = 'P'
-    elif method == 3 or method == 6 : 
-        update = 'OP'
-    
-    if dtype is None :
-        dtype   = I.dtype
-        c_dtype = (I[0,0,0] + 1J * I[0, 0, 0]).dtype
-    
-    elif dtype == 'single':
-        dtype   = np.float32
-        c_dtype = np.complex64
-
-    elif dtype == 'double':
-        dtype   = np.float64
-        c_dtype = np.complex128
-
-    if type(OP_iters) == int :
-        OP_iters = (OP_iters, 1)
-
-    if O is None :
-        # find the smallest array that fits O
-        # This is just U = M + R[:, 0].max() - R[:, 0].min()
-        #              V = K + R[:, 1].max() - R[:, 1].min()
-        shape = (I.shape[1] + R[:, 0].max() - R[:, 0].min(),\
-                 I.shape[2] + R[:, 1].max() - R[:, 1].min())
-        O = np.ones(shape, dtype = c_dtype)
-    
-    if P is None :
-        P = np.random.random(I[0].shape) + 1J*np.random.random(I[0].shape)
-    
-    P = P.astype(c_dtype)
-    O = O.astype(c_dtype)
-    
-    I_norm    = np.sum(mask * I)
-    amp       = np.sqrt(I).astype(dtype)
-    exits     = make_exits(O, P, R)
     P_heatmap = None
     O_heatmap = None
     eMods     = []
     eCons     = []
 
-    # subtract an overall offset from R's
-    R[:, 0] -= R[:, 0].max()
-    R[:, 1] -= R[:, 1].max()
-    
     # method 1 and 2, update O or P
     #---------
     if method == 1 or method == 2 or method == 3 :
@@ -233,21 +183,6 @@ def ERA(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method = N
             eMods.append(eMod)
             eCons.append(eCon)
         
-        if full_output : 
-            info = {}
-            info['exits'] = exits
-            info['I']     = np.abs(np.fft.fftn(exits, axes = (-2, -1)))**2
-            info['eMod']  = eMods
-            info['eCon']  = eCons
-            info['heatmap']  = P_heatmap
-            if update == 'O' : return O, info
-            if update == 'P' : return P, info
-            if update == 'OP': return O, P, info
-        else :
-            if update == 'O' : return O
-            if update == 'P' : return P
-            if update == 'OP': return O, P
-
     # method 4 or 5
     #---------
     # update the object with background retrieval
@@ -299,20 +234,21 @@ def ERA(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method = N
             eMods.append(eMod)
             eCons.append(eCon)
         
-        if full_output : 
-            info = {}
-            info['exits'] = exits
-            info['I']     = np.abs(np.fft.fftn(exits, axes = (-2, -1)))**2
-            info['eMod']  = eMods
-            info['eCon']  = eCons
-            info['heatmap']  = P_heatmap
-            if update == 'O' : return O, background**2, info
-            if update == 'P' : return P, background**2, info
-            if update == 'OP': return O, P, background**2, info
-        else :
-            if update == 'O':  return O, background**2
-            if update == 'P':  return P, background**2
-            if update == 'OP': return O, P, background**2
+    if full_output : 
+        info = {}
+        info['exits']      = exits
+        info['I']          = np.fft.fftshift(np.abs(np.fft.fftn(exits, axes = (-2, -1)))**2, axes = (-2, -1))
+        info['eMod']       = eMods
+        info['eCon']       = eCons
+        info['heatmap']    = P_heatmap
+        info['background'] = background**2
+        if update == 'O' : return O, info
+        if update == 'P' : return P, info
+        if update == 'OP': return O, P, info
+    else :
+        if update == 'O':  return O
+        if update == 'P':  return P
+        if update == 'OP': return O, P
 
 
 def update_progress(progress, algorithm, i, emod, esup):
@@ -563,6 +499,70 @@ def multiroll(x, shift, axis=None):
 
     return y
 
+
+def preamble(I, R, P, O, iters, OP_iters, mask, background, method, hardware, alpha, dtype, full_output):
+    """
+    This routine takes all of the arguements of ERA and applies all the boring tasks to the input before 
+    a reconstruction.
+    """
+    if method == None :
+        if O is None and P is None :
+            method = 3
+        elif O is None :
+            method = 1
+        elif P is None :
+            method = 2
+
+        if background is not None :
+            method += 3
+    
+    if method == 1 or method == 4 : 
+        update = 'O'
+    elif method == 2 or method == 5 : 
+        update = 'P'
+    elif method == 3 or method == 6 : 
+        update = 'OP'
+    
+    if dtype is None :
+        dtype   = I.dtype
+        c_dtype = (I[0,0,0] + 1J * I[0, 0, 0]).dtype
+    
+    elif dtype == 'single':
+        dtype   = np.float32
+        c_dtype = np.complex64
+
+    elif dtype == 'double':
+        dtype   = np.float64
+        c_dtype = np.complex128
+
+    if type(OP_iters) == int :
+        OP_iters = (OP_iters, 1)
+
+    if O is None :
+        # find the smallest array that fits O
+        # This is just U = M + R[:, 0].max() - R[:, 0].min()
+        #              V = K + R[:, 1].max() - R[:, 1].min()
+        shape = (I.shape[1] + R[:, 0].max() - R[:, 0].min(),\
+                 I.shape[2] + R[:, 1].max() - R[:, 1].min())
+        O = np.ones(shape, dtype = c_dtype)
+    
+    if P is None :
+        P = np.random.random(I[0].shape) + 1J*np.random.random(I[0].shape)
+    
+    P = P.astype(c_dtype)
+    O = O.astype(c_dtype)
+    
+    I_norm    = np.sum(mask * I)
+    amp       = np.sqrt(I).astype(dtype)
+    amp       = np.fft.ifftshift(amp, axes=(-2, -1))
+    mask      = np.fft.ifftshift(mask)
+    exits     = make_exits(O, P, R)
+    
+    # subtract an overall offset from R's
+    R[:, 0] -= R[:, 0].max()
+    R[:, 1] -= R[:, 1].max()
+    
+    return method, update, dtype, c_dtype, OP_iters,shape, O, P, amp, R, mask, I_norm, exits
 
 if __name__ == '__main__' :
     import numpy as np
