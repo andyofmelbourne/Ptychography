@@ -114,7 +114,7 @@ def DM_mpi(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method 
             
             # consistency projection 
             if update == 'O': O, P_heatmap = era_mpi.psup_O(exits, P, R, O.shape, P_heatmap, alpha = alpha)
-            if update == 'P': P, O_heatmap = era.psup_P_1(exits, O, R, O_heatmap, alpha = alpha)
+            if update == 'P': P, O_heatmap = era_mpi.psup_P(exits, O, R, O_heatmap, alpha = alpha)
             if update == 'OP':
                 if i % OP_iters[1] == 0 :
                     for j in range(OP_iters[0]):

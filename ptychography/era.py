@@ -565,7 +565,7 @@ def preamble(I, R, P, O, iters, OP_iters, mask, background, method, hardware, al
     
     # background
     if background is None and method in [4,5,6]:
-        background = np.random.random((I.shape)).astype(dtype)
+        background = np.random.random((I.shape)).astype(dtype) + 0.1
     elif method in [4,5,6]:
         temp       = np.empty(I.shape, dtype = dtype)
         temp[:]    = np.sqrt(np.fft.ifftshift(background))
