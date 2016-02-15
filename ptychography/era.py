@@ -133,7 +133,7 @@ def ERA(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method = N
     #    from era_mpi_gpu import ERA_mpi_gpu
     #    return ERA_mpi_gpu(I, R, P, O, iters, OP_iters, mask, background, method, hardware, alpha, dtype, full_output)
 
-    method, update, dtype, c_dtype, OP_iters,shape, O, P, amp, R, mask, I_norm, exits  = preamble(I, R, P, O, iters, \
+    method, update, dtype, c_dtype, OP_iters, O, P, amp, R, mask, I_norm, exits  = preamble(I, R, P, O, iters, \
                              OP_iters, mask, background, method, hardware, alpha, dtype, full_output)
     
     P_heatmap = None
@@ -183,8 +183,8 @@ def ERA(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method = N
             eMods.append(eMod)
             eCons.append(eCon)
         
-    # method 4 or 5
-    #---------
+    # method 4 or 5 or 6
+    #-------------------
     # update the object with background retrieval
     elif method == 4 or method == 5 or method == 6 :
         if background is None :
@@ -241,7 +241,8 @@ def ERA(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method = N
         info['eMod']       = eMods
         info['eCon']       = eCons
         info['heatmap']    = P_heatmap
-        info['background'] = background**2
+        if background is not None :
+            info['background'] = background**2
         if update == 'O' : return O, info
         if update == 'P' : return P, info
         if update == 'OP': return O, P, info
@@ -562,7 +563,7 @@ def preamble(I, R, P, O, iters, OP_iters, mask, background, method, hardware, al
     R[:, 0] -= R[:, 0].max()
     R[:, 1] -= R[:, 1].max()
     
-    return method, update, dtype, c_dtype, OP_iters,shape, O, P, amp, R, mask, I_norm, exits
+    return method, update, dtype, c_dtype, OP_iters, O, P, amp, R, mask, I_norm, exits
 
 if __name__ == '__main__' :
     import numpy as np

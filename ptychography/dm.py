@@ -153,7 +153,7 @@ def DM(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method = No
     [1] Veit Elser, "Phase retrieval by iterated projections," J. Opt. Soc. Am. A 
         20, 40-55 (2003)
     """
-    method, update, dtype, c_dtype, OP_iters,shape, O, P, amp, R, mask, I_norm, exits  = preamble(I, R, P, O, iters, \
+    method, update, dtype, c_dtype, OP_iters, O, P, amp, R, mask, I_norm, exits  = preamble(I, R, P, O, iters, \
                              OP_iters, mask, background, method, hardware, alpha, dtype, full_output)
     P_heatmap = None
     O_heatmap = None
@@ -399,7 +399,7 @@ if __name__ == '__main__' :
 
         d0 = time.time()
         Or, info = DM(I, R, P, None, iters, mask=M, method = 1, alpha=1e-10, dtype='double')
-        #Or, info = ERA(I, R, P, Or,   iters, mask=M, method = 1, alpha=1e-10, dtype='double')
+        Or, info = ERA(I, R, P, Or,   iters, mask=M, method = 1, alpha=1e-10, dtype='double')
         d1 = time.time()
         print '\ntime (s):', (d1 - d0) 
 
