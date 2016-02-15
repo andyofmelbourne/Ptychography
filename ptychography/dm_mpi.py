@@ -110,8 +110,6 @@ def DM_mpi(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method 
             # modulus projection 
             exits, background  = era.pmod_7(amp, background, exits, mask, alpha = alpha)
             
-            background[:] = np.mean(background, axis=0)
-            
             # consistency projection 
             if update == 'O': O, P_heatmap = era_mpi.psup_O(exits, P, R, O.shape, P_heatmap, alpha = alpha)
             if update == 'P': P, O_heatmap = era_mpi.psup_P(exits, O, R, O_heatmap, alpha = alpha)
@@ -123,7 +121,14 @@ def DM_mpi(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method 
                 else :
                         O, P_heatmap = era_mpi.psup_O(exits, P, R, O.shape, P_heatmap, alpha = alpha)
             
-            b_0[:]  = np.mean(background, axis=0)
+            backgroundT  = np.mean(background, axis=0)
+            backgroundTT = np.empty_like(backgroundT)
+            comm.Allreduce([backgroundT, MPI_dtype], \
+                           [backgroundTT,  MPI_dtype], \
+                           op=MPI.SUM)
+            b_0[:] = backgroundTT / float(size)
+
+            #b_0[:]  = np.mean(background, axis=0)
             ex_0    = era.make_exits(O, P, R, ex_0)
 
             exits      -= ex_0
@@ -150,7 +155,13 @@ def DM_mpi(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method 
                         Ps, Oh_t = era_mpi.psup_P(exits, Os, R, None, alpha = alpha)
                 else :
                         Os, P_heatmap = era_mpi.psup_O(exits, P, R, O.shape, P_heatmap, alpha = alpha)
-            b_0[:]  = np.mean(background, axis=0)
+            
+            backgroundT  = np.mean(background, axis=0)
+            backgroundTT = np.empty_like(backgroundT)
+            comm.Allreduce([backgroundT, MPI_dtype], \
+                           [backgroundTT,  MPI_dtype], \
+                           op=MPI.SUM)
+            b_0[:] = backgroundTT / float(size)
             
             ex_0 = era.make_exits(Os, Ps, R, ex_0)
             eMod = model_error_1(amp, ex_0, mask, b_0)
