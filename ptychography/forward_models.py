@@ -146,8 +146,8 @@ def forward_sim(shape_P = (32, 64), shape_O = (128, 128), A = 14, defocus = 0.,\
     # Sample coords (R)
     #--------------
     #ys, xs = np.arange(P.shape[0] - O.shape[0], 1, ny), np.arange(P.shape[1] - O.shape[1], 1, nx)
-    ys, xs = np.rint(np.linspace(1, P.shape[0] - O.shape[0] + 1, ny)), \
-             np.rint(np.linspace(1, P.shape[1] - O.shape[1] + 1, nx))
+    ys, xs = np.rint(np.linspace(0, P.shape[0] - O.shape[0] , ny)), \
+             np.rint(np.linspace(0, P.shape[1] - O.shape[1] , nx))
     ys, xs = np.meshgrid(ys.astype(np.int), xs.astype(np.int), indexing = 'ij')
     R = np.array(zip(ys.ravel(), xs.ravel()))
 
@@ -156,8 +156,8 @@ def forward_sim(shape_P = (32, 64), shape_O = (128, 128), A = 14, defocus = 0.,\
         dcoords = (np.random.random(R.shape) * int(random_offset)).astype(np.int)
         R += dcoords
         R[np.where(R > 0)] = 0
-        R[:, 0][np.where(R[:, 0] < shape_illum[0] - shape_O[0])] = shape_illum[0] - shape_O[0]
-        R[:, 1][np.where(R[:, 1] < shape_illum[1] - shape_O[1])] = shape_illum[1] - shape_O[1]
+        R[:, 0][np.where(R[:, 0] < shape_P[0] - shape_O[0] )] = shape_P[0] - shape_O[0]
+        R[:, 1][np.where(R[:, 1] < shape_P[1] - shape_O[1] )] = shape_P[1] - shape_O[1] 
 
     R[:, 0] -= R[:, 0].max()
     R[:, 1] -= R[:, 1].max()

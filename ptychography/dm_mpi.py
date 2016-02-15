@@ -190,7 +190,7 @@ def DM_mpi(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method 
                 if update == 'OP': bak = np.hstack((Os.ravel().copy(), Ps.ravel().copy()))
         
     if full_output : 
-        exits = comm.gather(exits, root = 0)
+        exits = comm.gather(ex_0, root = 0)
         if rank == 0 :
             exits = np.array([e for es in exits for e in es])
             
@@ -261,7 +261,7 @@ if __name__ == '__main__' :
         if rank == 0 :
             print '\nMaking the forward simulated data...'
             I, R, M, P, O, B = forward_sim(shape_P = (128, 128), shape_O = (256, 256), A = 32, defocus = 1.0e-2,\
-                                              photons_pupil = 1, ny = 10, nx = 10, random_offset = None, \
+                                              photons_pupil = 1, ny = 10, nx = 10, random_offset = 5, \
                                               background = None, mask = 100, counting_statistics = False)
             # make the masked pixels bad
             I += 10000. * ~M 
