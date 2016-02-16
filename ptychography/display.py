@@ -19,7 +19,7 @@ def if_exists_del(fnam):
         os.remove(fnam)
 
 def write_cxi(I_in, I_out, P_in, P_out, O_in, O_out, \
-              R_in, R_out, B_in, B_out, M, eMod, fnam = 'output.cxi'):
+              R_in, R_out, B_in, B_out, M, eMod, fnam = 'output.cxi', compress = False):
     """
     Write a psudo cxi file for loading and displaying later.
     
@@ -28,7 +28,10 @@ def write_cxi(I_in, I_out, P_in, P_out, O_in, O_out, \
     if_exists_del(fnam)
     f = h5py.File(fnam, 'w')
     gin = f.create_group('input')
-    gin.create_dataset('I', data = I_in)
+    if compress :
+        gin.create_dataset('I', data = I_in, compression = 'gzip')
+    else :
+        gin.create_dataset('I', data = I_in)
     gin.create_dataset('M', data = M)
     if P_in is not None :
         gin.create_dataset('P', data = P_in)
@@ -40,7 +43,10 @@ def write_cxi(I_in, I_out, P_in, P_out, O_in, O_out, \
         gin.create_dataset('B', data = B_in)
 
     gout = f.create_group('output')
-    gout.create_dataset('I', data = I_out)
+    if compress :
+        gout.create_dataset('I', data = I_out, compression = 'gzip')
+    else :
+        gout.create_dataset('I', data = I_out)
     if P_out is not None :
         gout.create_dataset('P', data = P_out)
     if O_out is not None :
