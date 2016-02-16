@@ -14,7 +14,7 @@ def ERA_mpi(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method
     MPI variant of ptychography.ERA
     """
 
-    method, update, dtype, c_dtype, MPI_dtype, MPI_c_dtype, OP_iters, O, P, amp, background, R, mask, I_norm, exits = \
+    method, update, dtype, c_dtype, MPI_dtype, MPI_c_dtype, OP_iters, O, P, amp, background, R, mask, I_norm, N, exits = \
             preamble(I, R, P, O, iters, OP_iters, mask, background, method, hardware, alpha, dtype, full_output)
 
     P_heatmap = None
@@ -124,9 +124,11 @@ def ERA_mpi(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method
                 eCons.append(eCon)
         
     if full_output : 
-        exits = comm.gather(exits, root = 0)
+        #exits = comm.gather(exits, root = 0)
+        exits_rec = np.empty((100,)+exits[0].shape, dtype=exits.dtype)
+        comm.Gather([exits, MPI_c_dtype], [exits_rec, MPI_c_dtype], root=0)
         if rank == 0 :
-            exits = np.array([e for es in exits for e in es])
+            #exits = np.array([e for es in exits for e in es])
             
             info = {}
             info['exits']   = exits
@@ -291,6 +293,7 @@ def preamble(I, R, P, O, iters, OP_iters, mask, background, method, hardware, al
         O = O.astype(c_dtype)
         
         I_norm    = np.sum(mask * I)
+        N         = len(I)
         amp       = np.sqrt(I).astype(dtype)
         amp       = np.fft.ifftshift(amp, axes=(-2, -1))
         mask      = np.fft.ifftshift(mask)
@@ -300,7 +303,7 @@ def preamble(I, R, P, O, iters, OP_iters, mask, background, method, hardware, al
         R[:, 1] -= R[:, 1].max()
 
     else :
-        amp = dtype = c_dtype = I_norm = None
+        amp = dtype = c_dtype = I_norm = N = None
 
     # now we need to share the info with everyone
     dtype   = comm.bcast(dtype, root=0)
@@ -308,6 +311,7 @@ def preamble(I, R, P, O, iters, OP_iters, mask, background, method, hardware, al
     O       = comm.bcast(O, root=0)
     P       = comm.bcast(P, root=0)
     mask    = comm.bcast(mask, root=0)
+    N       = comm.bcast(mask, root=0)
     
     # for some reason these don't like to be bcast?
     if dtype == np.float32:
@@ -337,7 +341,7 @@ def preamble(I, R, P, O, iters, OP_iters, mask, background, method, hardware, al
         temp[:]    = np.sqrt(np.fft.ifftshift(background))
         background = temp
 
-    return method, update, dtype, c_dtype, MPI_dtype, MPI_c_dtype, OP_iters, O, P, amp, background, R, mask, I_norm, exits
+    return method, update, dtype, c_dtype, MPI_dtype, MPI_c_dtype, OP_iters, O, P, amp, background, R, mask, I_norm, N, exits
 
 if __name__ == '__main__' :
     import numpy as np
