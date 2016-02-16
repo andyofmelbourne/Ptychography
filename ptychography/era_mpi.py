@@ -305,7 +305,7 @@ def preamble(I, R, P, O, iters, OP_iters, mask, background, method, hardware, al
         amp       = np.fft.ifftshift(amp, axes=(-2, -1))
         mask      = np.fft.ifftshift(mask)
 
-        P = np.fft.ifft( np.fft.ifftshift( np.fft.fftn(P) )
+        P = np.fft.ifft( np.fft.ifftshift( np.fft.fftn(P) ) )
 
         # subtract an overall offset from R's
         R[:, 0] -= R[:, 0].max()
