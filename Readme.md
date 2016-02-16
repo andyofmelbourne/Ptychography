@@ -13,6 +13,15 @@ $ git clone https://github.com/andyofmelbourne/Ptychography.git
 ```
 Done!
 
+### Requires
+- python (probably >= 2.7)
+- scipy
+- numpy
+
+And for display and testing routines:
+- h5py 
+- pyqtgraph
+
 ### Examples
 
 #### ERA on a single cpu, command line
@@ -34,20 +43,20 @@ $ python ptychography/display.py output_method1.cxi
 ```
 >>> import Ptychography as pty
 >>> I, R, M, P, O, B = pty.forward_sim()
->>> O_ret, info      = pty.ERA(I, R, P, None, iters, mask=M, method=1)
+>>> O_ret, info      = pty.ERA(I, R, P, None, iters=100, mask=M, method=1)
 ```
 
 #### ERA on 2 cpu cores
 To test the mpi routines run:
 ```
 $ cd ~/.local/lib/python2.7/site-packages/Ptychography
-$ mpirun -n 2 python ptychography/era.py
+$ mpirun -n 2 python ptychography/era_mpi.py
 ```
 
 #### Difference map on 2 cpu cores
 ```
 $ cd ~/.local/lib/python2.7/site-packages/Ptychography
-$ mpirun -n 2 python ptychography/dm.py
+$ mpirun -n 2 python ptychography/dm_mpi.py
 ```
 
 ### To run on the gpu machines

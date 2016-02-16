@@ -344,8 +344,12 @@ if __name__ == '__main__' :
     import time
     import sys
 
-    from ptychography.forward_models import forward_sim
-    from ptychography.display import write_cxi
+    from era import ERA
+    from dm import DM
+    from back_projection import Back_projection
+    from forward_models import forward_sim
+    from display import write_cxi
+    from display import display_cxi
 
     from mpi4py import MPI
 
