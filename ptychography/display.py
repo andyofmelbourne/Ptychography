@@ -19,7 +19,7 @@ def if_exists_del(fnam):
         os.remove(fnam)
 
 def write_cxi(I_in, I_out, P_in, P_out, O_in, O_out, \
-              R_in, R_out, B_in, B_out, M, eMod, fnam = 'output.cxi', compress = False):
+              R_in, R_out, B_in, B_out, M, eMod, fnam = 'output.cxi', compress = True):
     """
     Write a psudo cxi file for loading and displaying later.
     

@@ -197,13 +197,19 @@ def DM_mpi(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method 
                 if update == 'OP': bak = np.hstack((Os.ravel().copy(), Ps.ravel().copy()))
         
     if full_output : 
-        exits_rec = np.ascontiguousarray(np.empty((N,)+exits[0].shape, dtype=exits.dtype))
-        comm.Gather([np.ascontiguousarray(exits), MPI_c_dtype], [exits_rec, MPI_c_dtype], root=0)
-        exits     = exits_rec
+        # This should not be necessary but it crashes otherwise
+        I = np.fft.fftshift(np.abs(np.fft.fftn(exits, axes = (-2, -1)))**2, axes = (-2, -1))
+        if rank == 0 :
+            I_rec = [I.copy()]
+            for i in range(1, size):
+                #print 'gathering I from rank:', i
+                I_rec.append( comm.recv(source = i, tag = i) )
+            I = np.array([e for es in I_rec for e in es])
+        else :
+            comm.send(I, dest=0, tag=rank)
         if rank == 0 :
             info = {}
-            info['exits']   = exits
-            info['I']       = np.fft.fftshift(np.abs(np.fft.fftn(exits, axes = (-2, -1)))**2, axes = (-2, -1))
+            info['I']       = I
             info['eMod']    = eMods
             info['eCon']    = eCons
             info['heatmap'] = P_heatmap
