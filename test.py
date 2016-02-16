@@ -45,7 +45,7 @@ if rank == 0 :
     d0 = time.time()
 
 Or, info = DM_mpi(I, R, P, None, iters, mask=M, method = 1, hardware = 'mpi', alpha=1e-10, dtype='double')
-Or, info = ERA_mpi(I, R, P, Or, iters, mask=M, method = 1, hardware = 'mpi', alpha=1e-10, dtype='double')
+Or, info = ERA(I, R, P, Or, iters, mask=M, method = 1, hardware = 'mpi', alpha=1e-10, dtype='double')
 
 if rank == 0 : 
     d1 = time.time()

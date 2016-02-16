@@ -3,6 +3,7 @@ import sys
 from itertools import product
 
 import era
+import dm
 import era_mpi
 
 from mpi4py import MPI
@@ -283,7 +284,7 @@ if __name__ == '__main__' :
             print 'Updating the object on ',size ,' cpu cores...'
             d0 = time.time()
 
-        Or, info = DM_mpi(I, R, P, None, iters, mask=M, method = 1, hardware = 'mpi', alpha=1e-10, dtype='double')
+        Or, info = dm.DM(I, R, P, None, iters, mask=M, method = 1, hardware = 'mpi', alpha=1e-10, dtype='double')
         
         if rank == 0 : 
             d1 = time.time()

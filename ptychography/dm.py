@@ -152,6 +152,10 @@ def DM(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method = No
     [1] Veit Elser, "Phase retrieval by iterated projections," J. Opt. Soc. Am. A 
         20, 40-55 (2003)
     """
+    if hardware == 'mpi':
+        from dm_mpi import DM_mpi
+        return DM_mpi(I, R, P, O, iters, OP_iters, mask, background, method, hardware, alpha, dtype, full_output)
+    
     method, update, dtype, c_dtype, OP_iters, O, P, amp, background, R, mask, I_norm, exits = \
             era.preamble(I, R, P, O, iters, OP_iters, mask, background, method, hardware, alpha, dtype, full_output)
     
