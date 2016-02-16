@@ -198,6 +198,7 @@ def DM_mpi(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method 
         
     if full_output : 
         # This should not be necessary but it crashes otherwise
+        exits = era.make_exits(Os, Ps, R, exits)
         I = np.fft.fftshift(np.abs(np.fft.fftn(exits, axes = (-2, -1)))**2, axes = (-2, -1))
         if rank == 0 :
             I_rec = [I.copy()]
