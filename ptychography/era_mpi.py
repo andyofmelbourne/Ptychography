@@ -124,20 +124,25 @@ def ERA_mpi(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method
                 eCons.append(eCon)
         
     if full_output : 
-        if rank == 0 : 
-            exits_rec = np.ascontiguousarray(np.empty((N,)+exits[0].shape, dtype=exits.dtype))
+        # This should not be necessary but it crashes otherwise
+        I = np.fft.fftshift(np.abs(np.fft.fftn(exits, axes = (-2, -1)))**2, axes = (-2, -1))
+        if rank == 0 :
+            I_rec = []
+            for i in range(1, size):
+                print 'gathering I from rank:', i
+                I_rec.append( comm.recv(source = i, tag = i) )
+            I = np.array([e for es in I_rec for e in es])
         else :
-            exits_rec = None
-        comm.Gather([np.ascontiguousarray(exits), MPI_c_dtype], [exits_rec, MPI_c_dtype], root=0)
-        exits     = exits_rec
+            comm.send(I, dest=0, tag=rank)
+
         if rank == 0 :
             info = {}
-            info['exits']   = exits
-            info['I']       = np.fft.fftshift(np.abs(np.fft.fftn(exits, axes = (-2, -1)))**2, axes = (-2, -1))
+            info['I']       = I
             info['eMod']    = eMods
             info['eCon']    = eCons
             info['heatmap'] = P_heatmap
             if background is not None :
+                print background.shape
                 info['background'] = np.fft.fftshift(background[0])**2
             if update == 'O': return O, info
             if update == 'P': return P, info

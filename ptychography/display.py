@@ -119,13 +119,16 @@ def hstack_if_not_None(A, B):
         C = B
     return C
 
-def in_vs_out_widget(A, B, title = ''):
+def in_vs_out_widget(A, B, f = None, title = ''):
     if (A is None) and (B is None) :
         return None
     import pyqtgraph as pg
     A_in_out_plots = pg.image(title = title)
 
     A_in_out = hstack_if_not_None(A, B)
+
+    if f is not None :
+        A_in_out = f(A_in_out)
     
     if len(A_in_out.shape) == 2 :
         A_in_out_plots.setImage(A_in_out.T)
@@ -146,12 +149,15 @@ def Application(I_in, I_out, P_in, P_out, O_in,  \
     # Always start by initializing Qt (only once per application)
     app = QtGui.QApplication([])
 
-    wI  = in_vs_out_widget(M*I_in[:maxlen]**0.5, I_out[:maxlen]**0.5, 'input / output diffraction intensities')
-    wP  = in_vs_out_widget(np.abs(P_in), np.abs(P_out), 'input / output |Probe|')
-    wOa = in_vs_out_widget(np.abs(O_in), np.abs(O_out), 'input / output |Object|')
-    wOp = in_vs_out_widget(np.angle(O_in), np.angle(O_out), 'input / output angle(Object)')
-    wB  = in_vs_out_widget(B_in, B_out, 'input / output background')
-    wM  = in_vs_out_widget(M, None, 'detector mask')
+    wI  = in_vs_out_widget(M*I_in[:maxlen]**0.5, I_out[:maxlen]**0.5, title = 'input / output diffraction intensities')
+    wP  = in_vs_out_widget(P_in, P_out, np.abs, 'input / output |Probe|')
+    wOa = in_vs_out_widget(O_in, O_out, np.abs, 'input / output |Object|')
+    wOp = in_vs_out_widget(O_in, O_out, np.angle, 'input / output angle(Object)')
+    try :
+        wB  = in_vs_out_widget(B_in, B_out, title = 'input / output background')
+    except :
+        pass
+    wM  = in_vs_out_widget(M, None, title = 'detector mask')
 
     eMod_plot = pg.plot(eMod, title = 'Modulus error')
     eMod_plot.setLabel('bottom', 'iteration')
