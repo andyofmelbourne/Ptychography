@@ -54,7 +54,7 @@ def write_cxi(I_in, I_out, P_in, P_out, O_in, O_out, \
     f.close()
 
 
-def read_cxi(fnam = 'output.cxi'):
+def read_cxi(fnam = 'output.cxi', maxlen=100):
     """
     Read a psudo cxi file for loading and displaying later.
     """
@@ -64,7 +64,7 @@ def read_cxi(fnam = 'output.cxi'):
         f = fnam
     
     gin  = f['input']
-    I_in = gin['I'].value
+    I_in = gin['I'][:maxlen]
     M    = gin['M'].value
     keys = gin.keys()
     if 'P' in keys:
@@ -85,7 +85,7 @@ def read_cxi(fnam = 'output.cxi'):
         B_in = None
 
     gout  = f['output']
-    I_out = gout['I'].value
+    I_out = gout['I'][:maxlen]
     keys  = gout.keys()
     if 'P' in keys:
         P_out = gout['P'].value
@@ -168,13 +168,13 @@ def Application(I_in, I_out, P_in, P_out, O_in,  \
     sys.exit(app.exec_())
 
 
-def display_cxi(f):
+def display_cxi(f, maxlen=100):
     if type(f) == str :
         f = h5py.File(f, 'r')
    
     from PyQt4 import QtGui, QtCore
     
-    I_in, I_out, P_in, P_out, O_in, O_out, R_in, R_out, B_in, B_out, M, eMod = read_cxi(f)
+    I_in, I_out, P_in, P_out, O_in, O_out, R_in, R_out, B_in, B_out, M, eMod = read_cxi(f, maxlen=100)
     
     Application(I_in, I_out, P_in, P_out, O_in, O_out, R_in, R_out, B_in, B_out, M, eMod)
 

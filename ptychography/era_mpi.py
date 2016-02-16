@@ -129,7 +129,7 @@ def ERA_mpi(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method
         if rank == 0 :
             I_rec = []
             for i in range(1, size):
-                print 'gathering I from rank:', i
+                #print 'gathering I from rank:', i
                 I_rec.append( comm.recv(source = i, tag = i) )
             I = np.array([e for es in I_rec for e in es])
         else :
@@ -142,8 +142,9 @@ def ERA_mpi(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method
             info['eCon']    = eCons
             info['heatmap'] = P_heatmap
             if background is not None :
-                print background.shape
-                info['background'] = np.fft.fftshift(background[0])**2
+                if len(background.shape) == 3 :
+                    background = background[0]
+                info['background'] = np.fft.fftshift(background)**2
             if update == 'O': return O, info
             if update == 'P': return P, info
             if update == 'OP': return O, P, info
