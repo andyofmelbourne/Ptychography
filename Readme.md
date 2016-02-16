@@ -21,7 +21,7 @@ or both with and without background correction using the error reduction
 algorithm.
 ```
 $ cd ~/.local/lib/python2.7/site-packages/Ptychography
-$ python Ptychography/ptychography/era.py
+$ python ptychography/era.py
 ```
 
 Now you should have six files in your local directory "output_method[N].cxi".
