@@ -1,6 +1,38 @@
 # Ptychography
 ptychography toolbox module for python
 
+### To install as the local user on Linux
+```
+$ cd ~/.local/lib/python2.7/site-packages/
+
+# If this fails then 
+$ mkdir ~/.local/lib/python2.7/site-packages/
+
+$ git pull https://github.com/andyofmelbourne/Ptychography.git
+```
+Done!
+
+### Examples
+#### ERA on a single cpu
+This will perform reconstructions updating just the object, the probe 
+or both with and without background correction using the error reduction
+algorithm.
+```
+$ python ~/.local/lib/python2.7/site-packages/Ptychography/ptychography/era.py
+```
+
+Now you should have six files in your local directory "output_method[N].cxi".
+To have a look at the retrievals run:
+```
+$ python ~/.local/lib/python2.7/site-packages/Ptychography/ptychography/display.py output_method1.cxi
+```
+
+#### ERA on 2 cpu cores
+To test the mpi routines run:
+```
+$ mpirun -n 2 python ~/.local/lib/python2.7/site-packages/Ptychography/ptychography/era.py
+```
+
 ### To run on the gpu machines
 ```
 $ module load python/2.7
