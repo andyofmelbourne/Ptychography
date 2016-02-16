@@ -5,6 +5,12 @@ from itertools import product
 import era
 import era_mpi
 
+from mpi4py import MPI
+
+comm = MPI.COMM_WORLD
+rank = comm.Get_rank()
+size = comm.Get_size()
+
 def DM_mpi(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method = None, hardware = 'cpu', alpha = 1.0e-10, dtype=None, full_output = True):
     """
     MPI variant of ptychography.DM
