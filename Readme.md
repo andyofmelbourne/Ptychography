@@ -6,9 +6,10 @@ ptychography toolbox module for python
 $ cd ~/.local/lib/python2.7/site-packages/
 
 # If this fails then 
-$ mkdir ~/.local/lib/python2.7/site-packages/
+$ mkdir -p ~/.local/lib/python2.7/site-packages/
+$ cd ~/.local/lib/python2.7/site-packages/
 
-$ git pull https://github.com/andyofmelbourne/Ptychography.git
+$ git clone https://github.com/andyofmelbourne/Ptychography.git
 ```
 Done!
 
