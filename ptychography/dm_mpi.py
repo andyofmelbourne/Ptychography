@@ -16,7 +16,7 @@ def DM_mpi(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method 
     """
     MPI variant of ptychography.DM
     """
-    method, update, dtype, c_dtype, MPI_dtype, MPI_c_dtype, OP_iters, O, P, amp, background, R, mask, I_norm, exits = \
+    method, update, dtype, c_dtype, MPI_dtype, MPI_c_dtype, OP_iters, O, P, amp, background, R, mask, I_norm, N, exits = \
             era_mpi.preamble(I, R, P, O, iters, OP_iters, mask, background, method, hardware, alpha, dtype, full_output)
     
     P_heatmap = None
@@ -197,10 +197,10 @@ def DM_mpi(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method 
                 if update == 'OP': bak = np.hstack((Os.ravel().copy(), Ps.ravel().copy()))
         
     if full_output : 
-        exits = comm.gather(ex_0, root = 0)
+        exits_rec = np.ascontiguousarray(np.empty((N,)+exits[0].shape, dtype=exits.dtype))
+        comm.Gather([np.ascontiguousarray(exits), MPI_c_dtype], [exits_rec, MPI_c_dtype], root=0)
+        exits     = exits_rec
         if rank == 0 :
-            exits = np.array([e for es in exits for e in es])
-            
             info = {}
             info['exits']   = exits
             info['I']       = np.fft.fftshift(np.abs(np.fft.fftn(exits, axes = (-2, -1)))**2, axes = (-2, -1))

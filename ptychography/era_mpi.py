@@ -124,12 +124,10 @@ def ERA_mpi(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method
                 eCons.append(eCon)
         
     if full_output : 
-        #exits = comm.gather(exits, root = 0)
-        exits_rec = np.empty((100,)+exits[0].shape, dtype=exits.dtype)
-        comm.Gather([exits, MPI_c_dtype], [exits_rec, MPI_c_dtype], root=0)
+        exits_rec = np.ascontiguousarray(np.empty((N,)+exits[0].shape, dtype=exits.dtype))
+        comm.Gather([np.ascontiguousarray(exits), MPI_c_dtype], [exits_rec, MPI_c_dtype], root=0)
+        exits     = exits_rec
         if rank == 0 :
-            #exits = np.array([e for es in exits for e in es])
-            
             info = {}
             info['exits']   = exits
             info['I']       = np.fft.fftshift(np.abs(np.fft.fftn(exits, axes = (-2, -1)))**2, axes = (-2, -1))
@@ -311,7 +309,7 @@ def preamble(I, R, P, O, iters, OP_iters, mask, background, method, hardware, al
     O       = comm.bcast(O, root=0)
     P       = comm.bcast(P, root=0)
     mask    = comm.bcast(mask, root=0)
-    N       = comm.bcast(mask, root=0)
+    N       = comm.bcast(N, root=0)
     
     # for some reason these don't like to be bcast?
     if dtype == np.float32:
