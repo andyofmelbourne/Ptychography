@@ -321,9 +321,9 @@ def DM(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method = No
             if update == 'OP': bak = np.hstack((Os.ravel().copy(), Ps.ravel().copy()))
         
     if full_output : 
+        exits = era.make_exits(Os, Ps, R, exits)
         info = {}
-        info['exits'] = ex_0
-        info['I']     = np.fft.fftshift(np.abs(np.fft.fftn(ex_0, axes = (-2, -1)))**2, axes = (-2, -1))
+        info['I']     = np.fft.fftshift(np.abs(np.fft.fftn(exits, axes = (-2, -1)))**2, axes = (-2, -1))
         info['eMod']  = eMods
         info['eCon']  = eCons
         info['heatmap']  = P_heatmap
