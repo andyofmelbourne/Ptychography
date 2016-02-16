@@ -195,10 +195,10 @@ def forward_sim(shape_P = (32, 64), shape_O = (128, 128), A = 14, defocus = 0.,\
         B = B.astype(I.dtype)
     
     # calculate the error
-    amp   = ifftshift(np.sqrt(I), axes=(-2, -1))
-    exits = ifftn(exits, axes = (-2, -1))
-    exits, eMod = pmod_1(amp, exits, M, alpha = 1.0e-10, eMod_calc = True)
-    print np.sqrt(eMod / np.sum(I))
+    #amp   = ifftshift(np.sqrt(I), axes=(-2, -1))
+    #exits = ifftn(exits, axes = (-2, -1))
+    #exits, eMod = pmod_1(amp, exits, M, alpha = 1.0e-10, eMod_calc = True)
+    #print np.sqrt(eMod / np.sum(I))
 
     return I, R, M, P, O, B
 
