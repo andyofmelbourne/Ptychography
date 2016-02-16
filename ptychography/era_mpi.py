@@ -124,7 +124,10 @@ def ERA_mpi(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method
                 eCons.append(eCon)
         
     if full_output : 
-        exits_rec = np.ascontiguousarray(np.empty((N,)+exits[0].shape, dtype=exits.dtype))
+        if rank == 0 : 
+            exits_rec = np.ascontiguousarray(np.empty((N,)+exits[0].shape, dtype=exits.dtype))
+        else :
+            exits_rec = None
         comm.Gather([np.ascontiguousarray(exits), MPI_c_dtype], [exits_rec, MPI_c_dtype], root=0)
         exits     = exits_rec
         if rank == 0 :
