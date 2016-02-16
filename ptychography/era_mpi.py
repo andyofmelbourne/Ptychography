@@ -127,7 +127,7 @@ def ERA_mpi(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method
         # This should not be necessary but it crashes otherwise
         I = np.fft.fftshift(np.abs(np.fft.fftn(exits, axes = (-2, -1)))**2, axes = (-2, -1))
         if rank == 0 :
-            I_rec = []
+            I_rec = [I.copy()]
             for i in range(1, size):
                 #print 'gathering I from rank:', i
                 I_rec.append( comm.recv(source = i, tag = i) )

@@ -162,6 +162,11 @@ def Application(I_in, I_out, P_in, P_out, O_in,  \
     eMod_plot = pg.plot(eMod, title = 'Modulus error')
     eMod_plot.setLabel('bottom', 'iteration')
     eMod_plot.setLabel('left', 'error')
+
+    R_plot = pg.plot(R_in[:, 0], title = 'sample position ss, fs (red, green)', pen=pg.mkPen('r'))
+    R_plot.plot(R_in[:, 1], pen=pg.mkPen('g'))
+    R_plot.setLabel('bottom', 'index')
+    R_plot.setLabel('left', 'pixels')
     
     ## Start the Qt event loop
     signal.signal(signal.SIGINT, signal.SIG_DFL)    # allow Control-C
