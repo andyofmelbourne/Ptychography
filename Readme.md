@@ -14,24 +14,40 @@ $ git clone https://github.com/andyofmelbourne/Ptychography.git
 Done!
 
 ### Examples
-#### ERA on a single cpu
+
+#### ERA on a single cpu, command line
 This will perform reconstructions updating just the object, the probe 
 or both with and without background correction using the error reduction
 algorithm.
 ```
-$ python ~/.local/lib/python2.7/site-packages/Ptychography/ptychography/era.py
+$ cd ~/.local/lib/python2.7/site-packages/Ptychography
+$ python Ptychography/ptychography/era.py
 ```
 
 Now you should have six files in your local directory "output_method[N].cxi".
 To have a look at the retrievals run:
 ```
-$ python ~/.local/lib/python2.7/site-packages/Ptychography/ptychography/display.py output_method1.cxi
+$ python ptychography/display.py output_method1.cxi
+```
+
+#### ERA on a single cpu, within python
+```
+>>> import Ptychography as pty
+>>> I, R, M, P, O, B = pty.forward_sim()
+>>> O_ret, info      = pty.ERA(I, R, P, None, iters, mask=M, method=1)
 ```
 
 #### ERA on 2 cpu cores
 To test the mpi routines run:
 ```
-$ mpirun -n 2 python ~/.local/lib/python2.7/site-packages/Ptychography/ptychography/era.py
+$ cd ~/.local/lib/python2.7/site-packages/Ptychography
+$ mpirun -n 2 python ptychography/era.py
+```
+
+#### Difference map on 2 cpu cores
+```
+$ cd ~/.local/lib/python2.7/site-packages/Ptychography
+$ mpirun -n 2 python ptychography/dm.py
 ```
 
 ### To run on the gpu machines
