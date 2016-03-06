@@ -3,7 +3,7 @@ import sys
 from itertools import product
 
 
-def ERA(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method = None, hardware = 'cpu', alpha = 1.0e-10, dtype=None, full_output = True):
+def ERA(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method = None, Pmod_probe = False, hardware = 'cpu', alpha = 1.0e-10, dtype=None, full_output = True):
     """
     Find the phases of 'I' given O, P, R using the Error Reduction Algorithm (Ptychography).
     
@@ -69,6 +69,11 @@ def ERA(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method = N
             Update 'P' and 'background'
         method = 6 :
             Update 'O', 'P' and 'background'
+
+    Pmod_probe : Flase or int, optional, default (False)
+        If Pmod_probe == int then the modulus of the far-field probe is enforced
+        after every update of the probe for the first 'Pmod_probe' iterations. To
+        always enforce the far-field modulus then set Pmod_probe = np.inf.
     
     hardware : ('cpu', 'gpu', 'mpi'), optional, default ('cpu') 
         Choose to run the reconstruction on a single cpu core ('cpu'), a single gpu
@@ -125,15 +130,15 @@ def ERA(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method = N
     """
     if hardware == 'gpu':
         from era_gpu import ERA_gpu
-        return ERA_gpu(I, R, P, O, iters, OP_iters, mask, background, method, hardware, alpha, dtype, full_output)
+        return ERA_gpu(I, R, P, O, iters, OP_iters, mask, background, method, Pmod_probe, hardware, alpha, dtype, full_output)
     elif hardware == 'mpi':
         from era_mpi import ERA_mpi
-        return ERA_mpi(I, R, P, O, iters, OP_iters, mask, background, method, hardware, alpha, dtype, full_output)
+        return ERA_mpi(I, R, P, O, iters, OP_iters, mask, background, method, Pmod_probe, hardware, alpha, dtype, full_output)
     #elif hardware == 'mpi_gpu':
     #    from era_mpi_gpu import ERA_mpi_gpu
     #    return ERA_mpi_gpu(I, R, P, O, iters, OP_iters, mask, background, method, hardware, alpha, dtype, full_output)
 
-    method, update, dtype, c_dtype, OP_iters, O, P, amp, background, R, mask, I_norm, exits  = preamble(I, R, P, O, iters, \
+    method, update, dtype, c_dtype, OP_iters, O, P, amp, Pamp, background, R, mask, I_norm, exits  = preamble(I, R, P, O, iters, \
                              OP_iters, mask, background, method, hardware, alpha, dtype, full_output)
     
     P_heatmap = None
@@ -164,6 +169,9 @@ def ERA(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method = N
                 else :
                         O, P_heatmap = psup_O(exits, P, R, O.shape, P_heatmap, alpha = alpha)
 
+            # enforce the modulus of the far-field probe 
+            if Pmod_probe is not None and i < Pmod_probe :
+                P = Pmod_P(Pamp, P, mask, alpha)
             
             exits = make_exits(O, P, R, exits)
             
@@ -214,6 +222,10 @@ def ERA(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method = N
                 else :
                         O, P_heatmap = psup_O(exits, P, R, O.shape, P_heatmap, alpha = alpha)
 
+            # enforce the modulus of the far-field probe 
+            if Pmod_probe is not None and i < Pmod_probe :
+                P = Pmod_P(Pamp, P, mask, alpha)
+            
             background[:] = np.mean(background, axis=0)
             
             exits = make_exits(O, P, R, exits)
@@ -388,6 +400,22 @@ def Pmod_7(amp, background, exits, mask = 1, alpha = 1.0e-10, eMod_calc = False)
     exits      *= M
     background *= M
     return exits, background, eMod
+
+def Pmod_P(amp, P, mask = 1, alpha = 1.0e-10):
+    P = np.fft.fftn(P, axes = (-2, -1))
+    
+    M = np.sqrt((P.conj() * P).real) + alpha
+    M = amp / M
+
+    if mask is not 1 :
+        i = np.where(mask == 0)
+        if len(i[0]) > 0 :
+            M[i[0], i[1]] = 1.
+    P *= M
+    
+    P = np.fft.ifftn(P, axes = (-2, -1))
+    return P
+    
 
 def multiroll(x, shift, axis=None):
     """Roll an array along each axis.
@@ -571,7 +599,11 @@ def preamble(I, R, P, O, iters, OP_iters, mask, background, method, hardware, al
         temp[:]    = np.sqrt(np.fft.ifftshift(background))
         background = temp
 
-    return method, update, dtype, c_dtype, OP_iters, O, P, amp, background, R, mask, I_norm, exits
+    Pamp = np.fft.fftn(P, axes = (-2, -1))
+    Pamp = np.sqrt((Pamp.conj() * Pamp).real)
+    #Pamp = np.fft.ifftshift(Pamp, axes=(-2, -1))
+    
+    return method, update, dtype, c_dtype, OP_iters, O, P, amp, Pamp, background, R, mask, I_norm, exits
 
 if __name__ == '__main__' :
     import numpy as np
@@ -622,7 +654,6 @@ if __name__ == '__main__' :
     if test == 'all' or test == '2':
         print '\n-------------------------------------------'
         print '\nUpdating the probe on a single cpu core...'
-        d0 = time.time()
         Pr, info = ERA(I, R, P0, O, iters, mask=M, method = 2, alpha=1e-10)
         d1 = time.time()
         print '\ntime (s):', (d1 - d0) 

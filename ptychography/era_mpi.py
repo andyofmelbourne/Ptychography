@@ -9,12 +9,12 @@ comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 
-def ERA_mpi(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method = None, hardware = 'cpu', alpha = 1.0e-10, dtype=None, full_output = True):
+def ERA_mpi(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method = None, Pmod_probe = False, hardware = 'cpu', alpha = 1.0e-10, dtype=None, full_output = True):
     """
     MPI variant of ptychography.ERA
     """
 
-    method, update, dtype, c_dtype, MPI_dtype, MPI_c_dtype, OP_iters, O, P, amp, background, R, mask, I_norm, N, exits = \
+    method, update, dtype, c_dtype, MPI_dtype, MPI_c_dtype, OP_iters, O, P, amp, Pamp, background, R, mask, I_norm, N, exits = \
             preamble(I, R, P, O, iters, OP_iters, mask, background, method, hardware, alpha, dtype, full_output)
 
     P_heatmap = None
@@ -48,6 +48,10 @@ def ERA_mpi(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method
                 else :
                     O, P_heatmap = psup_O(exits, P, R, O.shape, P_heatmap, alpha, MPI_dtype, MPI_c_dtype)
             
+            # enforce the modulus of the far-field probe 
+            if Pmod_probe is not None and i < Pmod_probe :
+                P = era.Pmod_P(Pamp, P, mask, alpha)
+
             exits = era.make_exits(O, P, R, exits)
             
             # metrics
@@ -94,7 +98,11 @@ def ERA_mpi(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method
                         P, O_heatmap = psup_P(exits, O, R, None, alpha, MPI_dtype, MPI_c_dtype)
                 else :
                     O, P_heatmap = psup_O(exits, P, R, O.shape, P_heatmap, alpha, MPI_dtype, MPI_c_dtype)
-
+            
+            # enforce the modulus of the far-field probe 
+            if Pmod_probe is not None and i < Pmod_probe :
+                P = era.Pmod_P(Pamp, P, mask, alpha)
+            
             backgroundT  = np.mean(background, axis=0)
             backgroundTT = np.empty_like(backgroundT)
             comm.Allreduce([backgroundT, MPI_dtype], \
@@ -350,7 +358,9 @@ def preamble(I, R, P, O, iters, OP_iters, mask, background, method, hardware, al
         temp[:]    = np.sqrt(np.fft.ifftshift(background))
         background = temp
 
-    return method, update, dtype, c_dtype, MPI_dtype, MPI_c_dtype, OP_iters, O, P, amp, background, R, mask, I_norm, N, exits
+    Pamp = np.fft.fftn(P, axes = (-2, -1))
+    Pamp = np.sqrt((Pamp.conj() * Pamp).real)
+    return method, update, dtype, c_dtype, MPI_dtype, MPI_c_dtype, OP_iters, O, P, amp, Pamp, background, R, mask, I_norm, N, exits
 
 if __name__ == '__main__' :
     import numpy as np
