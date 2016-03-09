@@ -4,7 +4,7 @@ from itertools import product
 
 import era
 
-def DM(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method = None, hardware = 'cpu', alpha = 1.0e-10, dtype=None, full_output = True):
+def DM(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method = None, Pmod_probe = False, hardware = 'cpu', alpha = 1.0e-10, dtype=None, full_output = True):
     """
     Find the phases of 'I' given O, P, R using the Difference Map Algorithm (Ptychography).
     
@@ -70,6 +70,11 @@ def DM(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method = No
             gs = -1, gm = 1, b = 1 Update 'P' and 'background'
         method = 6 :
             gs = -1, gm = 1, b = 1 Update 'O', 'P' and 'background'
+
+    Pmod_probe : Flase or int, optional, default (False)
+        If Pmod_probe == int then the modulus of the far-field probe is enforced
+        after every update of the probe for the first 'Pmod_probe' iterations. To
+        always enforce the far-field modulus then set Pmod_probe = np.inf.
     
     hardware : ('cpu', 'gpu', 'mpi'), optional, default ('cpu') 
         Choose to run the reconstruction on a single cpu core ('cpu'), a single gpu
@@ -154,9 +159,9 @@ def DM(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method = No
     """
     if hardware == 'mpi':
         from dm_mpi import DM_mpi
-        return DM_mpi(I, R, P, O, iters, OP_iters, mask, background, method, hardware, alpha, dtype, full_output)
+        return DM_mpi(I, R, P, O, iters, OP_iters, mask, background, method, Pmod_probe, hardware, alpha, dtype, full_output)
     
-    method, update, dtype, c_dtype, OP_iters, O, P, amp, background, R, mask, I_norm, exits = \
+    method, update, dtype, c_dtype, OP_iters, O, P, amp, Pamp, background, R, mask, I_norm, exits = \
             era.preamble(I, R, P, O, iters, OP_iters, mask, background, method, hardware, alpha, dtype, full_output)
     
     P_heatmap = None
@@ -194,6 +199,10 @@ def DM(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method = No
                 else :
                         O, P_heatmap = era.psup_O(exits, P, R, O.shape, P_heatmap, alpha = alpha)
             
+            # enforce the modulus of the far-field probe 
+            if Pmod_probe is not None and i < Pmod_probe :
+                P = era.Pmod_P(Pamp, P, mask, alpha)
+
             ex_0  = era.make_exits(O, P, R, ex_0)
             
             #exits = exits.copy() - ex_0.copy() + pmod_1(amp, (2*ex_0 - exits).copy(), mask, alpha = alpha)
@@ -218,6 +227,10 @@ def DM(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method = No
                         Ps, Oh_t = era.psup_P(exits, Os, R, None, alpha = alpha)
                 else :
                         Os, P_heatmap = era.psup_O(exits, P, R, O.shape, P_heatmap, alpha = alpha)
+
+            # enforce the modulus of the far-field probe 
+            if Pmod_probe is not None and i < Pmod_probe :
+                Ps = era.Pmod_P(Pamp, Ps, mask, alpha)
             
             ex_0 = era.make_exits(Os, Ps, R, ex_0)
             eMod = model_error_1(amp, ex_0, mask)

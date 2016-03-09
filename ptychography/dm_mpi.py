@@ -12,13 +12,22 @@ comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 
-def DM_mpi(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method = None, hardware = 'cpu', alpha = 1.0e-10, dtype=None, full_output = True):
+def DM_mpi(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, \
+           Pmod_probe = False, method = None, hardware = 'cpu', \
+           alpha = 1.0e-10, dtype=None, full_output = True):
     """
     MPI variant of ptychography.DM
     """
-    method, update, dtype, c_dtype, MPI_dtype, MPI_c_dtype, OP_iters, O, P, amp, background, R, mask, I_norm, N, exits = \
-            era_mpi.preamble(I, R, P, O, iters, OP_iters, mask, background, method, hardware, alpha, dtype, full_output)
+    #method, update, dtype, c_dtype, MPI_dtype, MPI_c_dtype, OP_iters, O, P, amp,\
+    #        background, R, mask, I_norm, N, exits = 
+    #        \ era_mpi.preamble(I, R, P, O, iters, OP_iters, mask, background, \
+    #                method, hardware, alpha, dtype, full_output)
     
+    method, update, dtype, c_dtype, MPI_dtype, MPI_c_dtype, OP_iters, O, P, \
+            amp, Pamp, background, R, mask, I_norm, N, exits = \
+            era_mpi.preamble(I, R, P, O, iters, OP_iters, mask, background, \
+            method, hardware, alpha, dtype, full_output)
+
     P_heatmap = None
     O_heatmap = None
     eMods     = []
@@ -55,6 +64,10 @@ def DM_mpi(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method 
                 else :
                         O, P_heatmap = era_mpi.psup_O(exits, P, R, O.shape, P_heatmap, alpha = alpha)
             
+            # enforce the modulus of the far-field probe 
+            if Pmod_probe is not None and i < Pmod_probe :
+                P = era.Pmod_P(Pamp, P, mask, alpha)
+
             ex_0  = era.make_exits(O, P, R, ex_0)
             
             #exits = exits.copy() - ex_0.copy() + pmod_1(amp, (2*ex_0 - exits).copy(), mask, alpha = alpha)
@@ -80,6 +93,10 @@ def DM_mpi(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method 
                 else :
                         Os, P_heatmap = era_mpi.psup_O(exits, P, R, O.shape, P_heatmap, alpha = alpha)
             
+            # enforce the modulus of the far-field probe 
+            if Pmod_probe is not None and i < Pmod_probe :
+                Ps = era.Pmod_P(Pamp, Ps, mask, alpha)
+
             ex_0 = era.make_exits(Os, Ps, R, ex_0)
             eMod = model_error_1(amp, ex_0, mask)
             #eMod = model_error_1(amp, pmod_1(amp, ex_0, mask, alpha=alpha), mask, I_norm)
@@ -128,6 +145,10 @@ def DM_mpi(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method 
                 else :
                         O, P_heatmap = era_mpi.psup_O(exits, P, R, O.shape, P_heatmap, alpha = alpha)
             
+            # enforce the modulus of the far-field probe 
+            if Pmod_probe is not None and i < Pmod_probe :
+                P = era.Pmod_P(Pamp, P, mask, alpha)
+
             backgroundT  = np.mean(background, axis=0)
             backgroundTT = np.empty_like(backgroundT)
             comm.Allreduce([backgroundT, MPI_dtype], \
@@ -163,6 +184,10 @@ def DM_mpi(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method 
                 else :
                         Os, P_heatmap = era_mpi.psup_O(exits, P, R, O.shape, P_heatmap, alpha = alpha)
             
+            # enforce the modulus of the far-field probe 
+            if Pmod_probe is not None and i < Pmod_probe :
+                Ps = era.Pmod_P(Pamp, Ps, mask, alpha)
+
             backgroundT  = np.mean(background, axis=0)
             backgroundTT = np.empty_like(backgroundT)
             comm.Allreduce([backgroundT, MPI_dtype], \
