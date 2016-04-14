@@ -1,4 +1,4 @@
-# Algorith Notes
+# Algorithm Notes
 
 Mod sqaure of a complex array: 
     use ( a.conj() * a ).real
@@ -43,3 +43,5 @@ it-hpc-cxi01, delta t: 3.27306580544
 max-cfel001 , delta t: 0.4412150383
 ```
 7.4 x speedup (updating obj, probe and background)
+
+probe_centering = True really helps when updating both O and P

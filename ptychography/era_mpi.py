@@ -9,10 +9,11 @@ comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 
-def ERA_mpi(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method = None, Pmod_probe = False, hardware = 'cpu', alpha = 1.0e-10, dtype=None, full_output = True):
+def ERA_mpi(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method = None, Pmod_probe = False, probe_centering = False, hardware = 'cpu', alpha = 1.0e-10, dtype=None, full_output = True):
     """
     MPI variant of ptychography.ERA
     """
+    if rank == 0 : print 'ERA_mpi v5'    
 
     method, update, dtype, c_dtype, MPI_dtype, MPI_c_dtype, OP_iters, O, P, amp, Pamp, background, R, mask, I_norm, N, exits = \
             preamble(I, R, P, O, iters, OP_iters, mask, background, method, hardware, alpha, dtype, full_output)
@@ -45,8 +46,26 @@ def ERA_mpi(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method
                         O, P_heatmap = psup_O(exits, P, R, O.shape, None, alpha, MPI_dtype, MPI_c_dtype)
                         P, O_heatmap = psup_P(exits, O, R, None, alpha, MPI_dtype, MPI_c_dtype)
 
+                    # only centre if both P and O are updated
+                    if probe_centering :
+                        # get the centre of mass of |P|^2
+                        import scipy.ndimage
+                        a  = (P.conj() * P).real
+                        cm = np.rint(scipy.ndimage.measurements.center_of_mass(a)).astype(np.int) - np.array(a.shape)/2
+                        
+                        if rank == 0 : print 'probe cm:', cm
+                        
+                        # centre P
+                        P = era.multiroll(P, -cm)
+                        
+                        # shift O
+                        O = era.multiroll(O, -cm)
+                        
+                        P_heatmap = O_heatmap = None
+                        
                 else :
                     O, P_heatmap = psup_O(exits, P, R, O.shape, P_heatmap, alpha, MPI_dtype, MPI_c_dtype)
+
             
             # enforce the modulus of the far-field probe 
             if Pmod_probe is not None and i < Pmod_probe :
@@ -96,6 +115,24 @@ def ERA_mpi(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method
                     for j in range(OP_iters[0]):
                         O, P_heatmap = psup_O(exits, P, R, O.shape, None, alpha, MPI_dtype, MPI_c_dtype)
                         P, O_heatmap = psup_P(exits, O, R, None, alpha, MPI_dtype, MPI_c_dtype)
+                    
+                    # only centre if both P and O are updated
+                    if probe_centering :
+                        # get the centre of mass of |P|^2
+                        import scipy.ndimage
+                        a  = (P.conj() * P).real
+                        cm = np.rint(scipy.ndimage.measurements.center_of_mass(a)).astype(np.int) - np.array(a.shape)/2
+                        
+                        if rank == 0 : print 'probe cm:', cm
+                        
+                        # centre P
+                        P = era.multiroll(P, -cm)
+                        
+                        # shift O
+                        O = era.multiroll(O, -cm)
+                        
+                        P_heatmap = O_heatmap = None
+                        
                 else :
                     O, P_heatmap = psup_O(exits, P, R, O.shape, P_heatmap, alpha, MPI_dtype, MPI_c_dtype)
             

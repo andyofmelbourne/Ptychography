@@ -13,11 +13,12 @@ rank = comm.Get_rank()
 size = comm.Get_size()
 
 def DM_mpi(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, \
-           Pmod_probe = False, method = None, hardware = 'cpu', \
+           Pmod_probe = False, probe_centering = False, method = None, hardware = 'cpu', \
            alpha = 1.0e-10, dtype=None, full_output = True):
     """
     MPI variant of ptychography.DM
     """
+    if rank == 0 : print 'DM_mpi v7'    
     #method, update, dtype, c_dtype, MPI_dtype, MPI_c_dtype, OP_iters, O, P, amp,\
     #        background, R, mask, I_norm, N, exits = 
     #        \ era_mpi.preamble(I, R, P, O, iters, OP_iters, mask, background, \
@@ -61,6 +62,27 @@ def DM_mpi(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, \
                     for j in range(OP_iters[0]):
                         O, P_heatmap = era_mpi.psup_O(exits, P, R, O.shape, None, alpha = alpha)
                         P, O_heatmap = era_mpi.psup_P(exits, O, R, None, alpha = alpha)
+                    
+                    # only centre if both P and O are updated
+                    if probe_centering :
+                        # get the centre of mass of |P|^2
+                        import scipy.ndimage
+                        a  = (P.conj() * P).real
+                        cm = np.rint(scipy.ndimage.measurements.center_of_mass(a)).astype(np.int) - np.array(a.shape)/2
+                        
+                        if rank == 0 : print 'probe cm:', cm
+                        
+                        # centre P
+                        P = era.multiroll(P, -cm)
+                        
+                        # shift O
+                        O = era.multiroll(O, -cm)
+                        
+                        P_heatmap = O_heatmap = None
+
+                        # because dm remembers the last exits we need to shift them too
+                        exits = era.multiroll(exits, [0, -cm[0], -cm[1]])
+                        
                 else :
                         O, P_heatmap = era_mpi.psup_O(exits, P, R, O.shape, P_heatmap, alpha = alpha)
             
@@ -90,6 +112,22 @@ def DM_mpi(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, \
                     for j in range(OP_iters[0]):
                         Os, Ph_t = era_mpi.psup_O(exits, Ps, R, O.shape, None, alpha = alpha)
                         Ps, Oh_t = era_mpi.psup_P(exits, Os, R, None, alpha = alpha)
+                    
+                    # only centre if both P and O are updated
+                    if probe_centering :
+                        # get the centre of mass of |P|^2
+                        import scipy.ndimage
+                        a  = (Ps.conj() * Ps).real
+                        cm = np.rint(scipy.ndimage.measurements.center_of_mass(a)).astype(np.int) - np.array(a.shape)/2
+                        
+                        if rank == 0 : print 'probe cm:', cm
+                        
+                        # centre P
+                        Ps = era.multiroll(Ps, -cm)
+                        
+                        # shift O
+                        Os = era.multiroll(Os, -cm)
+                        
                 else :
                         Os, P_heatmap = era_mpi.psup_O(exits, P, R, O.shape, P_heatmap, alpha = alpha)
             
@@ -142,6 +180,26 @@ def DM_mpi(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, \
                     for j in range(OP_iters[0]):
                         O, P_heatmap = era_mpi.psup_O(exits, P, R, O.shape, None, alpha = alpha)
                         P, O_heatmap = era_mpi.psup_P(exits, O, R, None, alpha = alpha)
+                    
+                    # only centre if both P and O are updated
+                    if probe_centering :
+                        # get the centre of mass of |P|^2
+                        import scipy.ndimage
+                        a  = (P.conj() * P).real
+                        cm = np.rint(scipy.ndimage.measurements.center_of_mass(a)).astype(np.int) - np.array(a.shape)/2
+                        
+                        if rank == 0 : print 'probe cm:', cm
+                        
+                        # centre P
+                        P = era.multiroll(P, -cm)
+                        
+                        # shift O
+                        O = era.multiroll(O, -cm)
+                        
+                        P_heatmap = O_heatmap = None
+                        
+                        # because dm remembers the last exits we need to shift them too
+                        exits = era.multiroll(exits, [0, -cm[0], -cm[1]])
                 else :
                         O, P_heatmap = era_mpi.psup_O(exits, P, R, O.shape, P_heatmap, alpha = alpha)
             
@@ -181,6 +239,22 @@ def DM_mpi(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, \
                     for j in range(OP_iters[0]):
                         Os, Ph_t = era_mpi.psup_O(exits, Ps, R, O.shape, None, alpha = alpha)
                         Ps, Oh_t = era_mpi.psup_P(exits, Os, R, None, alpha = alpha)
+                    
+                    # only centre if both P and O are updated
+                    if probe_centering :
+                        # get the centre of mass of |P|^2
+                        import scipy.ndimage
+                        a  = (Ps.conj() * Ps).real
+                        cm = np.rint(scipy.ndimage.measurements.center_of_mass(a)).astype(np.int) - np.array(a.shape)/2
+                        
+                        if rank == 0 : print 'probe cm:', cm
+                        
+                        # centre P
+                        Ps = era.multiroll(Ps, -cm)
+                        
+                        # shift O
+                        Os = era.multiroll(Os, -cm)
+                        
                 else :
                         Os, P_heatmap = era_mpi.psup_O(exits, P, R, O.shape, P_heatmap, alpha = alpha)
             
