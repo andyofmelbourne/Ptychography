@@ -5,7 +5,7 @@ import sys
 
 from ptychography.forward_models import forward_sim
 from ptychography.display import write_cxi
-from ptychography.dm_mpi import DM_mpi
+from ptychography.dm_mpi import DM
 from ptychography.era import ERA
 
 from mpi4py import MPI
@@ -44,7 +44,7 @@ if rank == 0 :
     print 'Updating the object on ',size ,' cpu cores...'
     d0 = time.time()
 
-Or, info = DM_mpi(I, R, P, None, iters, mask=M, method = 1, hardware = 'mpi', alpha=1e-10, dtype='double')
+Or, info = DM(I, R, P, None, iters, mask=M, method = 1, hardware = 'mpi', alpha=1e-10, dtype='double')
 Or, info = ERA(I, R, P, Or, iters, mask=M, method = 1, hardware = 'mpi', alpha=1e-10, dtype='double')
 
 if rank == 0 : 

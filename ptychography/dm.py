@@ -4,180 +4,44 @@ from itertools import product
 
 import era
 
-def DM(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method = None, Pmod_probe = False, hardware = 'cpu', alpha = 1.0e-10, dtype=None, full_output = True):
+from mpi4py import MPI
+
+comm = MPI.COMM_WORLD
+rank = comm.Get_rank()
+size = comm.Get_size()
+
+def DM(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, \
+           Pmod_probe = False, probe_centering = False, method = None, hardware = 'cpu', \
+           alpha = 1.0e-10, dtype=None, full_output = True):
     """
-    Find the phases of 'I' given O, P, R using the Difference Map Algorithm (Ptychography).
-    
-    Parameters
-    ----------
-    I : numpy.ndarray, (N, M, K)
-        Diffraction patterns to be phased. 
-    
-        N : the number of diffraction patterns
-        M : the number of pixels along slow scan axis of the detector
-        K : the number of pixels along fast scan axis of the detector
-    
-    R : numpy.ndarray, (N, 3)
-        The translational displacements of the object corresponding to each diffraction
-        pattern in pixel units, such that:
-            O_n = O[i - R[n, 0], j - R[n, 1]]
-        This way positive numbers move the sample to the left, or, we can think of the 
-        coordinates (R) as tracking the poisition of some point in the object.
-    
-    P : numpy.ndarray, (M, K)
-        The wavefront of the real space probe incident on the surface of
-        the detector.
-    
-    O : numpy.ndarray, (U, V) 
-        The transmission function of the object (multiplicative) so that:
-            I_n = |F[ O_n x P ]|^2
-        where I_n and O_n are the n'th diffraction pattern and object respectively and
-        F[.] is the 2D Fourier transform of '.'. The field of view of the object may be
-        infinite but no smaller than the probe so that:
-            M <= U < inf
-            K <= V < inf
-    
-    iters : int
-        The number of ERA iterations to perform.
-
-    OP_iters : int or tuple, optional, default (1)
-        The number of projections onto the sample and probe consistency constraints 
-        before doing the modulus projection when update = 'OP' has been selected. 
-        If OP_iters is a tuple (say) (5, 10) then the probe and object will only be
-        updated every 10 iterations, for the other 9 iterations the object alone
-        is updated. Ideally OP_iters should be large enough so that convergence has 
-        been acheived.
-
-    mask : numpy.ndarray, (M, K), optional, default (1)
-        The valid detector pixels. Mask[i, j] = 1 (or True) when the detector pixel 
-        i, j is valid, Mask[i, j] = 0 otherwise.
-    
-    method : (None, 1, 2, 3, 4), optional, default (None)
-        method = None :
-            Automattically choose method 1, 2 or 3 based on the contents of 'O' and 'P'.
-            if   O == None and P == None then method = 3
-            elif O == None then method = 1
-            elif P == None then method = 2
-        method = 1 :
-            gs = -1, gm = 1, b = 1 Just update 'O'
-        method = 2 :
-            gs = -1, gm = 1, b = 1 Just update 'P'
-        method = 3 :
-            gs = -1, gm = 1, b = 1 Update 'O' and 'P'
-        method = 4 :
-            gs = -1, gm = 1, b = 1 Update 'O' and 'background'
-        method = 5 :
-            gs = -1, gm = 1, b = 1 Update 'P' and 'background'
-        method = 6 :
-            gs = -1, gm = 1, b = 1 Update 'O', 'P' and 'background'
-
-    Pmod_probe : Flase or int, optional, default (False)
-        If Pmod_probe == int then the modulus of the far-field probe is enforced
-        after every update of the probe for the first 'Pmod_probe' iterations. To
-        always enforce the far-field modulus then set Pmod_probe = np.inf.
-    
-    hardware : ('cpu', 'gpu', 'mpi'), optional, default ('cpu') 
-        Choose to run the reconstruction on a single cpu core ('cpu'), a single gpu
-        ('gpu') or many cpu's ('mpi'). The numerical results should be identical.
-    
-    alpha : float, optional, default (1.0e-10)
-        A floating point number to regularise array division (prevents 1/0 errors).
-    
-    dtype : (None, 'single' or 'double'), optional, default ('single')
-        Determines the numerical precision of the calculation. If dtype==None, then
-        it is determined from the datatype of I.
-
-    full_output : bool, optional, default (True)
-        If true then return a bunch of diagnostics (see info) as a python dictionary 
-        (a list of key : value pairs).
-
-    
-    Returns
-    -------
-    O / P : numpy.ndarray, (U, V) / (M, K)
-        If update = 'O': returns the transmission function of the real space object, 
-        retrieved after 'iters' iterations of the ERA algorithm. If update = 'P': 
-        returns the probe wavefront. If update = 'OP' then you get both (O, P).
-    
-    info : dict, optional
-        contains diagnostics:
-            
-            'exits' : the exit surface waves corresponding to the returned O (P)
-            'I'     : the diffraction patterns corresponding to 'exits' above
-            'eMod'  : the modulus error for each iteration:
-                      eMod_i = sqrt( sum(| exits - Pmod(exits) |^2) / I )
-            'eCon'  : the convergence error for each iteration:
-                      eCon_i = sqrt( sum(| O_i - O_i-1 |^2) / sum(| O_i |^2) )
-        
-
-    Notes 
-    -----
-    The Difference Map algorithm [1] applies the modulus and consistency constraints
-    in wierd and wonderful ways. Unlike the ERA, no iterate of DM ever fully satisfies 
-    either constraint. Instead it tries to find the solution by avoiding stagnation
-    points (a typical problem with ERA). It is recommended to combine DM and ERA when
-    phasing. The modulus and consistency constraints are:
-        modulus constraint : after propagation to the detector the exit surface waves
-                             must have the same modulus (square root of the intensity) 
-                             as the detected diffraction patterns (the I's).
-        
-        consistency constraint : the exit surface waves (W) must be separable into some object 
-                                 and probe functions so that W_n = O_n x P.
-    
-    The 'projection' operation onto one of these constraints makes the smallest change to the 
-    set of exit surface waves (in the Euclidean sense) that is required to satisfy said 
-    constraint.
-
-    DM applies the following recursion on the state vector:
-        f_i+1 = f_i + b (Ps Rm f_i - Pm Rs f_i)
-    where
-        Rs f = ((1 + gm)Ps - gm)f
-        Rm f = ((1 + gs)Pm - gs)f
-
-    and f_i is the i'th iterate of DM (in our case the exit surface waves). 'gs', 'gm' and 
-    'b' are real scalar parameters. gs and gm are the degree of relaxation for the consistency
-    and modulus constraint respectively. While |b| < 1 can be thought of as relating to 
-    step-size of the algorithm. Once DM has reached a fixed point, so that f_i+1 = f_i, 
-    the solution (f*) is obtained from either of:
-        f* = Ps Rm f_i = PM Rs f_i
-    
-    One choice for gs and gm is to set gs = -1/b, gm = 1/b and b=1 leading to:
-        Rs f  = 2 Ps f - f
-        Rm f  = f
-        f_i+1 = f_i + Ps f_i - Pm (2 Ps f - f)
-
-        and 
-        f* = Ps f_i = PM (2 Ps f_i - f_i)
-    
-    Examples 
-    --------
-
-    References
-    ----------
-    [1] Veit Elser, "Phase retrieval by iterated projections," J. Opt. Soc. Am. A 
-        20, 40-55 (2003)
+    MPI variant of ptychography.DM
     """
-    if hardware == 'mpi':
-        from dm_mpi import DM_mpi
-        return DM_mpi(I, R, P, O, iters, OP_iters, mask, background, method, Pmod_probe, hardware, alpha, dtype, full_output)
+    if rank == 0 : print 'DM_mpi v7'    
+    #method, update, dtype, c_dtype, MPI_dtype, MPI_c_dtype, OP_iters, O, P, amp,\
+    #        background, R, mask, I_norm, N, exits = 
+    #        \ era.preamble(I, R, P, O, iters, OP_iters, mask, background, \
+    #                method, hardware, alpha, dtype, full_output)
     
-    method, update, dtype, c_dtype, OP_iters, O, P, amp, Pamp, background, R, mask, I_norm, exits = \
-            era.preamble(I, R, P, O, iters, OP_iters, mask, background, method, hardware, alpha, dtype, full_output)
-    
+    method, update, dtype, c_dtype, MPI_dtype, MPI_c_dtype, OP_iters, O, P, \
+            amp, Pamp, background, R, mask, I_norm, N, exits = \
+            era.preamble(I, R, P, O, iters, OP_iters, mask, background, \
+            method, hardware, alpha, dtype, full_output)
+
     P_heatmap = None
     O_heatmap = None
     eMods     = []
     eCons     = []
-
-    if update == 'O' : bak = O.copy()
-    if update == 'P' : bak = P.copy()
-    if update == 'OP': bak = np.hstack((O.ravel().copy(), P.ravel().copy()))
+    
+    if rank == 0 :
+        if update == 'O' : bak = O.copy()
+        if update == 'P' : bak = P.copy()
+        if update == 'OP': bak = np.hstack((O.ravel().copy(), P.ravel().copy()))
     
     # method 1 or 2 or 3, update O or P or OP
     #---------
     if method == 1 or method == 2 or method == 3 :
         ex_0 = np.empty_like(exits)
-        print 'algrithm progress iteration convergence modulus error'
+        if rank == 0 : print 'algrithm progress iteration convergence modulus error'
         for i in range(iters) :
             
             # projection 
@@ -196,6 +60,27 @@ def DM(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method = No
                     for j in range(OP_iters[0]):
                         O, P_heatmap = era.psup_O(exits, P, R, O.shape, None, alpha = alpha)
                         P, O_heatmap = era.psup_P(exits, O, R, None, alpha = alpha)
+                    
+                    # only centre if both P and O are updated
+                    if probe_centering :
+                        # get the centre of mass of |P|^2
+                        import scipy.ndimage
+                        a  = (P.conj() * P).real
+                        cm = np.rint(scipy.ndimage.measurements.center_of_mass(a)).astype(np.int) - np.array(a.shape)/2
+                        
+                        if rank == 0 : print 'probe cm:', cm
+                        
+                        # centre P
+                        P = era.multiroll(P, -cm)
+                        
+                        # shift O
+                        O = era.multiroll(O, -cm)
+                        
+                        P_heatmap = O_heatmap = None
+
+                        # because dm remembers the last exits we need to shift them too
+                        exits = era.multiroll(exits, [0, -cm[0], -cm[1]])
+                        
                 else :
                         O, P_heatmap = era.psup_O(exits, P, R, O.shape, P_heatmap, alpha = alpha)
             
@@ -225,50 +110,65 @@ def DM(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method = No
                     for j in range(OP_iters[0]):
                         Os, Ph_t = era.psup_O(exits, Ps, R, O.shape, None, alpha = alpha)
                         Ps, Oh_t = era.psup_P(exits, Os, R, None, alpha = alpha)
+                    
+                    # only centre if both P and O are updated
+                    if probe_centering :
+                        # get the centre of mass of |P|^2
+                        import scipy.ndimage
+                        a  = (Ps.conj() * Ps).real
+                        cm = np.rint(scipy.ndimage.measurements.center_of_mass(a)).astype(np.int) - np.array(a.shape)/2
+                        
+                        if rank == 0 : print 'probe cm:', cm
+                        
+                        # centre P
+                        Ps = era.multiroll(Ps, -cm)
+                        
+                        # shift O
+                        Os = era.multiroll(Os, -cm)
+                        
                 else :
                         Os, P_heatmap = era.psup_O(exits, P, R, O.shape, P_heatmap, alpha = alpha)
-
+            
             # enforce the modulus of the far-field probe 
             if Pmod_probe is not None and i < Pmod_probe :
                 Ps = era.Pmod_P(Pamp, Ps, mask, alpha)
-            
+
             ex_0 = era.make_exits(Os, Ps, R, ex_0)
             eMod = model_error_1(amp, ex_0, mask)
             #eMod = model_error_1(amp, pmod_1(amp, ex_0, mask, alpha=alpha), mask, I_norm)
-
-            if update == 'O' : temp = Os
-            if update == 'P' : temp = Ps
-            if update == 'OP': temp = np.hstack((Os.ravel(), Ps.ravel()))
             
-            bak   -= temp
-            eCon   = np.sum( (bak * bak.conj()).real ) / np.sum( (temp * temp.conj()).real )
-            eCon   = np.sqrt(eCon)
-
-            eMod = np.sqrt( eMod / I_norm)
+            eMod   = comm.reduce(eMod, op=MPI.SUM)
             
-            era.update_progress(i / max(1.0, float(iters-1)), 'DM', i, eCon, eMod )
+            if rank == 0 :
+                if update == 'O' : temp = Os
+                if update == 'P' : temp = Ps
+                if update == 'OP': temp = np.hstack((Os.ravel(), Ps.ravel()))
+                
+                bak   -= temp
+                eCon   = np.sum( (bak * bak.conj()).real ) / np.sum( (temp * temp.conj()).real )
+                eCon   = np.sqrt(eCon)
 
-            eMods.append(eMod)
-            eCons.append(eCon)
-        
-            if update == 'O' : bak = Os.copy()
-            if update == 'P' : bak = Ps.copy()
-            if update == 'OP': bak = np.hstack((Os.ravel().copy(), Ps.ravel().copy()))
+                eMod = np.sqrt( eMod / I_norm)
+                
+                era.update_progress(i / max(1.0, float(iters-1)), 'DM', i, eCon, eMod )
 
+                eMods.append(eMod)
+                eCons.append(eCon)
+            
+                if update == 'O' : bak = Os.copy()
+                if update == 'P' : bak = Ps.copy()
+                if update == 'OP': bak = np.hstack((Os.ravel().copy(), Ps.ravel().copy()))
 
     # method 4 or 5 or 6
     #---------
     # update the object with background retrieval
     elif method == 4 or method == 5 or method == 6 :
-        
         ex_0 = np.empty_like(exits)
         b_0  = np.empty_like(background)
-        print 'algrithm progress iteration convergence modulus error'
+        if rank == 0 : print 'algrithm progress iteration convergence modulus error'
         for i in range(iters) :
             # modulus projection 
             exits, background  = era.pmod_7(amp, background, exits, mask, alpha = alpha)
-            
-            background[:] = np.mean(background, axis=0)
             
             # consistency projection 
             if update == 'O': O, P_heatmap = era.psup_O(exits, P, R, O.shape, P_heatmap, alpha = alpha)
@@ -278,10 +178,41 @@ def DM(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method = No
                     for j in range(OP_iters[0]):
                         O, P_heatmap = era.psup_O(exits, P, R, O.shape, None, alpha = alpha)
                         P, O_heatmap = era.psup_P(exits, O, R, None, alpha = alpha)
+                    
+                    # only centre if both P and O are updated
+                    if probe_centering :
+                        # get the centre of mass of |P|^2
+                        import scipy.ndimage
+                        a  = (P.conj() * P).real
+                        cm = np.rint(scipy.ndimage.measurements.center_of_mass(a)).astype(np.int) - np.array(a.shape)/2
+                        
+                        if rank == 0 : print 'probe cm:', cm
+                        
+                        # centre P
+                        P = era.multiroll(P, -cm)
+                        
+                        # shift O
+                        O = era.multiroll(O, -cm)
+                        
+                        P_heatmap = O_heatmap = None
+                        
+                        # because dm remembers the last exits we need to shift them too
+                        exits = era.multiroll(exits, [0, -cm[0], -cm[1]])
                 else :
                         O, P_heatmap = era.psup_O(exits, P, R, O.shape, P_heatmap, alpha = alpha)
             
-            b_0[:]  = np.mean(background, axis=0)
+            # enforce the modulus of the far-field probe 
+            if Pmod_probe is not None and i < Pmod_probe :
+                P = era.Pmod_P(Pamp, P, mask, alpha)
+
+            backgroundT  = np.mean(background, axis=0)
+            backgroundTT = np.empty_like(backgroundT)
+            comm.Allreduce([backgroundT, MPI_dtype], \
+                           [backgroundTT,  MPI_dtype], \
+                           op=MPI.SUM)
+            b_0[:] = backgroundTT / float(size)
+
+            #b_0[:]  = np.mean(background, axis=0)
             ex_0    = era.make_exits(O, P, R, ex_0)
 
             exits      -= ex_0
@@ -306,49 +237,100 @@ def DM(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method = No
                     for j in range(OP_iters[0]):
                         Os, Ph_t = era.psup_O(exits, Ps, R, O.shape, None, alpha = alpha)
                         Ps, Oh_t = era.psup_P(exits, Os, R, None, alpha = alpha)
+                    
+                    # only centre if both P and O are updated
+                    if probe_centering :
+                        # get the centre of mass of |P|^2
+                        import scipy.ndimage
+                        a  = (Ps.conj() * Ps).real
+                        cm = np.rint(scipy.ndimage.measurements.center_of_mass(a)).astype(np.int) - np.array(a.shape)/2
+                        
+                        if rank == 0 : print 'probe cm:', cm
+                        
+                        # centre P
+                        Ps = era.multiroll(Ps, -cm)
+                        
+                        # shift O
+                        Os = era.multiroll(Os, -cm)
+                        
                 else :
                         Os, P_heatmap = era.psup_O(exits, P, R, O.shape, P_heatmap, alpha = alpha)
-            b_0[:]  = np.mean(background, axis=0)
+            
+            # enforce the modulus of the far-field probe 
+            if Pmod_probe is not None and i < Pmod_probe :
+                Ps = era.Pmod_P(Pamp, Ps, mask, alpha)
+
+            backgroundT  = np.mean(background, axis=0)
+            backgroundTT = np.empty_like(backgroundT)
+            comm.Allreduce([backgroundT, MPI_dtype], \
+                           [backgroundTT,  MPI_dtype], \
+                           op=MPI.SUM)
+            b_0[:] = backgroundTT / float(size)
             
             ex_0 = era.make_exits(Os, Ps, R, ex_0)
             eMod = model_error_1(amp, ex_0, mask, b_0)
             #eMod = model_error_1(amp, pmod_1(amp, ex_0, mask, alpha=alpha), mask, I_norm)
+             
+            eMod   = comm.reduce(eMod, op=MPI.SUM)
+               
+            if rank == 0 :
+                if update == 'O' : temp = Os
+                if update == 'P' : temp = Ps
+                if update == 'OP': temp = np.hstack((Os.ravel(), Ps.ravel()))
+                
+                bak   -= temp
+                eCon   = np.sum( (bak * bak.conj()).real ) / np.sum( (temp * temp.conj()).real )
+                eCon   = np.sqrt(eCon)
+                
+                eMod = np.sqrt( eMod / I_norm)
 
-            if update == 'O' : temp = Os
-            if update == 'P' : temp = Ps
-            if update == 'OP': temp = np.hstack((Os.ravel(), Ps.ravel()))
+                era.update_progress(i / max(1.0, float(iters-1)), 'DM', i, eCon, eMod )
+
+                eMods.append(eMod)
+                eCons.append(eCon)
             
-            bak   -= temp
-            eCon   = np.sum( (bak * bak.conj()).real ) / np.sum( (temp * temp.conj()).real )
-            eCon   = np.sqrt(eCon)
-            
-            eMod = np.sqrt( eMod / I_norm)
-
-            era.update_progress(i / max(1.0, float(iters-1)), 'DM', i, eCon, eMod )
-
-            eMods.append(eMod)
-            eCons.append(eCon)
-        
-            if update == 'O' : bak = Os.copy()
-            if update == 'P' : bak = Ps.copy()
-            if update == 'OP': bak = np.hstack((Os.ravel().copy(), Ps.ravel().copy()))
+                if update == 'O' : bak = Os.copy()
+                if update == 'P' : bak = Ps.copy()
+                if update == 'OP': bak = np.hstack((Os.ravel().copy(), Ps.ravel().copy()))
         
     if full_output : 
+        # This should not be necessary but it crashes otherwise
         exits = era.make_exits(Os, Ps, R, exits)
-        info = {}
-        info['I']     = np.fft.fftshift(np.abs(np.fft.fftn(exits, axes = (-2, -1)))**2, axes = (-2, -1))
-        info['eMod']  = eMods
-        info['eCon']  = eCons
-        info['heatmap']  = P_heatmap
-        if background is not None :
-            info['background'] = np.fft.fftshift(b_0[0])**2
-        if update == 'O' : return Os, info
-        if update == 'P' : return Ps, info
-        if update == 'OP': return Os, Ps, info
+        I = np.fft.fftshift(np.abs(np.fft.fftn(exits, axes = (-2, -1)))**2, axes = (-2, -1))
+        if rank == 0 :
+            I_rec = [I.copy()]
+            for i in range(1, size):
+                #print 'gathering I from rank:', i
+                I_rec.append( comm.recv(source = i, tag = i) )
+            I = np.array([e for es in I_rec for e in es])
+        else :
+            comm.send(I, dest=0, tag=rank)
+        if rank == 0 :
+            info = {}
+            info['I']       = I
+            info['eMod']    = eMods
+            info['eCon']    = eCons
+            info['heatmap'] = P_heatmap
+            if background is not None :
+                info['background'] = np.fft.fftshift(b_0[0])**2
+            if update == 'O': return O, info
+            if update == 'P': return P, info
+            if update == 'OP': return O, P, info
+        else :
+            if update == 'OP': 
+                return None, None, None
+            else :
+                return None, None
     else :
-        if update == 'O' : return Os
-        if update == 'P' : return Ps
-        if update == 'OP': return Os, Ps
+        if rank == 0 :
+            if update == 'O' : return O
+            if update == 'P' : return P
+            if update == 'OP': return O, P
+        else :
+            if update == 'OP': 
+                return None, None
+            else :
+                return None
 
 
 
@@ -372,6 +354,11 @@ if __name__ == '__main__' :
     from display import write_cxi
     from display import display_cxi
 
+    from mpi4py import MPI
+
+    comm = MPI.COMM_WORLD
+    rank = comm.Get_rank()
+    size = comm.Get_size()
 
     if len(sys.argv) == 2 :
         iters = int(sys.argv[1])
@@ -383,94 +370,123 @@ if __name__ == '__main__' :
         iters = 10
         test = 'all'
 
-
+    # Many cpu cores 
+    #----------------
     if test in ['1', '2', '3', 'all']:
-        print '\nMaking the forward simulated data...'
-        I, R, M, P, O, B = forward_sim(shape_P = (128, 128), shape_O = (256, 256), A = 32, defocus = 1.0e-2,\
-                                          photons_pupil = 1, ny = 10, nx = 10, random_offset = None, \
-                                          background = None, mask = 100, counting_statistics = False)
-        # make the masked pixels bad
-        I += 10000. * ~M 
-        
-        # initial guess for the probe 
-        P0 = np.fft.fftshift( np.fft.ifftn( np.abs(np.fft.fftn(P)) ) )
-
+        if rank == 0 :
+            print '\nMaking the forward simulated data...'
+            I, R, M, P, O, B = forward_sim(shape_P = (128, 128), shape_O = (256, 256), A = 32, defocus = 1.0e-2,\
+                                              photons_pupil = 1, ny = 10, nx = 10, random_offset = 5, \
+                                              background = None, mask = 100, counting_statistics = False)
+            # make the masked pixels bad
+            I += 10000. * ~M 
+            
+            # initial guess for the probe 
+            P0 = np.fft.fftshift( np.fft.ifftn( np.abs(np.fft.fftn(P)) ) )
+        else :
+            I = R = O = P = P0 = M = B = None
+    
     if test == 'all' or test == '1':
-        print '\n-------------------------------------------'
-        print 'Updating the object on a single cpu core...'
+        if rank == 0 : 
+            print '\n-------------------------------------------'
+            print 'Updating the object on ',size ,' cpu cores...'
+            d0 = time.time()
 
-        d0 = time.time()
-        Or, info = DM(I, R, P, None, iters, mask=M, method = 1, alpha=1e-10, dtype='double')
-        d1 = time.time()
-        print '\ntime (s):', (d1 - d0) 
-
-        write_cxi(I, info['I'], P, P, O, Or, \
-                  R, None, None, None, M, info['eMod'], fnam = 'output_method1.cxi')
+        Or, info = DM(I, R, P, None, iters, mask=M, method = 1, hardware = 'mpi', alpha=1e-10, dtype='double')
+        
+        if rank == 0 : 
+            d1 = time.time()
+            print '\ntime (s):', (d1 - d0) 
+            
+            write_cxi(I, info['I'], P, P, O, Or, \
+                      R, None, None, None, M, info['eMod'], fnam = 'output_method1.cxi')
 
     if test == 'all' or test == '2':
-        print '\n-------------------------------------------'
-        print '\nUpdating the probe on a single cpu core...'
-        d0 = time.time()
-        Pr, info = DM(I, R, P0, O, iters, mask=M, method = 2, alpha=1e-10)
-        d1 = time.time()
-        print '\ntime (s):', (d1 - d0) 
+        if rank == 0 : 
+            print '\n-------------------------------------------'
+            print '\nUpdating the probe on a single cpu core...'
+            d0 = time.time()
+
+        Pr, info = DM_mpi(I, R, P0, O, iters, mask=M, method = 2, hardware = 'mpi', alpha=1e-10)
         
-        write_cxi(I, info['I'], P, Pr, O, O, \
-                  R, None, None, None, M, info['eMod'], fnam = 'output_method2.cxi')
+        if rank == 0 : 
+            d1 = time.time()
+            print '\ntime (s):', (d1 - d0) 
+            
+            write_cxi(I, info['I'], P, Pr, O, O, \
+                      R, None, None, None, M, info['eMod'], fnam = 'output_method2.cxi')
 
     if test == 'all' or test == '3':
-        print '\n-------------------------------------------'
-        print '\nUpdating the object and probe on a single cpu core...'
-        d0 = time.time()
-        Or, Pr, info = DM(I, R, P0, None, iters, mask=M, method = 3, alpha=1e-10)
-        d1 = time.time()
-        print '\ntime (s):', (d1 - d0) 
-        
-        write_cxi(I, info['I'], P, Pr, O, Or, \
-                  R, None, None, None, M, info['eMod'], fnam = 'output_method3.cxi')
+        if rank == 0 : 
+            print '\n-------------------------------------------'
+            print '\nUpdating the object and probe on a single cpu core...'
+            d0 = time.time()
+
+        Or, Pr, info = DM_mpi(I, R, P0, None, iters, mask=M, method = 3, hardware = 'mpi', alpha=1e-10)
+
+        if rank == 0 : 
+            d1 = time.time()
+            print '\ntime (s):', (d1 - d0) 
+            
+            write_cxi(I, info['I'], P, Pr, O, Or, \
+                      R, None, None, None, M, info['eMod'], fnam = 'output_method3.cxi')
     
 
     if test in ['4', '5', '6', 'all']:
-        print '\n\n\nMaking the forward simulated data with background...'
-        I, R, M, P, O, B = forward_sim(shape_P = (128, 128), shape_O = (256, 256), A = 32, defocus = 1.0e-2,\
-                                          photons_pupil = 100, ny = 10, nx = 10, random_offset = None, \
-                                          background = 10, mask = 100, counting_statistics = False)
-        # make the masked pixels bad
-        I += 10000. * ~M 
-        
-        # initial guess for the probe 
-        P0 = np.fft.fftshift( np.fft.ifftn( np.abs(np.fft.fftn(P)) ) )
+        if rank == 0 :
+            print '\n\n\nMaking the forward simulated data with background...'
+            I, R, M, P, O, B = forward_sim(shape_P = (128, 128), shape_O = (256, 256), A = 32, defocus = 1.0e-2,\
+                                              photons_pupil = 100, ny = 10, nx = 10, random_offset = None, \
+                                              background = 10, mask = 100, counting_statistics = False)
+            # make the masked pixels bad
+            I += 10000. * ~M 
+            
+            # initial guess for the probe 
+            P0 = np.fft.fftshift( np.fft.ifftn( np.abs(np.fft.fftn(P)) ) )
+        else :
+            I = R = O = P = P0 = M = B = None
     
     if test == 'all' or test == '4':
-        print '\n-------------------------------------------'
-        print 'Updating the object and background on a single cpu core...'
+        if rank == 0 : 
+            print '\n-------------------------------------------'
+            print 'Updating the object and background on a single cpu core...'
+            d0 = time.time()
 
-        d0 = time.time()
-        Or, info = DM(I, R, P, None, iters, mask=M, method = 4, alpha=1e-10, dtype='double')
-        d1 = time.time()
-        print '\ntime (s):', (d1 - d0) 
+        Or, info = DM_mpi(I, R, P, None, iters, mask=M, method = 4, hardware = 'mpi', alpha=1e-10, dtype='double')
 
-        write_cxi(I, info['I'], P, P, O, Or, \
-                  R, None, B, info['background'], M, info['eMod'], fnam = 'output_method4.cxi')
+        if rank == 0 : 
+            d1 = time.time()
+            print '\ntime (s):', (d1 - d0) 
+            
+            write_cxi(I, info['I'], P, P, O, Or, \
+                      R, None, B, info['background'], M, info['eMod'], fnam = 'output_method4.cxi')
 
     if test == 'all' or test == '5':
-        print '\n-------------------------------------------'
-        print '\nUpdating the probe and background on a single cpu core...'
-        d0 = time.time()
-        Pr, info = DM(I, R, P0, O, iters, mask=M, method = 5, alpha=1e-10)
-        d1 = time.time()
-        print '\ntime (s):', (d1 - d0) 
-        
-        write_cxi(I, info['I'], P, Pr, O, O, \
-                  R, None, B, info['background'], M, info['eMod'], fnam = 'output_method5.cxi')
+        if rank == 0 : 
+            print '\n-------------------------------------------'
+            print '\nUpdating the probe and background on a single cpu core...'
+            d0 = time.time()
+
+        Pr, info = DM_mpi(I, R, P0, O, iters, mask=M, method = 5, hardware = 'mpi', alpha=1e-10)
+
+        if rank == 0 : 
+            d1 = time.time()
+            print '\ntime (s):', (d1 - d0) 
+            
+            write_cxi(I, info['I'], P, Pr, O, O, \
+                      R, None, B, info['background'], M, info['eMod'], fnam = 'output_method5.cxi')
 
     if test == 'all' or test == '6':
-        print '\n-------------------------------------------'
-        print '\nUpdating the object and probe and background on a single cpu core...'
-        d0 = time.time()
-        Or, Pr, info = DM(I, R, P0, None, iters, mask=M, method = 6, alpha=1e-10)
-        d1 = time.time()
-        print '\ntime (s):', (d1 - d0) 
-        
-        write_cxi(I, info['I'], P, Pr, O, Or, \
-                  R, None, B, info['background'], M, info['eMod'], fnam = 'output_method6.cxi')
+        if rank == 0 : 
+            print '\n-------------------------------------------'
+            print '\nUpdating the object and probe and background on a single cpu core...'
+            d0 = time.time()
+
+        Or, Pr, info = DM_mpi(I, R, P0, None, iters, mask=M, method = 6, hardware = 'mpi', alpha=1e-10)
+
+        if rank == 0 : 
+            d1 = time.time()
+            print '\ntime (s):', (d1 - d0) 
+            
+            write_cxi(I, info['I'], P, Pr, O, Or, \
+                      R, None, B, info['background'], M, info['eMod'], fnam = 'output_method6.cxi')
