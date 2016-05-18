@@ -738,6 +738,7 @@ def multiroll(x, shift, axis=None):
         y[dst_blk] = x[src_blk]
 
     return y
+
 if __name__ == '__main__' :
     import numpy as np
     import time

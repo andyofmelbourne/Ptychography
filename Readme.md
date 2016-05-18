@@ -3,13 +3,7 @@ ptychography toolbox module for python
 
 ### To install as the local user on Linux
 ```
-$ cd ~/.local/lib/python2.7/site-packages/
-
-# If this fails then 
-$ mkdir -p ~/.local/lib/python2.7/site-packages/
-$ cd ~/.local/lib/python2.7/site-packages/
-
-$ git clone https://github.com/andyofmelbourne/Ptychography.git
+$ git clone https://github.com/andyofmelbourne/Ptychography.git ~/.local/lib/python2.7/site-packages/Ptychography
 ```
 Done!
 
@@ -24,19 +18,23 @@ And for display and testing routines:
 
 ### Examples
 
-#### ERA on a single cpu, command line
+#### command line usage
 This will perform reconstructions updating just the object, the probe 
-or both with and without background correction using the error reduction
-algorithm.
+or both with and without background correction using the difference map, 
+and the error reduction algorithm.
 ```
-$ cd ~/.local/lib/python2.7/site-packages/Ptychography
-$ python ptychography/era.py
+$ cp ~/.local/lib/python2.7/site-packages/Ptychography/test.py .
+$ python test.py
+```
+##### or with 2 cpu cores
+```
+$ mpirun -n 2 python test.py
 ```
 
-Now you should have six files in your local directory "output_method[N].cxi".
+Now you should have a file your local directory "output_method1.cxi".
 To have a look at the retrievals run:
 ```
-$ python ptychography/display.py output_method1.cxi
+$ python ~/.local/lib/python2.7/site-packages/Ptychography/ptychography/display.py output_method1.cxi
 ```
 
 #### ERA on a single cpu, within python
@@ -46,32 +44,10 @@ $ python ptychography/display.py output_method1.cxi
 >>> O_ret, info      = pty.ERA(I, R, P, None, iters=100, mask=M, method=1)
 ```
 
-#### ERA on 2 cpu cores
-To test the mpi routines run:
+### To run on the max-cfel machines
 ```
+$ ssh -X max-cfel
+$ source /nfs/cfel/cxi/common/cfelsoft-rh7/anaconda-py2/anaconda-setup-bash.sh 
 $ cd ~/.local/lib/python2.7/site-packages/Ptychography
-$ mpirun -n 2 python ptychography/era_mpi.py
-```
-
-#### Difference map on 2 cpu cores
-```
-$ cd ~/.local/lib/python2.7/site-packages/Ptychography
-$ mpirun -n 2 python ptychography/dm_mpi.py
-```
-
-### To run on the gpu machines
-```
-$ module load python/2.7
-$ module load opencl/intel
-$ export PYTHONPATH=/afs/desy.de/user/a/amorgan/python_packages/lib/python2.7/site-packages/:$PYTHONPATH
-$ export PYTHONPATH=/nfs/cfel/cxi/home/amorgan/2015/PETRA-P11-Oct/Ptychography/:$PYTHONPATH
-```
-
-### To run on the max-cfel001 or max-cfel002 machines
-I had to install mpi4py so this will only work for me (Andrew) at this stage:
-```
-$ ssh -X max-cfel001
-$ export PYTHONPATH=/nfs/cfel/cxi/home/amorgan/2015/PETRA-P11-Oct/Ptychography/:$PYTHONPATH
-$ cd PETRA-P11-Oct/scan_222
-$ /usr/lib64/openmpi/bin/mpirun -np 32 python test.py
+$ mpirun -n 2 python ptychography/era.py
 ```

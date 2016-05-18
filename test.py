@@ -3,10 +3,11 @@ import time
 import sys
 
 
-from ptychography.forward_models import forward_sim
-from ptychography.display import write_cxi
-from ptychography.dm_mpi import DM
-from ptychography.era import ERA
+
+from Ptychography import forward_sim
+from Ptychography import write_cxi
+from Ptychography import DM
+from Ptychography import ERA
 
 from mpi4py import MPI
 
