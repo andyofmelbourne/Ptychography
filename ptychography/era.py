@@ -10,7 +10,7 @@ comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 
-def ERA(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method = None, Pmod_probe = False, probe_centering = False, hardware = 'cpu', alpha = 1.0e-10, dtype=None, full_output = True):
+def ERA(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method = None, Pmod_probe = False, probe_centering = False, hardware = 'cpu', alpha = 1.0e-10, dtype=None, full_output = True, verbose = 'v'):
     """
     Find the phases of 'I' given O, P, R using the Error Reduction Algorithm (Ptychography).
     
@@ -135,11 +135,24 @@ def ERA(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method = N
     Examples 
     --------
     """
-    if rank == 0 : print 'ERA_mpi v5'    
+    if rank == 0 : print '\n\nERA_mpi v5'    
 
     method, update, dtype, c_dtype, MPI_dtype, MPI_c_dtype, OP_iters, O, P, amp, Pamp, background, R, mask, I_norm, N, exits = \
             preamble(I, R, P, O, iters, OP_iters, mask, background, method, hardware, alpha, dtype, full_output)
 
+    v0 = False
+    v  = False
+    if verbose == 'v' and rank == 0 :
+        v0 = True
+    if verbose == 'v':
+        v = True
+
+    comm.Barrier()
+    if v : print 'I (rank',rank,') have', len(amp),'diffraction patterns to worry about'
+    
+    comm.Barrier()
+    if v0 : print '\nObject array shape', O.shape
+    
     P_heatmap = None
     O_heatmap = None
     eMods     = []
@@ -147,6 +160,7 @@ def ERA(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method = N
     
     # method 1, 2 or 3, update O, P or OP 
     #---------
+    if v0 : print '\nmethod:', method
     if method == 1 or method == 2 or method == 3 :
         if rank == 0 : print 'algrithm progress iteration convergence modulus error'
         for i in range(iters) :
@@ -157,25 +171,36 @@ def ERA(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method = N
             
             
             # modulus projection 
+            if v0 : print '\n\n\nmodulus projection:'
+            if v0 : print '-------------------'
+            
             exits, eMod = pmod_1(amp, exits, mask, alpha = alpha, eMod_calc = True)
             
+            comm.Barrier()
+            if v0 : print '-------done--------'
+            
             # consistency projection 
-            if update == 'O': O, P_heatmap = psup_O(exits, P, R, O.shape, P_heatmap, alpha, MPI_dtype, MPI_c_dtype)
+            if v0 : print '\n\nsupport projection OP_iters, update:', OP_iters, update
+            if v0 : print '------------------------------------'
+            if update == 'O': O, P_heatmap = psup_O(exits, P, R, O.shape, P_heatmap, alpha, MPI_dtype, MPI_c_dtype, verbose)
             if update == 'P': P, O_heatmap = psup_P(exits, O, R, O_heatmap, alpha, MPI_dtype, MPI_c_dtype)
             if update == 'OP':
                 if i % OP_iters[1] == 0 :
                     for j in range(OP_iters[0]):
+                        if v0 : print '\tpsup_O'
                         O, P_heatmap = psup_O(exits, P, R, O.shape, None, alpha, MPI_dtype, MPI_c_dtype)
+                        if v0 : print '\tpsup_P'
                         P, O_heatmap = psup_P(exits, O, R, None, alpha, MPI_dtype, MPI_c_dtype)
 
                     # only centre if both P and O are updated
                     if probe_centering :
+                        if v0 : print '\tprobe centering'
                         # get the centre of mass of |P|^2
                         import scipy.ndimage
                         a  = (P.conj() * P).real
                         cm = np.rint(scipy.ndimage.measurements.center_of_mass(a)).astype(np.int) - np.array(a.shape)/2
                         
-                        if rank == 0 : print 'probe cm:', cm
+                        if v0 : print '\tprobe cm:', cm
                         
                         # centre P
                         P = multiroll(P, -cm)
@@ -187,18 +212,23 @@ def ERA(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method = N
                         
                 else :
                     O, P_heatmap = psup_O(exits, P, R, O.shape, P_heatmap, alpha, MPI_dtype, MPI_c_dtype)
+            comm.Barrier()
+            if v0 : print '---------------done-----------------'
 
             
             # enforce the modulus of the far-field probe 
             if Pmod_probe is not None and i < Pmod_probe :
+                if v0 : print '\nenforcing the moulus of the probe'
                 P = Pmod_P(Pamp, P, mask, alpha)
 
+            if v0 : print '\ngenerating the exit waves from the updated O / P / R values'
             exits = make_exits(O, P, R, exits)
             
             # metrics
             eMod   = comm.reduce(eMod, op=MPI.SUM)
 
             if rank == 0 :
+                if v0 : print '\n\ncalculating error metrics'
                 if update == 'O' : temp = O
                 if update == 'P' : temp = P
                 if update == 'OP': temp = np.hstack((O.ravel(), P.ravel()))
@@ -333,7 +363,7 @@ def ERA(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method = N
 
 
 
-def psup_O(exits, P, R, O_shape, P_heatmap = None, alpha = 1.0e-10, MPI_dtype = MPI.DOUBLE, MPI_c_dtype = MPI.DOUBLE_COMPLEX):
+def psup_O(exits, P, R, O_shape, P_heatmap = None, alpha = 1.0e-10, MPI_dtype = MPI.DOUBLE, MPI_c_dtype = MPI.DOUBLE_COMPLEX, verbose = False):
     OT = np.zeros(O_shape, P.dtype)
     
     # Calculate denominator
@@ -354,7 +384,7 @@ def psup_O(exits, P, R, O_shape, P_heatmap = None, alpha = 1.0e-10, MPI_dtype = 
     #--------------------
     for r, exit in zip(R, exits):
         OT[-r[0]:P.shape[0]-r[0], -r[1]:P.shape[1]-r[1]] += exit * P.conj()
-         
+    
     # divide
     # here we need to do an all reduce
     #---------------------------------
@@ -365,6 +395,7 @@ def psup_O(exits, P, R, O_shape, P_heatmap = None, alpha = 1.0e-10, MPI_dtype = 
     comm.Allreduce([OT, MPI_c_dtype], \
                    [O, MPI_c_dtype],  \
                     op=MPI.SUM)
+    comm.Barrier()
     O  = O / (P_heatmap + alpha)
     return O, P_heatmap
 
@@ -447,6 +478,7 @@ def preamble(I, R, P, O, iters, OP_iters, mask, background, method, hardware, al
 
         if background is not None :
             method += 3
+    method  = comm.bcast(method, root=0)
     
     if method == 1 or method == 4 : 
         update = 'O'

@@ -48,6 +48,6 @@ $ python ~/.local/lib/python2.7/site-packages/Ptychography/ptychography/display.
 ```
 $ ssh -X max-cfel
 $ source /nfs/cfel/cxi/common/cfelsoft-rh7/anaconda-py2/anaconda-setup-bash.sh 
-$ cd ~/.local/lib/python2.7/site-packages/Ptychography
-$ mpirun -n 2 python ptychography/era.py
+$ cp ~/.local/lib/python2.7/site-packages/Ptychography/test.py .
+$ mpirun -n 2 python test.py
 ```

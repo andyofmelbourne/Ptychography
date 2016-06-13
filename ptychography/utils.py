@@ -1,5 +1,30 @@
 import ConfigParser
 import sys, os
+import numpy as np
+
+def parse_cmdline_args_cxi_mask_editor():
+    import argparse
+    import os
+    parser = argparse.ArgumentParser(prog = 'python cxi_mask_editor.py', description='edit the hot/dead or pupil mask of an mll-cxi file')
+    parser.add_argument('config', type=str, \
+                        help="configuration file name")
+    parser.add_argument('mask_type', type=str, \
+                        help="on of 'hot', 'dead', 'pupil'")
+
+    args = parser.parse_args()
+
+    # check that args.config exists
+    if not os.path.exists(args.config):
+        raise NameError('config file does not exist: ' + args.config)
+
+    # process config file
+    config = ConfigParser.ConfigParser()
+    config.read(args.config)
+    
+    params = parse_parameters(config)
+     
+    params['mask_type'] = args.mask_type
+    return params
 
 def parse_cmdline_args():
     import argparse
@@ -85,3 +110,47 @@ def parse_parameters(config):
                                 pass
 
     return monitor_params
+
+def crop_to_nonzero(arrayin, mask=None):
+    """Crop arrayin to the smallest rectangle that contains all of the non-zero elements and return the result. If mask is given use that to determine non-zero elements.
+    
+    If arrayin is a list of arrays then all arrays are cropped according to the first in the list."""
+
+    if type(arrayin) == np.ndarray :
+        array = arrayin
+    elif type(arrayin) == list :
+        array = arrayin[0]
+
+    if mask==None :
+        mask = array
+    #most left point 
+    for i in range(mask.shape[1]):
+        tot = np.sum(np.abs(mask[:,i]))
+        if tot > 0.0 :
+            break
+    left = i
+    #most right point 
+    for i in range(mask.shape[1]-1,-1,-1):
+        tot = np.sum(np.abs(mask[:,i]))
+        if tot > 0.0 :
+            break
+    right = i
+    #most up point 
+    for i in range(mask.shape[0]):
+        tot = np.sum(np.abs(mask[i,:]))
+        if tot > 0.0 :
+            break
+    top = i
+    #most down point
+    for i in range(mask.shape[0]-1,-1,-1):
+        tot = np.sum(np.abs(mask[i,:]))
+        if tot > 0.0 :
+            break
+    bottom = i
+    if type(arrayin) == np.ndarray :
+        arrayout = array[top:bottom+1,left:right+1]
+    elif type(arrayin) == list :
+        arrayout = []
+        for i in arrayin :
+            arrayout.append(i[top:bottom+1,left:right+1])
+    return arrayout

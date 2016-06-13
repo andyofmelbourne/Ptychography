@@ -68,7 +68,7 @@ def DM(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, \
                         a  = (P.conj() * P).real
                         cm = np.rint(scipy.ndimage.measurements.center_of_mass(a)).astype(np.int) - np.array(a.shape)/2
                         
-                        if rank == 0 : print 'probe cm:', cm
+                        #if rank == 0 : print 'probe cm:', cm
                         
                         # centre P
                         P = era.multiroll(P, -cm)
@@ -118,7 +118,7 @@ def DM(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, \
                         a  = (Ps.conj() * Ps).real
                         cm = np.rint(scipy.ndimage.measurements.center_of_mass(a)).astype(np.int) - np.array(a.shape)/2
                         
-                        if rank == 0 : print 'probe cm:', cm
+                        #if rank == 0 : print 'probe cm:', cm
                         
                         # centre P
                         Ps = era.multiroll(Ps, -cm)
