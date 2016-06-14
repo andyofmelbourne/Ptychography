@@ -36,7 +36,7 @@ if rank == 0 :
     I += 10000. * ~M 
     
     # initial guess for the probe 
-    P0 = np.fft.fftshift( np.fft.ifftn( np.abs(np.fft.fftn(P)) ) )
+    P0 = np.fft.fftshift( np.fft.ifftn( np.abs(np.fft.fftn(P)) * np.exp(2.0J * np.pi * np.random.random((P.shape))) ))
 else :
     I = R = O = P = P0 = M = B = None
 
@@ -45,12 +45,12 @@ if rank == 0 :
     print 'Updating the object on ',size ,' cpu cores...'
     d0 = time.time()
 
-Or, info = DM(I, R, P, None, iters, mask=M, method = 1, hardware = 'mpi', alpha=1e-10, dtype='double')
-Or, info = ERA(I, R, P, Or, iters, mask=M, method = 1, hardware = 'mpi', alpha=1e-10, dtype='double')
+Or, Pr, info = DM(I, R, P0, None, iters, mask=M, method = 3, hardware = 'mpi', alpha=1e-10, dtype='double', probe_centering=True)
+Or, Pr, info = ERA(I, R, Pr, Or, iters, mask=M, method = 3, hardware = 'mpi', alpha=1e-10, dtype='double', probe_centering=True)
 
 if rank == 0 : 
     d1 = time.time()
     print '\ntime (s):', (d1 - d0) 
     
-    write_cxi(I, info['I'], P, P, O, Or, \
+    write_cxi(I, info['I'], P, Pr, O, Or, \
 	      R, None, None, None, M, info['eMod'], fnam = 'output_method1.cxi')

@@ -175,7 +175,7 @@ def ERA(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method = N
                         a  = (P.conj() * P).real
                         cm = np.rint(scipy.ndimage.measurements.center_of_mass(a)).astype(np.int) - np.array(a.shape)/2
                         
-                        if rank == 0 : print 'probe cm:', cm
+                        #if rank == 0 : print 'probe cm:', cm
                         
                         # centre P
                         P = multiroll(P, -cm)
@@ -245,7 +245,7 @@ def ERA(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method = N
                         a  = (P.conj() * P).real
                         cm = np.rint(scipy.ndimage.measurements.center_of_mass(a)).astype(np.int) - np.array(a.shape)/2
                         
-                        if rank == 0 : print 'probe cm:', cm
+                        #if rank == 0 : print 'probe cm:', cm
                         
                         # centre P
                         P = multiroll(P, -cm)
