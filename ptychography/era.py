@@ -10,7 +10,7 @@ comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 
-def ERA(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method = None, Pmod_probe = False, probe_centering = False, hardware = 'cpu', alpha = 1.0e-10, dtype=None, full_output = True, verbose = False):
+def ERA(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method = None, Pmod_probe = False, probe_centering = False, hardware = 'cpu', alpha = 1.0e-10, dtype=None, sample_blur = None, full_output = True, verbose = False):
     """
     Find the phases of 'I' given O, P, R using the Error Reduction Algorithm (Ptychography).
     
@@ -182,13 +182,13 @@ def ERA(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method = N
             # consistency projection 
             if v0 : print '\n\nsupport projection OP_iters, update:', OP_iters, update
             if v0 : print '------------------------------------'
-            if update == 'O': O, P_heatmap = psup_O(exits, P, R, O.shape, P_heatmap, alpha, MPI_dtype, MPI_c_dtype, verbose)
+            if update == 'O': O, P_heatmap = psup_O(exits, P, R, O.shape, P_heatmap, alpha, MPI_dtype, MPI_c_dtype, verbose, sample_blur)
             if update == 'P': P, O_heatmap = psup_P(exits, O, R, O_heatmap, alpha, MPI_dtype, MPI_c_dtype)
             if update == 'OP':
                 if i % OP_iters[1] == 0 :
                     for j in range(OP_iters[0]):
                         if v0 : print '\tpsup_O'
-                        O, P_heatmap = psup_O(exits, P, R, O.shape, None, alpha, MPI_dtype, MPI_c_dtype)
+                        O, P_heatmap = psup_O(exits, P, R, O.shape, None, alpha, MPI_dtype, MPI_c_dtype, verbose, sample_blur)
                         if v0 : print '\tpsup_P'
                         P, O_heatmap = psup_P(exits, O, R, None, alpha, MPI_dtype, MPI_c_dtype)
 
@@ -211,7 +211,7 @@ def ERA(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method = N
                         P_heatmap = O_heatmap = None
                         
                 else :
-                    O, P_heatmap = psup_O(exits, P, R, O.shape, P_heatmap, alpha, MPI_dtype, MPI_c_dtype)
+                    O, P_heatmap = psup_O(exits, P, R, O.shape, P_heatmap, alpha, MPI_dtype, MPI_c_dtype, verbose, sample_blur)
             comm.Barrier()
             if v0 : print '---------------done-----------------'
 
@@ -260,12 +260,12 @@ def ERA(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method = N
             exits, background, eMod = pmod_7(amp, background, exits, mask, alpha = alpha, eMod_calc = True)
             
             # consistency projection 
-            if update == 'O': O, P_heatmap = psup_O(exits, P, R, O.shape, P_heatmap, alpha, MPI_dtype, MPI_c_dtype)
-            if update == 'P': P, O_heatmap = psup_P(exits, O, R, O_heatmap, alpha, MPI_dtype, MPI_c_dtype)
+            if update == 'O': O, P_heatmap = psup_O(exits, P, R, O.shape, P_heatmap, alpha, MPI_dtype, MPI_c_dtype, verbose, sample_blur)
+            if update == 'P': P, O_heatmap = psup_P(exits, O, R, O_heatmap, alpha, MPI_dtype, MPI_c_dtype, sample_blur)
             if update == 'OP':
                 if i % OP_iters[1] == 0 :
                     for j in range(OP_iters[0]):
-                        O, P_heatmap = psup_O(exits, P, R, O.shape, None, alpha, MPI_dtype, MPI_c_dtype)
+                        O, P_heatmap = psup_O(exits, P, R, O.shape, None, alpha, MPI_dtype, MPI_c_dtype, verbose, sample_blur)
                         P, O_heatmap = psup_P(exits, O, R, None, alpha, MPI_dtype, MPI_c_dtype)
                     
                     # only centre if both P and O are updated
@@ -286,7 +286,7 @@ def ERA(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method = N
                         P_heatmap = O_heatmap = None
                         
                 else :
-                    O, P_heatmap = psup_O(exits, P, R, O.shape, P_heatmap, alpha, MPI_dtype, MPI_c_dtype)
+                    O, P_heatmap = psup_O(exits, P, R, O.shape, P_heatmap, alpha, MPI_dtype, MPI_c_dtype, verbose, sample_blur)
             
             # enforce the modulus of the far-field probe 
             if Pmod_probe is not None and i < Pmod_probe :
@@ -363,7 +363,7 @@ def ERA(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method = N
 
 
 
-def psup_O(exits, P, R, O_shape, P_heatmap = None, alpha = 1.0e-10, MPI_dtype = MPI.DOUBLE, MPI_c_dtype = MPI.DOUBLE_COMPLEX, verbose = False):
+def psup_O(exits, P, R, O_shape, P_heatmap = None, alpha = 1.0e-10, MPI_dtype = MPI.DOUBLE, MPI_c_dtype = MPI.DOUBLE_COMPLEX, verbose = False, sample_blur = None):
     OT = np.zeros(O_shape, P.dtype)
     
     # Calculate denominator
@@ -397,6 +397,14 @@ def psup_O(exits, P, R, O_shape, P_heatmap = None, alpha = 1.0e-10, MPI_dtype = 
                     op=MPI.SUM)
     comm.Barrier()
     O  = O / (P_heatmap + alpha)
+
+    if sample_blur is not None :
+        import scipy.ndimage
+        O.real = scipy.ndimage.gaussian_filter(O.real, sample_blur, mode='wrap')
+        O.imag = scipy.ndimage.gaussian_filter(O.imag, sample_blur, mode='wrap')
+    
+    # set a maximum value for the amplitude of the object
+    O = np.clip(np.abs(O), 0.0, 2.0) * np.exp(1.0J * np.angle(O))
     return O, P_heatmap
 
 def psup_P(exits, O, R, O_heatmap = None, alpha = 1.0e-10, MPI_dtype = MPI.DOUBLE, MPI_c_dtype = MPI.DOUBLE_COMPLEX):

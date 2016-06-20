@@ -165,7 +165,7 @@ def Application(I_in, I_out, P_in, P_out, O_in,  \
     wPp  = in_vs_out_widget(P_in, P_out, np.angle, 'input / output farfield angle(Probe)')
 
     # check if O_out is smaller than O_in
-    if O_out.shape[0] < O_in.shape[0] :
+    if (O_in is not None and O_out is not None) and (O_out.shape[0] < O_in.shape[0]) :
         O_out.resize((O_in.shape[0], O_out.shape[1]), refcheck=False)
     wOa = in_vs_out_widget(O_in, O_out, np.abs, 'input / output |Object|')
     wOp = in_vs_out_widget(O_in, O_out, np.angle, 'input / output angle(Object)')
