@@ -10,7 +10,7 @@ comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 
-def ERA(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method = None, Pmod_probe = False, probe_centering = False, hardware = 'cpu', alpha = 1.0e-10, dtype=None, sample_blur = None, full_output = True, verbose = False):
+def ERA(I, R, P, O, iters, OP_iters = 1, mask = 1, Fresnel = False, background = None, method = None, Pmod_probe = False, probe_centering = False, hardware = 'cpu', alpha = 1.0e-10, dtype=None, sample_blur = None, full_output = True, verbose = False):
     """
     Find the phases of 'I' given O, P, R using the Error Reduction Algorithm (Ptychography).
     
@@ -137,8 +137,38 @@ def ERA(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method = N
     """
     if rank == 0 : print '\n\nERA_mpi v5'    
 
-    method, update, dtype, c_dtype, MPI_dtype, MPI_c_dtype, OP_iters, O, P, amp, Pamp, background, R, mask, I_norm, N, exits = \
-            preamble(I, R, P, O, iters, OP_iters, mask, background, method, hardware, alpha, dtype, full_output)
+    method, update, dtype, c_dtype, MPI_dtype, MPI_c_dtype, OP_iters, O, P, amp, Pamp, background, R, mask, I_norm, N, exits, Fresnel = \
+            preamble(I, R, P, O, iters, OP_iters, mask, background, method, hardware, alpha, dtype, Fresnel, full_output)
+
+    if Fresnel is not False :
+        shape = P.shape
+        i     = np.fft.fftfreq(shape[0], 1/float(shape[0]))
+        j     = np.fft.fftfreq(shape[1], 1/float(shape[1]))
+        i, j  = np.meshgrid(i, j, indexing='ij')
+        
+        # apply phase
+        exps = np.exp(1.0J * np.pi * (i**2 * Fresnel / P.shape[0]**2 + \
+                                      j**2 * Fresnel / P.shape[1]**2))
+        def prop(x):
+            out = np.fft.ifftn(np.fft.ifftshift(x, axes=(-2,-1)), axes = (-2, -1)) * exps.conj() 
+            out = np.fft.fftn(out, axes = (-2, -1))
+            return out
+        
+        def iprop(x):
+            out = np.fft.ifftn(x, axes = (-2, -1)) * exps
+            out = np.fft.fftn(out, axes = (-2, -1))
+            return np.fft.ifftshift(out, axes=(-2,-1))
+
+        #P = iprop(np.fft.fftn(np.fft.ifftshift(P)))
+    else :
+        def prop(x):
+            out = np.fft.ifftshift(x, axes = (-2,-1))
+            out = np.fft.fftn(out, axes = (-2, -1))
+            return out
+        
+        def iprop(x):
+            out = np.fft.ifftn(x, axes = (-2, -1))
+            return np.fft.fftshift(out, axes = (-2, -1))
 
     v0 = False
     v  = False
@@ -174,7 +204,7 @@ def ERA(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method = N
             if v0 : print '\n\n\nmodulus projection:'
             if v0 : print '-------------------'
             
-            exits, eMod = pmod_1(amp, exits, mask, alpha = alpha, eMod_calc = True)
+            exits, eMod = pmod_1(amp, exits, mask, alpha = alpha, eMod_calc = True, prop = (prop, iprop))
             
             comm.Barrier()
             if v0 : print '-------done--------'
@@ -322,7 +352,8 @@ def ERA(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, method = N
         
     if full_output : 
         # This should not be necessary but it crashes otherwise
-        I = np.fft.fftshift(np.abs(np.fft.fftn(exits, axes = (-2, -1)))**2, axes = (-2, -1))
+        #I = np.fft.fftshift(np.abs(np.fft.fftn(exits, axes = (-2, -1)))**2, axes = (-2, -1))
+        I = np.fft.fftshift(np.abs(prop(exits))**2, axes = (-2,-1))
         if rank == 0 :
             I_rec = [I.copy()]
             for i in range(1, size):
@@ -471,7 +502,7 @@ def make_exits(O, P, R, exits = None):
         exits[i] = multiroll(O, [r[0], r[1]])[:P.shape[0], :P.shape[1]] * P
     return exits
 
-def preamble(I, R, P, O, iters, OP_iters, mask, background, method, hardware, alpha, dtype, full_output):
+def preamble(I, R, P, O, iters, OP_iters, mask, background, method, hardware, alpha, dtype, Fresnel, full_output):
     """
     This routine takes all of the arguements of ERA and applies all the boring tasks to the input before 
     a reconstruction.
@@ -554,6 +585,7 @@ def preamble(I, R, P, O, iters, OP_iters, mask, background, method, hardware, al
     P       = comm.bcast(P, root=0)
     mask    = comm.bcast(mask, root=0)
     N       = comm.bcast(N, root=0)
+    Fresnel = comm.bcast(Fresnel, root=0)
     
     # for some reason these don't like to be bcast?
     if dtype == np.float32:
@@ -585,12 +617,20 @@ def preamble(I, R, P, O, iters, OP_iters, mask, background, method, hardware, al
 
     Pamp = np.fft.fftn(P, axes = (-2, -1))
     Pamp = np.sqrt((Pamp.conj() * Pamp).real)
-    return method, update, dtype, c_dtype, MPI_dtype, MPI_c_dtype, OP_iters, O, P, amp, Pamp, background, R, mask, I_norm, N, exits
+    return method, update, dtype, c_dtype, MPI_dtype, MPI_c_dtype, OP_iters, O, P, amp, Pamp, background, R, mask, I_norm, N, exits, Fresnel
 
-def pmod_1(amp, exits, mask = 1, alpha = 1.0e-10, eMod_calc = False):
-    exits = np.fft.fftn(exits, axes = (-2, -1))
+def pmod_1(amp, exits, mask = 1, alpha = 1.0e-10, eMod_calc = False, prop = None):
+    if prop is None :
+        exits = np.fft.fftn(exits, axes = (-2, -1))
+    else :
+        exits = prop[0](exits)
+    
     exits, eMod = Pmod_1(amp, exits, mask, alpha, eMod_calc)
-    exits = np.fft.ifftn(exits, axes = (-2, -1))
+    
+    if prop is None :
+        exits = np.fft.ifftn(exits, axes = (-2, -1))
+    else :
+        exits = prop[1](exits)
     
     if eMod_calc : 
         return exits, eMod

@@ -5,9 +5,9 @@ Forward simulate Ptychographic problems.
 
 import numpy as np
 import bagOfns as bg
-from numpy.fft import fftn, ifftn, fftshift, ifftshift, fftfreq
+#from numpy.fft import fftn, ifftn, fftshift, ifftshift, fftfreq
+#from numpy.fft import fftfreq
 from era import make_exits, pmod_1
-
 
 def forward_sim(shape_P = (32, 64), shape_O = (128, 128), A = 14, defocus = 0.,\
                 photons_pupil = 1, ny = 10, nx = 10, random_offset = None, \
@@ -44,7 +44,16 @@ def forward_sim(shape_P = (32, 64), shape_O = (128, 128), A = 14, defocus = 0.,\
         the defocus distance in meters. If defocus is 0 then F is 
         infinite and Probe is not propagated, while if the defocus 
         is ~ 1 (F ~ 1) then we are in the far-field and the Fresnel
-        propagation is undersampled (your probe will be crap).
+        propagation is undersampled (your probe will be crap). 
+        
+        Setting defocus to a complex number tells the routine to 
+        use a Fourier Fresnel propapgator, so that:
+            defocus = (focus-sample distance) + i(sample-detector distance)
+        where (again) the distances are in inverse Fresnel numbers.
+        The real-space probe is then given by:
+            P = F-1{ A_n exp(-i pi defocus_r n^2) }
+        and the exit wave at the detector by:
+            exit = F{ P O exp(i pi n^2 / N^2 defocus_i) }
         
     photons_pupil : scalar, optional, default (1)
         The average number of photons per pixel in the pupil function.
@@ -122,25 +131,52 @@ def forward_sim(shape_P = (32, 64), shape_O = (128, 128), A = 14, defocus = 0.,\
     # Probe (P)
     #------
     # far-field circular pupil
-    i     = fftfreq(shape[0], 1/float(shape[0]))
-    j     = fftfreq(shape[1], 1/float(shape[1]))
+    i     = np.fft.fftfreq(shape[0], 1/float(shape[0]))
+    j     = np.fft.fftfreq(shape[1], 1/float(shape[1]))
     i, j  = np.meshgrid(i, j, indexing='ij')
-    P     = fftshift(i**2 + j**2) < A**2
+    P     = i**2 + j**2 < A**2
     P     = P.astype(np.complex128) * np.sqrt(photons_pupil)
     
     # defocus
     # set wavelength . z / detector pixel size = 1, and set wavelength = 1
     # now defocus is in units of (wavelength . z / detector pixel size)
-    q2      = fftshift(i**2 + j**2)
-    exp     = np.exp(-1.0J * np.pi * defocus * q2)
+    q2      = i**2 + j**2
+    exp     = np.exp(-1.0J * np.pi * defocus.real * q2)
     
     P *= exp
-    P  = fftshift(ifftn(ifftshift(P)))
+    P = np.fft.fftshift(np.fft.ifftn(P))
 
+    # If defocus has an imaginary component then add
+    # the Fresnel phase factor
+    if np.abs(defocus.imag) > 0.0 :
+        # apply phase
+        exps = np.exp(1.0J * np.pi * (i**2 / (defocus.imag * P.shape[0]**2) + \
+                                      j**2 / (defocus.imag * P.shape[1]**2)))
+        def prop(x):
+            out = np.fft.ifftn(np.fft.ifftshift(x, axes=(-2,-1)), axes = (-2, -1)) * exps.conj() 
+            out = np.fft.fftn(out, axes = (-2, -1))
+            return out
+        
+        def iprop(x):
+            out = np.fft.ifftn(x, axes = (-2, -1)) * exps
+            out = np.fft.fftn(out, axes = (-2, -1))
+            return np.fft.ifftshift(out, axes=(-2,-1))
+        
+        P = iprop(np.fft.fftn(np.fft.ifftshift(P)))
+    else :
+        def prop(x):
+            out = np.fft.ifftshift(x, axes = (-2,-1))
+            out = np.fft.fftn(out, axes = (-2, -1))
+            return out
+        
+        def iprop(x):
+            out = np.fft.ifftn(x, axes = (-2, -1))
+            return np.fft.fftshift(out, axes = (-2, -1))
+    
     # Sample (O)
     #-------
-    amp     = bg.scale(bg.brog(shape_O), 0.0, 1.0)
-    phase   = bg.scale(bg.twain(shape_O), -np.pi, np.pi)
+    amp     = bg.scale(bg.lena(shape_O), 0.0, 1.0)
+    phase   = bg.scale(bg.twain(shape_O), -0.1*np.pi, 0.1*np.pi)
     O       = amp * np.exp(1J * phase)
 
     # Sample coords (R)
@@ -166,9 +202,9 @@ def forward_sim(shape_P = (32, 64), shape_O = (128, 128), A = 14, defocus = 0.,\
     #-------------------------
     exits = np.zeros((len(R),) + P.shape, dtype=np.complex128)
     exits = make_exits(O, P, R, exits)
-    exits = fftn(exits, axes = (-2, -1))
+    exits = prop(exits)
     I     = (exits.conj() * exits).real
-    I     = ifftshift(I, axes=(-2, -1))
+    I     = np.fft.ifftshift(I, axes=(-2, -1))
     
     # Background (B)
     if background is not None :
@@ -200,12 +236,13 @@ def forward_sim(shape_P = (32, 64), shape_O = (128, 128), A = 14, defocus = 0.,\
     #exits, eMod = pmod_1(amp, exits, M, alpha = 1.0e-10, eMod_calc = True)
     #print np.sqrt(eMod / np.sum(I))
 
-    return I, R, M, P, O, B
+    return I, R, M, P, O, B, prop, iprop
 
 
 
 
-
-
-
-    
+if __name__ == '__main__':
+    print '\nMaking the forward simulated data...'
+    I, R, M, P, O, B = forward_sim(shape_P = (128, 128), shape_O = (256, 256), A = 32, defocus = 0.0e-2 + 10.0J,\
+				      photons_pupil = 1, ny = 10, nx = 10, random_offset = 5, \
+				      background = None, mask = 100, counting_statistics = False)

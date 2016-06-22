@@ -919,6 +919,18 @@ def orientate(arrayin,orientation):
         print 'orientation must be an integer between 1 and 8.'
     return np.copy(arrayin[y,x])
     
+def lena(shape=(256, 256)):
+    """Load an image of lena and return the array.
+
+    it is an 512x512 np.uint8 array.
+    obtained from: http://www.ece.rice.edu/~wakin/images/
+    """
+    from scipy import misc
+    fnam = os.path.dirname(os.path.realpath(__file__)) + os.path.normcase('/lena512.bmp')
+    array = misc.imread(fnam).astype(np.float)
+    if shape != (512, 512) :
+        array = interpolate(array, shape)
+    return array 
 
 def brog(shape=(256, 256)):
     """Load an image of debroglie and return the array.
