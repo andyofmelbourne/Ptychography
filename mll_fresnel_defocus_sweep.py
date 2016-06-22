@@ -1,11 +1,3 @@
-"""
-Load an mll cxi file with:
-process_2/dark
-process_2/whitefield
-process_2/background
-process_2/ptycho_mask
-"""
-
 import numpy as np
 import h5py
 import scipy.constants as sc
@@ -146,19 +138,6 @@ def get_mask(f, params):
     
     return mask, I_crop_pad_downsample 
 
-def make_O0(I, R, P, O, mask):
-    O = np.ones((1024, 1024), dtype=np.complex128)
-    
-    method, update, dtype, c_dtype, MPI_dtype, MPI_c_dtype, OP_iters, O, P, amp, Pamp, background, R, mask, I_norm, N, exits = \
-            era.preamble(I, R, P, O, None, None, mask, None, 3, 'mpi', 1.0e-10, 'double', 0.0, False)
-    
-    # set the exit waves to the sqrt(I)
-    exits = np.fft.fftshift(amp, axes=(-2,-1)) + 0J  
-    
-    P_heatmap    = None
-    O_heatmap    = None
-    O, P_heatmap = era.psup_O(exits, P, R, O.shape, P_heatmap, 1.0e-10, MPI_dtype, MPI_c_dtype, False, None)
-    return O
 
 def get_Rs(f, mask, params):
     # get the sample positions
@@ -367,13 +346,11 @@ def make_P0(f, mask, Rindex, F, I_crop_pad_downsample, params):
     print 'propagating the whitefield to the sample plane'
     P0 = iprop(whitefield + 0J)
     #P0 = np.fft.fftshift(whitefield) + 0J
-    return P0, prop, iprop, np.fft.fftshift(whitefield), exps
+    return P0, prop, iprop, np.fft.fftshift(whitefield)
 
 def make_O0(I, R, P, O, mask):
-    #O = np.ones((1024, 1024), dtype=np.complex128)
-    
-    method, update, dtype, c_dtype, MPI_dtype, MPI_c_dtype, OP_iters, O, P, amp, Pamp, background, R, mask, I_norm, N, exits, Fresnel = \
-            era.preamble(I, R, P, O, None, None, mask, None, 3, 'mpi', 1.0e-10, 'double', 0.0, False)
+    method, update, dtype, c_dtype, MPI_dtype, MPI_c_dtype, OP_iters, O, P, amp, Pamp, background, R, mask, I_norm, N, exits = \
+            era.preamble(I, R, P, O, None, None, mask, None, 3, 'mpi', 1.0e-10, 'double', False)
     
     O.fill(1.)
     
@@ -406,74 +383,32 @@ if __name__ == '__main__':
         
         print '\n\nP0'
         print '####'
-        P0, prop, iprop, whitefield, exps = make_P0(f, mask, Rindex, F, I_crop_pad_downsample, params)
+        P0, prop, iprop, whitefield = make_P0(f, mask, Rindex, F, I_crop_pad_downsample, params)
         
+        print '\n\nO0'
+        print '####'
+        
+        #O0 = make_O0(I, Rpix, whitefield + 0J, None, mask)
+        O0 = make_O0(I, Rpix, P0, None, mask)
+        """
+        Os = []
+        heatmaps = []
+        for defocus in np.linspace(1.0e-3, 3.0e-3, 50):
+            print '\n\nDefocus:', defocus
+            params['input']['defocus'] = defocus
+            R, Rpix, Rindex, F = get_Rs(f, mask, params)
+            
+            O0, P_heatmap = make_O0(I, Rpix, whitefield + 0J, None, mask)
+            Os.append(O0.copy())
+            heatmaps.append(P_heatmap.copy())
+        """
         
         print '\n Array shapes:'
         print '\t I   ', I.shape
         print '\t P0  ', P0.shape
         print '\t mask', mask.shape
         print '\t R   ', R.shape
+
+
+
      
-    comm.Barrier()
-
-    # Initialise
-    ############
-    eMod = []
-    if rank == 0 :
-        P  = P0.copy()
-        #
-        info = {}
-        info['I'] = I
-        P00 = whitefield + 0J
-    else :
-        F = I = Rpix = P = O = mask = P00 = None
-
-
-    if rank == 0 : 
-        print '\n\nO0'
-        print '####'
-    O0 = make_O0(I, Rpix, P00, None, mask)
-    O  = O0.copy()
-
-
-    # Phase
-    ############
-    if rank == 0 : print '\n\nPhase'
-    if rank == 0 : print '#####'
-    
-    d0 = time.time()
-
-    if params['phasing']['fresnel_psup'] :
-        O, P = Psup(I, Rpix, P, O, params['phasing']['era_iters'], OP_iters = params['phasing']['op_iters'], \
-                          mask = mask, background = None, method = params['phasing']['method'], 
-                          hardware = 'cpu', alpha = params['phasing']['alpha'], dtype = params['phasing']['dtype'], full_output = True, \
-                          verbose = False, sample_blur = params['phasing']['sample_blur'])
-    
-    for i in range(params['phasing']['outer_loop']): 
-        if params['phasing']['dm_iters'] > 0 :
-            O, P, info =  DM(I, Rpix, P, O, params['phasing']['dm_iters'], OP_iters = params['phasing']['op_iters'], \
-                          mask = mask, background = None, method = params['phasing']['method'], Pmod_probe = params['phasing']['pmod_probe'] , \
-                          probe_centering = params['phasing']['probe_centering'], hardware = 'cpu', \
-                          alpha = params['phasing']['alpha'], dtype = params['phasing']['dtype'], full_output = True)
-                          #sample_blur = params['phasing']['sample_blur'])
-
-            if rank == 0 : eMod += info['eMod']
-
-        if params['phasing']['era_iters'] > 0 :
-            O, P, info =  ERA(I, Rpix, P, O, params['phasing']['era_iters'], OP_iters = params['phasing']['op_iters'], \
-                          mask = mask, Fresnel = F, background = None, method = params['phasing']['method'], Pmod_probe = params['phasing']['pmod_probe'] , \
-                          probe_centering = params['phasing']['probe_centering'], hardware = 'cpu', \
-                          alpha = params['phasing']['alpha'], dtype = params['phasing']['dtype'], full_output = True, verbose = False, \
-                          sample_blur = params['phasing']['sample_blur'])
-
-            if rank == 0 : eMod += info['eMod']
-    
-    d1 = time.time()
-    
-    # Output
-    ############
-    if rank == 0 :
-        print '\ntime:', d1-d0
-        write_cxi(I, info['I'], P0, P, O0, O, \
-                  Rpix, Rpix, None, None, mask, eMod, fnam = params['output']['fnam'], compress = True)
