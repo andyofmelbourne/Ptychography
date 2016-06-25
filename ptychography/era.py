@@ -350,47 +350,31 @@ def ERA(I, R, P, O, iters, OP_iters = 1, mask = 1, Fresnel = False, background =
                 eMods.append(eMod)
                 eCons.append(eCon)
         
-    if full_output : 
-        # This should not be necessary but it crashes otherwise
-        #I = np.fft.fftshift(np.abs(np.fft.fftn(exits, axes = (-2, -1)))**2, axes = (-2, -1))
-        I = np.fft.fftshift(np.abs(prop(exits))**2, axes = (-2,-1))
-        if rank == 0 :
-            I_rec = [I.copy()]
-            for i in range(1, size):
-                #print 'gathering I from rank:', i
-                I_rec.append( comm.recv(source = i, tag = i) )
-            I = np.array([e for es in I_rec for e in es])
-        else :
-            comm.send(I, dest=0, tag=rank)
-
-        if rank == 0 :
-            info = {}
-            info['I']       = I
-            info['eMod']    = eMods
-            info['eCon']    = eCons
-            info['heatmap'] = P_heatmap
-            if background is not None :
-                if len(background.shape) == 3 :
-                    background = background[0]
-                info['background'] = np.fft.fftshift(background)**2
-            if update == 'O': return O, info
-            if update == 'P': return P, info
-            if update == 'OP': return O, P, info
-        else :
-            if update == 'OP': 
-                return None, None, None
-            else :
-                return None, None
+    # This should not be necessary but it crashes otherwise
+    #I = np.fft.fftshift(np.abs(np.fft.fftn(exits, axes = (-2, -1)))**2, axes = (-2, -1))
+    I = np.fft.fftshift(np.abs(prop(exits))**2, axes = (-2,-1))
+    if rank == 0 :
+        I_rec = [I.copy()]
+        for i in range(1, size):
+            #print 'gathering I from rank:', i
+            I_rec.append( comm.recv(source = i, tag = i) )
+        I = np.array([e for es in I_rec for e in es])
     else :
-        if rank == 0 :
-            if update == 'O' : return O
-            if update == 'P' : return P
-            if update == 'OP': return O, P
-        else :
-            if update == 'OP': 
-                return None, None
-            else :
-                return None
+        comm.send(I, dest=0, tag=rank)
+
+    if rank == 0 :
+        info = {}
+        info['I']       = I
+        info['eMod']    = eMods
+        info['eCon']    = eCons
+        info['heatmap'] = P_heatmap
+        if background is not None :
+            if len(background.shape) == 3 :
+                background = background[0]
+            info['background'] = np.fft.fftshift(background)**2
+        return O, P, info
+    else :
+        return None, None, None
 
 
 
