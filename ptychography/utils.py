@@ -1,5 +1,6 @@
 import ConfigParser
 import sys, os
+import numpy as np
 
 def parse_cmdline_args():
     import argparse
