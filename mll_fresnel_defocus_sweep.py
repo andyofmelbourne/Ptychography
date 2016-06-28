@@ -161,7 +161,9 @@ def get_Rs(f, mask, params):
     # get the grid steps 
     steps = [f['entry_1/instrument_1/motor_positions/scan_axes/Slow axis/Steps'].value, 
              f['entry_1/instrument_1/motor_positions/scan_axes/Fast axis/Steps'].value]
-                    
+    
+    steps_read = f['/entry_1/instrument_1/motor_positions/scan_axes/Steps'].value                   
+    
     print '\n'
     print 'MLL1 name                 :', mll1_name
     print 'MLL2 name                 :', mll2_name
@@ -190,31 +192,30 @@ def get_Rs(f, mask, params):
         X = f['entry_1/instrument_1/motor_positions/scan_axes/Fast axis/POSITION'].value
         Y = f['entry_1/instrument_1/motor_positions/scan_axes/Slow axis/POSITION'].value
     
-    Rindex  = np.arange(len(X))
-    R       = np.zeros((len(X), 3), dtype=np.float)
-    R[:, 0] = Y
-    R[:, 1] = X
+    Rindex  = np.arange(len(steps_read))
+    R       = np.zeros((len(Rindex), 3), dtype=np.float)
+    R[:, 0] = Y[steps_read]
+    R[:, 1] = X[steps_read]
     R[:, 2] = z
     
     # discard bad readings
-    good_vals = ~(np.isnan(X) * np.isnan(Y))
-    bad_vals  =  np.sum(~good_vals)
+    good_steps = steps_read[~(np.isnan(R[:, 0]) * np.isnan(R[:, 1]))]
+    bad_vals   = steps[0]*steps[1] - len(good_steps) 
     if bad_vals > 0:
-        print '\nBad readings:', bad_vals, 'out of:', len(X)
+        print '\nBad readings:', bad_vals, 'out of:', steps[0]*steps[1]
         print 'Discarding bad readings'
-    good_vals = np.where(good_vals)[0]
     
     # discard unwanted frames
     #########################
     # grid of points
     if params['input']['startij_stopij'] is -1 or params['input']['startij_stopij'] is None :
-        steps_subset = range(len(R))
+        steps_subset = good_steps.copy()
     else :
         steps_subset = []
         for i in range(params['input']['startij_stopij'][0], params['input']['startij_stopij'][2], 1):
             for j in range(params['input']['startij_stopij'][1], params['input']['startij_stopij'][3], 1):
                 step = steps[1] * i + j
-                if step in good_vals :
+                if step in good_steps :
                     steps_subset.append( step )
         print '\nLoading a grid of points in bounded by:', params['input']['startij_stopij'][:2], \
                 'and',params['input']['startij_stopij'][2:]
@@ -231,8 +232,13 @@ def get_Rs(f, mask, params):
     steps_subset = steps_subset[::every]
         
     # update index
-    Rindex = Rindex[steps_subset] 
-    R      = R[steps_subset] 
+    steps_index = []
+    for s in steps_subset:
+        steps_index.append(np.where(steps_read == s)[0][0])
+    steps_index = np.array(steps_index)
+
+    Rindex = Rindex[steps_index] 
+    R      = R[steps_index] 
 
     # print average step sizes
     print '\nThis is a slow scan of:', slow_axis
@@ -362,6 +368,25 @@ def make_O0(I, R, P, O, mask):
     O, P_heatmap = era.psup_O(exits, P, R, O.shape, P_heatmap, 1.0e-10, MPI_dtype, MPI_c_dtype, False, None)
     return O
 
+def back_prop(prop, iprop, I, whitefield, defocus, f, mask, params):
+    bad  = np.where(~mask)
+    temp = whitefield[bad]**2
+    for i in range(len(I)):
+        I[i][bad] = temp
+         
+    P = iprop(np.fft.ifftshift(whitefield) + 0J)
+    
+    params['input']['defocus'] = defocus
+    R, Rpix, Rindex, F = get_Rs(f, mask, params)
+    
+    method, update, dtype, c_dtype, MPI_dtype, MPI_c_dtype, OP_iters, O, P, amp, Pamp, background, R, mask, I_norm, N, exits, Fresnel = \
+            era.preamble(I, Rpix, P, None, None, None, mask, None, 3, 'mpi', 1.0e-10, 'double', F, False)
+    
+    exits = iprop(amp + 0J)
+    
+    O, P_heatmap = era.psup_O(exits, P, R, O.shape, None, 1.0e-10, MPI_dtype, MPI_c_dtype, False, None)
+    return O
+
 if __name__ == '__main__':
     params = utils.parse_cmdline_args()
     
@@ -389,7 +414,7 @@ if __name__ == '__main__':
         print '####'
         
         #O0 = make_O0(I, Rpix, whitefield + 0J, None, mask)
-        O0 = make_O0(I, Rpix, P0, None, mask)
+        #O0 = make_O0(I, Rpix, P0, None, mask)
         """
         Os = []
         heatmaps = []
@@ -401,14 +426,26 @@ if __name__ == '__main__':
             O0, P_heatmap = make_O0(I, Rpix, whitefield + 0J, None, mask)
             Os.append(O0.copy())
             heatmaps.append(P_heatmap.copy())
-        """
         
         print '\n Array shapes:'
         print '\t I   ', I.shape
         print '\t P0  ', P0.shape
         print '\t mask', mask.shape
         print '\t R   ', R.shape
+        """
 
-
+        """
+        bad = np.where(~mask)
+        temp = whitefield[bad]**2
+        for i in range(len(I)):
+            I[i][bad] = temp
+        
+        Os = []
+        Ps = []
+        heatmaps = []
+        for defocus in np.linspace(1.0e-3, 2.0e-3, 5):
+            O = back_prop(prop, iprop, I, whitefield, defocus, f, mask, params)
+            Os.append(O.copy())
+        """
 
      

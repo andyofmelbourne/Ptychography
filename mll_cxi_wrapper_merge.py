@@ -11,7 +11,8 @@ import h5py
 import scipy.constants as sc
 import time
 from scipy import ndimage
-import sys
+import ConfigParser
+import sys, os
 
 import Ptychography.ptychography.era as era
 from Ptychography import DM
@@ -24,6 +25,29 @@ from mpi4py import MPI
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
+
+def parse_cmdline_args():
+    import argparse
+    parser = argparse.ArgumentParser(prog = 'mpirun -n N python mll_cxi_wrapper.py', description='')
+    parser.add_argument('config', type=str, \
+                        help="configuration file name")
+
+    args = parser.parse_args()
+
+    config_files = args.config.split(',')
+    paramss = []
+
+    for c in config_files :
+        # check that args.config exists
+        if not os.path.exists(c):
+            raise NameError('config file does not exist: ' + c)
+
+        # process config file
+        config = ConfigParser.ConfigParser()
+        config.read(c)
+        
+        paramss.append(utils.parse_parameters(config))
+    return paramss
 
 def Psup(I, R, P, O, iters, OP_iters, mask, background, method, hardware, alpha, dtype, full_output, verbose, sample_blur):
     # set the probe to the whitefield
@@ -427,39 +451,48 @@ def back_prop(I, P, whitefield, f, mask, Rpix, F, params):
     return O
 
 if __name__ == '__main__':
-    params = utils.parse_cmdline_args()
-    
-    if rank == 0 :
-        print '\n\nLoading', params['input']['cxi_fnam'] 
-        f = h5py.File(params['input']['cxi_fnam'], 'r')
-         
-        print '\n\nMask'
-        print '####'
-        mask, I_crop_pad_downsample = get_mask(f, params)
-                
-        print '\n\nR'
-        print '####'
-        R, Rpix, Rindex, F = get_Rs(f, mask, params)
-        print Rpix
-        print np.diff(Rpix[:,0])
-        print np.diff(Rpix[:,1])
-        #sys.exit()
-        
-        print '\n\nI'
-        print '####'
-        I = get_Is(f, mask, Rindex, I_crop_pad_downsample, params)
-        
-        print '\n\nP0'
-        print '####'
-        P0, prop, iprop, whitefield, exps = make_P0(f, mask, Rindex, F, I_crop_pad_downsample, params)
+    paramss = parse_cmdline_args()
 
-        if 'probe' in params['input'].keys() and params['input']['probe'] is not None :
-            print 'loading the phase of the probe from:', params['input']['probe']
-            P = h5py.File(params['input']['probe'], 'r')['data'].value
-            phase = I_crop_pad_downsample(np.angle(P)) / float(params['input']['downsample']**2)
+    if rank == 0 :
+        for i, params in enumerate(paramss):
+            print '\n\nLoading', params['input']['cxi_fnam'] 
+            f = h5py.File(params['input']['cxi_fnam'], 'r')
+             
+            if i == 0 :
+                print '\n\nMask'
+                print '####'
+                mask, I_crop_pad_downsample = get_mask(f, params)
+                    
+            print '\n\nR'
+            print '####'
+            Ri, Rpixi, Rindexi, Fi = get_Rs(f, mask, params)
+            print np.diff(Rpixi[:,0])
+            print np.diff(Rpixi[:,1])
+            #sys.exit()
             
-            P0 = np.fft.ifftshift(whitefield) * np.exp(1.0J * np.fft.ifftshift(phase))
-            P0 = iprop(P0)
+            print '\n\nI'
+            print '####'
+            Ii = get_Is(f, mask, Rindexi, I_crop_pad_downsample, params)
+        
+            print '\n\nP0'
+            print '####'
+            P0i, prop, iprop, whitefieldi, exps = make_P0(f, mask, Rindexi, Fi, I_crop_pad_downsample, params)
+
+            if i == 0 :
+                Rpix = Rpixi.copy()
+                I    = Ii.copy()
+                F    = Fi
+                P0   = P0i.copy()
+                whitefield = whitefieldi.copy()
+            else :
+                Rpix = np.vstack((Rpix, Rpixi))
+                I    = np.vstack((I, Ii))
+                F    = Fi
+                P0   += P0i
+                whitefield += whitefieldi.copy()
+                
+        P0         /= float(len(paramss))
+        whitefield /= float(len(paramss))
         
         #print '\n\nO0'
         #print '####'
@@ -469,9 +502,10 @@ if __name__ == '__main__':
         print '\t I   ', I.shape
         print '\t P0  ', P0.shape
         print '\t mask', mask.shape
-        print '\t R   ', R.shape
+        print '\t R   ', Rpix.shape
      
-    comm.Barrier()
+    comm.Barrier() 
+    params = paramss[0]
 
     # Initialise
     ############
