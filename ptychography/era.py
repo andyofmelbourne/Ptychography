@@ -352,6 +352,8 @@ def ERA(I, R, P, O, iters, OP_iters = 1, mask = 1, Fresnel = False, background =
         
     # This should not be necessary but it crashes otherwise
     #I = np.fft.fftshift(np.abs(np.fft.fftn(exits, axes = (-2, -1)))**2, axes = (-2, -1))
+    per_diff_eMod = model_error_per_diff(amp, exits, mask, background = 0, prop = prop)
+       
     I = np.fft.fftshift(np.abs(prop(exits))**2, axes = (-2,-1))
     if rank == 0 :
         I_rec = [I.copy()]
@@ -366,6 +368,12 @@ def ERA(I, R, P, O, iters, OP_iters = 1, mask = 1, Fresnel = False, background =
         info = {}
         info['I']       = I
         info['eMod']    = eMods
+
+        # combine the per diff eMods
+        err = per_diff_eMod[0]
+        for i in range(1, size):
+            err = np.hstack((err, per_diff_eMod[i]))
+        info['eMod_diff'] = err
         info['eCon']    = eCons
         info['heatmap'] = P_heatmap
         if background is not None :
@@ -376,6 +384,16 @@ def ERA(I, R, P, O, iters, OP_iters = 1, mask = 1, Fresnel = False, background =
     else :
         return None, None, None
 
+
+def model_error_per_diff(amp, exits, mask, background = 0, prop = None):
+    if prop is None :
+        exits = np.fft.fftn(exits, axes = (-2, -1))
+    else :
+        exits = prop(exits)
+    M     = np.sqrt((exits.conj() * exits).real + background**2)
+    err   = np.sqrt(np.sum( mask * (M - amp)**2, axis=(1,2) ) /  np.sum( mask * amp**2, axis=(1,2) ))
+    err_tot = comm.gather(err, root=0)
+    return err_tot
 
 
 def psup_O(exits, P, R, O_shape, P_heatmap = None, alpha = 1.0e-10, MPI_dtype = MPI.DOUBLE, MPI_c_dtype = MPI.DOUBLE_COMPLEX, verbose = False, sample_blur = None):

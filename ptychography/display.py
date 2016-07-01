@@ -159,10 +159,10 @@ def Application(I_in, I_out, P_in, P_out, O_in,  \
     wI  = in_vs_out_widget(M*I_in[:maxlen]**0.5, I_out[:maxlen]**0.5, title = 'input / output diffraction intensities')
     wP  = in_vs_out_widget(P_in, P_out, np.abs, 'input / output |Probe|')
 
-    P_in  = np.fft.fftshift(np.fft.fftn(P_in))
-    P_out = np.fft.fftshift(np.fft.fftn(P_out))
-    wPa  = in_vs_out_widget(P_in, P_out, np.abs, 'input / output farfield |Probe|')
-    wPp  = in_vs_out_widget(P_in, P_out, np.angle, 'input / output farfield angle(Probe)')
+    P_in  = np.fft.fftshift(np.fft.fftn(np.fft.ifftshift(P_in )))
+    P_out = np.fft.fftshift(np.fft.fftn(np.fft.ifftshift(P_out)))
+    wPa   = in_vs_out_widget(P_in, P_out, np.abs, 'input / output farfield |Probe|')
+    wPp   = in_vs_out_widget(P_in, P_out, np.angle, 'input / output farfield angle(Probe)')
 
     # check if O_out is smaller than O_in
     if (O_in is not None and O_out is not None) and (O_out.shape[0] < O_in.shape[0]) :
