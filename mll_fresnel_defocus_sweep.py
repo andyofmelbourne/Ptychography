@@ -414,7 +414,7 @@ if __name__ == '__main__':
         print '####'
         
         #O0 = make_O0(I, Rpix, whitefield + 0J, None, mask)
-        #O0 = make_O0(I, Rpix, P0, None, mask)
+        O0 = make_O0(I, Rpix, P0, None, mask)
         """
         Os = []
         heatmaps = []
