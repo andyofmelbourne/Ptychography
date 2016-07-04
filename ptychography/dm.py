@@ -10,7 +10,7 @@ comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 
-def DM(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, \
+def DM(I, R, P, O, iters, OP_iters = 1, mask = 1, Fresnel = False, background = None, \
            Pmod_probe = False, probe_centering = False, method = None, hardware = 'cpu', \
            alpha = 1.0e-10, dtype=None, full_output = True):
     """
@@ -23,9 +23,9 @@ def DM(I, R, P, O, iters, OP_iters = 1, mask = 1, background = None, \
     #                method, hardware, alpha, dtype, full_output)
     
     method, update, dtype, c_dtype, MPI_dtype, MPI_c_dtype, OP_iters, O, P, \
-            amp, Pamp, background, R, mask, I_norm, N, exits = \
+            amp, Pamp, background, R, mask, I_norm, N, exits, Fresnel = \
             era.preamble(I, R, P, O, iters, OP_iters, mask, background, \
-            method, hardware, alpha, dtype, full_output)
+            method, hardware, alpha, dtype, Fresnel, full_output)
 
     P_heatmap = None
     O_heatmap = None

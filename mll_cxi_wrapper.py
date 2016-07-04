@@ -141,11 +141,13 @@ def get_mask(f, params):
     
     I_crop_pad_downsample = lambda x : crop_pad_downsample(x * mask_old, crop_ijs, crop_shape, pad, n, fillvalue = 0.) / mask_norm 
     
+    crop_pad_downsample_nomask = lambda x : crop_pad_downsample(x, crop_ijs, crop_shape, pad, n, fillvalue = 0)
+    
     # enforce 0's in the padded region with fillvalue = 1
     mask = crop_pad_downsample(mask, crop_ijs, crop_shape, pad, n, fillvalue = 0)
     mask = mask > 0
     
-    return mask, I_crop_pad_downsample 
+    return mask, I_crop_pad_downsample, crop_pad_downsample_nomask
 
 def make_O0(I, R, P, O, mask):
     O = np.ones((1024, 1024), dtype=np.complex128)
@@ -211,17 +213,33 @@ def get_Rs(f, mask, params):
         print '\nLoading encoded fast and slow axis values', fast_axis, 'and', slow_axis
         X = f['entry_1/instrument_1/motor_positions/scan_axes/Fast axis/name'].value
         Y = f['entry_1/instrument_1/motor_positions/scan_axes/Slow axis/name'].value
-        X = f['entry_1/instrument_1/motor_positions/scan_axes/Fast axis/POSITION'].value
-        Y = f['entry_1/instrument_1/motor_positions/scan_axes/Slow axis/POSITION'].value
+        X = f['entry_1/sample_3/geometry/translation'][:, 0]
+        Y = f['entry_1/sample_3/geometry/translation'][:, 1]
+        X *= -1
+        Y *= -1
     
     Rindex  = np.arange(len(steps_read))
     R       = np.zeros((len(Rindex), 3), dtype=np.float)
-    R[:, 0] = Y[steps_read]
-    R[:, 1] = X[steps_read]
+    R[:, 0] = Y #[steps_read]
+    R[:, 1] = X #[steps_read]
     R[:, 2] = z
     
     # discard bad readings
-    good_steps = steps_read[~(np.isnan(R[:, 0]) * np.isnan(R[:, 1]))]
+    good_steps_ = steps_read[~(np.isnan(R[:, 0]) * np.isnan(R[:, 1]))]
+
+    # discard user defined frames
+    if 'bad_frames' in params['input'].keys() and params['input']['bad_frames'] is not None :
+        print '\ndiscarding user defined frames:'
+        good_steps = []
+        for g in good_steps_:
+            if g not in params['input']['bad_frames']:
+                good_steps.append(g)
+            else :
+                print '\t', g
+        good_steps = np.array(good_steps)
+    else :
+        good_steps = good_steps_
+
     bad_vals   = steps[0]*steps[1] - len(good_steps) 
     if bad_vals > 0:
         print '\nBad readings:', bad_vals, 'out of:', steps[0]*steps[1]
@@ -252,6 +270,10 @@ def get_Rs(f, mask, params):
     print '\nLoading every', every, 'frames'
     
     steps_subset = steps_subset[::every]
+
+    print '\nLoaded steps: index, step'
+    for i in range(len(steps_subset)):
+        print i, steps_subset[i]
         
     # update index
     steps_index = []
@@ -321,7 +343,7 @@ def get_Is(f, mask, Rindex, I_crop_pad_downsample, params):
 
     return I
 
-def make_P0(f, mask, Rindex, F, I_crop_pad_downsample, params):
+def make_P0(f, mask, Rindex, F, I_crop_pad_downsample, crop_pad_downsample_nomask, params):
     """
     Make an initial guess for the probe in 'sample' space by summing the white field.
     """
@@ -369,9 +391,18 @@ def make_P0(f, mask, Rindex, F, I_crop_pad_downsample, params):
         out = np.fft.ifftn(x, axes = (-2, -1)) * exps
         out = np.fft.fftn(out, axes = (-2, -1))
         return np.fft.ifftshift(out, axes=(-2,-1))
+
+    if 'probe' in params['input'].keys() and params['input']['probe'] is not None :
+        print 'loading the phase of the probe from:', params['input']['probe']
+        phase = h5py.File(params['input']['probe'], 'r')['data'].value
+        phase = crop_pad_downsample_nomask(phase) / float(params['input']['downsample']**2)
+        
+        P0 = whitefield * np.exp(1.0J * np.fft.ifftshift(phase))
+    else :
+        P0 = whitefield.astype(np.complex128)
     
     print 'propagating the whitefield to the sample plane'
-    P0 = iprop(whitefield + 0J)
+    P0 = iprop(P0)
     #P0 = np.fft.fftshift(whitefield) + 0J
     return P0, prop, iprop, np.fft.fftshift(whitefield), exps
 
@@ -435,7 +466,7 @@ if __name__ == '__main__':
          
         print '\n\nMask'
         print '####'
-        mask, I_crop_pad_downsample = get_mask(f, params)
+        mask, I_crop_pad_downsample, crop_pad_downsample_nomask = get_mask(f, params)
                 
         print '\n\nR'
         print '####'
@@ -451,16 +482,7 @@ if __name__ == '__main__':
         
         print '\n\nP0'
         print '####'
-        P0, prop, iprop, whitefield, exps = make_P0(f, mask, Rindex, F, I_crop_pad_downsample, params)
-
-        if 'probe' in params['input'].keys() and params['input']['probe'] is not None :
-            print 'loading the phase of the probe from:', params['input']['probe']
-            P = h5py.File(params['input']['probe'], 'r')['data'].value
-            phase = I_crop_pad_downsample(np.angle(P)) / float(params['input']['downsample']**2)
-            
-            P0 = np.fft.ifftshift(whitefield) * np.exp(1.0J * np.fft.ifftshift(phase))
-            P0 = iprop(P0)
-        
+        P0, prop, iprop, whitefield, exps = make_P0(f, mask, Rindex, F, I_crop_pad_downsample, crop_pad_downsample_nomask, params)
         #print '\n\nO0'
         #print '####'
         #O = back_prop(prop, iprop, I, whitefield, f, mask, Rpix, params)
@@ -491,6 +513,7 @@ if __name__ == '__main__':
         print '####'
     O0 = back_prop(I, P, whitefield, f, mask, Rpix, F, params)
     O  = O0.copy()
+    if rank == 0 : print '\t O   ', O.shape
 
 
     # Phase
@@ -531,5 +554,8 @@ if __name__ == '__main__':
     ############
     if rank == 0 :
         print '\ntime:', d1-d0
+        print '\neMod per diffraction pattern:'
+        for i in range(len(info['eMod_diff'])):
+            print i, info['eMod_diff'][i]
         write_cxi(I, info['I'], P0, P, O0, O, \
                   Rpix, Rpix, None, None, mask, eMod, fnam = params['output']['fnam'], compress = True)
