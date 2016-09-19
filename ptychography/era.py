@@ -140,6 +140,7 @@ def ERA(I, R, P, O, iters, OP_iters = 1, mask = 1, Fresnel = False, background =
     method, update, dtype, c_dtype, MPI_dtype, MPI_c_dtype, OP_iters, O, P, amp, Pamp, background, R, mask, I_norm, N, exits, Fresnel = \
             preamble(I, R, P, O, iters, OP_iters, mask, background, method, hardware, alpha, dtype, Fresnel, full_output)
 
+    """
     if Fresnel is not False :
         shape = P.shape
         i     = np.fft.fftfreq(shape[0], 1/float(shape[0]))
@@ -169,7 +170,10 @@ def ERA(I, R, P, O, iters, OP_iters = 1, mask = 1, Fresnel = False, background =
         def iprop(x):
             out = np.fft.ifftn(x, axes = (-2, -1))
             return np.fft.fftshift(out, axes = (-2, -1))
-
+    """
+    
+    prop, iprop = make_prop(Fresnel, P.shape)
+    
     v0 = False
     v  = False
     if verbose == 'v' and rank == 0 :
@@ -384,6 +388,37 @@ def ERA(I, R, P, O, iters, OP_iters = 1, mask = 1, Fresnel = False, background =
     else :
         return None, None, None
 
+
+def make_prop(Fresnel, shape):
+    if Fresnel is not False :
+        i     = np.fft.fftfreq(shape[0], 1/float(shape[0]))
+        j     = np.fft.fftfreq(shape[1], 1/float(shape[1]))
+        i, j  = np.meshgrid(i, j, indexing='ij')
+        
+        # apply phase
+        exps = np.exp(1.0J * np.pi * (i**2 * Fresnel / shape[0]**2 + \
+                                      j**2 * Fresnel / shape[1]**2))
+        def prop(x):
+            out = np.fft.ifftn(np.fft.ifftshift(x, axes=(-2,-1)), axes = (-2, -1)) * exps.conj() 
+            out = np.fft.fftn(out, axes = (-2, -1))
+            return out
+        
+        def iprop(x):
+            out = np.fft.ifftn(x, axes = (-2, -1)) * exps
+            out = np.fft.fftn(out, axes = (-2, -1))
+            return np.fft.ifftshift(out, axes=(-2,-1))
+
+        #P = iprop(np.fft.fftn(np.fft.ifftshift(P)))
+    else :
+        def prop(x):
+            out = np.fft.ifftshift(x, axes = (-2,-1))
+            out = np.fft.fftn(out, axes = (-2, -1))
+            return out
+        
+        def iprop(x):
+            out = np.fft.ifftn(x, axes = (-2, -1))
+            return np.fft.fftshift(out, axes = (-2, -1))
+    return prop, iprop
 
 def model_error_per_diff(amp, exits, mask, background = 0, prop = None):
     if prop is None :
