@@ -10,7 +10,7 @@ comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 
-def ERA(I, R, P, O, iters, OP_iters = 1, mask = 1, Fresnel = False, background = None, method = None, Pmod_probe = False, probe_centering = False, hardware = 'cpu', alpha = 1.0e-10, dtype=None, sample_blur = None, full_output = True, verbose = False):
+def ERA(I, R, P, O, iters, OP_iters = 1, mask = 1, Fresnel = False, background = None, method = None, Pmod_probe = False, probe_centering = False, hardware = 'cpu', alpha = 1.0e-10, dtype=None, sample_blur = None, full_output = True, verbose = False, output_h5file = None, output_h5group = None, output_h5interval = 1):
     """
     Find the phases of 'I' given O, P, R using the Error Reduction Algorithm (Ptychography).
     
@@ -137,55 +137,12 @@ def ERA(I, R, P, O, iters, OP_iters = 1, mask = 1, Fresnel = False, background =
     """
     if rank == 0 : print '\n\nERA_mpi v5'    
 
-    method, update, dtype, c_dtype, MPI_dtype, MPI_c_dtype, OP_iters, O, P, amp, Pamp, background, R, mask, I_norm, N, exits, Fresnel = \
+    method, update, dtype, c_dtype, MPI_dtype, MPI_c_dtype, OP_iters, O, P, amp, background, R, mask, I_norm, N, exits, Fresnel = \
             preamble(I, R, P, O, iters, OP_iters, mask, background, method, hardware, alpha, dtype, Fresnel, full_output)
 
-    """
-    if Fresnel is not False :
-        shape = P.shape
-        i     = np.fft.fftfreq(shape[0], 1/float(shape[0]))
-        j     = np.fft.fftfreq(shape[1], 1/float(shape[1]))
-        i, j  = np.meshgrid(i, j, indexing='ij')
-        
-        # apply phase
-        exps = np.exp(1.0J * np.pi * (i**2 * Fresnel / P.shape[0]**2 + \
-                                      j**2 * Fresnel / P.shape[1]**2))
-        def prop(x):
-            out = np.fft.ifftn(np.fft.ifftshift(x, axes=(-2,-1)), axes = (-2, -1)) * exps.conj() 
-            out = np.fft.fftn(out, axes = (-2, -1))
-            return out
-        
-        def iprop(x):
-            out = np.fft.ifftn(x, axes = (-2, -1)) * exps
-            out = np.fft.fftn(out, axes = (-2, -1))
-            return np.fft.ifftshift(out, axes=(-2,-1))
-
-        #P = iprop(np.fft.fftn(np.fft.ifftshift(P)))
-    else :
-        def prop(x):
-            out = np.fft.ifftshift(x, axes = (-2,-1))
-            out = np.fft.fftn(out, axes = (-2, -1))
-            return out
-        
-        def iprop(x):
-            out = np.fft.ifftn(x, axes = (-2, -1))
-            return np.fft.fftshift(out, axes = (-2, -1))
-    """
-    
     prop, iprop = make_prop(Fresnel, P.shape)
-    
-    v0 = False
-    v  = False
-    if verbose == 'v' and rank == 0 :
-        v0 = True
-    if verbose == 'v':
-        v = True
-
-    comm.Barrier()
-    if v : print 'I (rank',rank,') have', len(amp),'diffraction patterns to worry about'
-    
-    comm.Barrier()
-    if v0 : print '\nObject array shape', O.shape
+    Pamp = prop(P)
+    Pamp = np.sqrt((Pamp.conj() * Pamp).real)
     
     P_heatmap = None
     O_heatmap = None
@@ -194,7 +151,6 @@ def ERA(I, R, P, O, iters, OP_iters = 1, mask = 1, Fresnel = False, background =
     
     # method 1, 2 or 3, update O, P or OP 
     #---------
-    if v0 : print '\nmethod:', method
     if method == 1 or method == 2 or method == 3 :
         if rank == 0 : print 'algrithm progress iteration convergence modulus error'
         for i in range(iters) :
@@ -205,36 +161,23 @@ def ERA(I, R, P, O, iters, OP_iters = 1, mask = 1, Fresnel = False, background =
             
             
             # modulus projection 
-            if v0 : print '\n\n\nmodulus projection:'
-            if v0 : print '-------------------'
-            
             exits, eMod = pmod_1(amp, exits, mask, alpha = alpha, eMod_calc = True, prop = (prop, iprop))
             
-            comm.Barrier()
-            if v0 : print '-------done--------'
-            
             # consistency projection 
-            if v0 : print '\n\nsupport projection OP_iters, update:', OP_iters, update
-            if v0 : print '------------------------------------'
             if update == 'O': O, P_heatmap = psup_O(exits, P, R, O.shape, P_heatmap, alpha, MPI_dtype, MPI_c_dtype, verbose, sample_blur)
             if update == 'P': P, O_heatmap = psup_P(exits, O, R, O_heatmap, alpha, MPI_dtype, MPI_c_dtype)
             if update == 'OP':
                 if i % OP_iters[1] == 0 :
                     for j in range(OP_iters[0]):
-                        if v0 : print '\tpsup_O'
                         O, P_heatmap = psup_O(exits, P, R, O.shape, None, alpha, MPI_dtype, MPI_c_dtype, verbose, sample_blur)
-                        if v0 : print '\tpsup_P'
                         P, O_heatmap = psup_P(exits, O, R, None, alpha, MPI_dtype, MPI_c_dtype)
 
                     # only centre if both P and O are updated
                     if probe_centering :
-                        if v0 : print '\tprobe centering'
                         # get the centre of mass of |P|^2
                         import scipy.ndimage
                         a  = (P.conj() * P).real
                         cm = np.rint(scipy.ndimage.measurements.center_of_mass(a)).astype(np.int) - np.array(a.shape)/2
-                        
-                        if v0 : print '\tprobe cm:', cm
                         
                         # centre P
                         P = multiroll(P, -cm)
@@ -246,23 +189,17 @@ def ERA(I, R, P, O, iters, OP_iters = 1, mask = 1, Fresnel = False, background =
                         
                 else :
                     O, P_heatmap = psup_O(exits, P, R, O.shape, P_heatmap, alpha, MPI_dtype, MPI_c_dtype, verbose, sample_blur)
-            comm.Barrier()
-            if v0 : print '---------------done-----------------'
-
             
             # enforce the modulus of the far-field probe 
             if Pmod_probe is not None and i < Pmod_probe :
-                if v0 : print '\nenforcing the moulus of the probe'
-                P = Pmod_P(Pamp, P, mask, alpha)
+                P = Pmod_P(Pamp, P, mask, alpha, prop = (prop, iprop))
 
-            if v0 : print '\ngenerating the exit waves from the updated O / P / R values'
             exits = make_exits(O, P, R, exits)
             
             # metrics
             eMod   = comm.reduce(eMod, op=MPI.SUM)
 
             if rank == 0 :
-                if v0 : print '\n\ncalculating error metrics'
                 if update == 'O' : temp = O
                 if update == 'P' : temp = P
                 if update == 'OP': temp = np.hstack((O.ravel(), P.ravel()))
@@ -277,6 +214,27 @@ def ERA(I, R, P, O, iters, OP_iters = 1, mask = 1, Fresnel = False, background =
                 
                 eMods.append(eMod)
                 eCons.append(eCon)
+                
+                # output O, P and eMod 
+                ######################
+                if (output_h5file is not None) and (i % output_h5interval == 0) :
+                    import h5py
+                    f = h5py.File(output_h5file)
+                    key = output_h5group + '/O'
+                    if key in f :
+                        del f[key]
+                    f[key] = O
+                    
+                    key = output_h5group + '/P'
+                    if key in f :
+                        del f[key]
+                    f[key] = P
+                    
+                    key = output_h5group + '/eMod'
+                    if key in f :
+                        del f[key]
+                    f[key] = np.array(eMods)
+                    f.close()
         
     # method 4 or 5 or 6
     #---------
@@ -324,7 +282,7 @@ def ERA(I, R, P, O, iters, OP_iters = 1, mask = 1, Fresnel = False, background =
             
             # enforce the modulus of the far-field probe 
             if Pmod_probe is not None and i < Pmod_probe :
-                P = Pmod_P(Pamp, P, mask, alpha)
+                P = Pmod_P(Pamp, P, mask, alpha, prop = (prop, iprop))
             
             backgroundT  = np.mean(background, axis=0)
             backgroundTT = np.empty_like(backgroundT)
@@ -652,9 +610,7 @@ def preamble(I, R, P, O, iters, OP_iters, mask, background, method, hardware, al
         temp[:]    = np.sqrt(np.fft.ifftshift(background))
         background = temp
 
-    Pamp = np.fft.fftn(P, axes = (-2, -1))
-    Pamp = np.sqrt((Pamp.conj() * Pamp).real)
-    return method, update, dtype, c_dtype, MPI_dtype, MPI_c_dtype, OP_iters, O, P, amp, Pamp, background, R, mask, I_norm, N, exits, Fresnel
+    return method, update, dtype, c_dtype, MPI_dtype, MPI_c_dtype, OP_iters, O, P, amp, background, R, mask, I_norm, N, exits, Fresnel
 
 def pmod_1(amp, exits, mask = 1, alpha = 1.0e-10, eMod_calc = False, prop = None):
     if prop is None :
@@ -711,8 +667,11 @@ def Pmod_7(amp, background, exits, mask = 1, alpha = 1.0e-10, eMod_calc = False)
     background *= M
     return exits, background, eMod
 
-def Pmod_P(amp, P, mask = 1, alpha = 1.0e-10):
-    P = np.fft.fftn(P, axes = (-2, -1))
+def Pmod_P(amp, P, mask = 1, alpha = 1.0e-10, prop = None):
+    if prop is None :
+        P = np.fft.fftn(P, axes = (-2, -1))
+    else :
+        P = prop[0](P)
     
     M = np.sqrt((P.conj() * P).real) + alpha
     M = amp / M
@@ -723,7 +682,10 @@ def Pmod_P(amp, P, mask = 1, alpha = 1.0e-10):
             M[i[0], i[1]] = 1.
     P *= M
     
-    P = np.fft.ifftn(P, axes = (-2, -1))
+    if prop is None :
+        P = np.fft.ifftn(P, axes = (-2, -1))
+    else :
+        P = prop[1](P)
     return P
 
 def update_progress(progress, algorithm, i, emod, esup):

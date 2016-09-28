@@ -12,20 +12,18 @@ size = comm.Get_size()
 
 def DM(I, R, P, O, iters, OP_iters = 1, mask = 1, Fresnel = False, background = None, \
            Pmod_probe = False, probe_centering = False, method = None, hardware = 'cpu', \
-           alpha = 1.0e-10, dtype=None, full_output = True):
+           alpha = 1.0e-10, dtype=None, full_output = True, sample_blur = None, verbose = False, \
+           output_h5file = None, output_h5group = None, output_h5interval = 1):
     """
     MPI variant of ptychography.DM
     """
     if rank == 0 : print 'DM_mpi v7'    
-    #method, update, dtype, c_dtype, MPI_dtype, MPI_c_dtype, OP_iters, O, P, amp,\
-    #        background, R, mask, I_norm, N, exits = 
-    #        \ era.preamble(I, R, P, O, iters, OP_iters, mask, background, \
-    #                method, hardware, alpha, dtype, full_output)
-    
-    method, update, dtype, c_dtype, MPI_dtype, MPI_c_dtype, OP_iters, O, P, \
-            amp, Pamp, background, R, mask, I_norm, N, exits, Fresnel = \
-            era.preamble(I, R, P, O, iters, OP_iters, mask, background, \
-            method, hardware, alpha, dtype, Fresnel, full_output)
+    method, update, dtype, c_dtype, MPI_dtype, MPI_c_dtype, OP_iters, O, P, amp, background, R, mask, I_norm, N, exits, Fresnel = \
+            era.preamble(I, R, P, O, iters, OP_iters, mask, background, method, hardware, alpha, dtype, Fresnel, full_output)
+
+    prop, iprop = era.make_prop(Fresnel, P.shape)
+    Pamp = prop(P)
+    Pamp = np.sqrt((Pamp.conj() * Pamp).real)
 
     P_heatmap = None
     O_heatmap = None
@@ -53,13 +51,13 @@ def DM(I, R, P, O, iters, OP_iters = 1, mask = 1, Fresnel = False, background = 
             # e  += e0           f_i - Ps f_i + Pm (2 Ps f_i - f)
             
             # consistency projection 
-            if update == 'O': O, P_heatmap = era.psup_O(exits, P, R, O.shape, P_heatmap, alpha = alpha)
-            if update == 'P': P, O_heatmap = era.psup_P(exits, O, R, O_heatmap, alpha = alpha)
+            if update == 'O': O, P_heatmap = era.psup_O(exits, P, R, O.shape, P_heatmap, alpha = alpha, sample_blur=sample_blur)
+            if update == 'P': P, O_heatmap = era.psup_P(exits, O, R, O_heatmap, alpha = alpha, sample_blur = sample_blur)
             if update == 'OP':
                 if i % OP_iters[1] == 0 :
                     for j in range(OP_iters[0]):
-                        O, P_heatmap = era.psup_O(exits, P, R, O.shape, None, alpha = alpha)
-                        P, O_heatmap = era.psup_P(exits, O, R, None, alpha = alpha)
+                        O, P_heatmap = era.psup_O(exits, P, R, O.shape, None, alpha, MPI_dtype, MPI_c_dtype, verbose, sample_blur)
+                        P, O_heatmap = era.psup_P(exits, O, R, None, alpha, MPI_dtype, MPI_c_dtype)
                     
                     # only centre if both P and O are updated
                     if probe_centering :
@@ -82,19 +80,21 @@ def DM(I, R, P, O, iters, OP_iters = 1, mask = 1, Fresnel = False, background = 
                         exits = era.multiroll(exits, [0, -cm[0], -cm[1]])
                         
                 else :
-                        O, P_heatmap = era.psup_O(exits, P, R, O.shape, P_heatmap, alpha = alpha)
+                        O, P_heatmap = era.psup_O(exits, P, R, O.shape, P_heatmap, alpha, MPI_dtype, MPI_c_dtype, verbose, sample_blur)
             
             # enforce the modulus of the far-field probe 
             if Pmod_probe is not None and i < Pmod_probe :
-                P = era.Pmod_P(Pamp, P, mask, alpha)
+                P = era.Pmod_P(Pamp, P, mask, alpha, prop = (prop, iprop))
 
             ex_0  = era.make_exits(O, P, R, ex_0)
             
             #exits = exits.copy() - ex_0.copy() + pmod_1(amp, (2*ex_0 - exits).copy(), mask, alpha = alpha)
             exits -= ex_0
             ex_0  -= exits
-            ex_0   = era.pmod_1(amp, ex_0, mask, alpha = alpha)
+            #ex_0   = era.pmod_1(amp, ex_0, mask, alpha = alpha)
+            ex_0   = era.pmod_1(amp, ex_0, mask, alpha = alpha, eMod_calc = False, prop = (prop, iprop))
             exits += ex_0
+
             
             # metrics
             #--------
@@ -103,12 +103,12 @@ def DM(I, R, P, O, iters, OP_iters = 1, mask = 1, Fresnel = False, background = 
             # consistency projection 
             Os = O.copy()
             Ps = P.copy()
-            if update == 'O': Os, P_heatmap = era.psup_O(exits, Ps, R, O.shape, P_heatmap, alpha = alpha)
+            if update == 'O': Os, P_heatmap = era.psup_O(exits, Ps, R, O.shape, P_heatmap, alpha = alpha, sample_blur = sample_blur)
             if update == 'P': Ps, O_heatmap = era.psup_P(exits, Os, R, O_heatmap, alpha = alpha)
             if update == 'OP':
                 if i % OP_iters[1] == 0 :
                     for j in range(OP_iters[0]):
-                        Os, Ph_t = era.psup_O(exits, Ps, R, O.shape, None, alpha = alpha)
+                        Os, Ph_t = era.psup_O(exits, Ps, R, O.shape, None, alpha = alpha, sample_blur = sample_blur)
                         Ps, Oh_t = era.psup_P(exits, Os, R, None, alpha = alpha)
                     
                     # only centre if both P and O are updated
@@ -127,14 +127,14 @@ def DM(I, R, P, O, iters, OP_iters = 1, mask = 1, Fresnel = False, background = 
                         Os = era.multiroll(Os, -cm)
                         
                 else :
-                        Os, P_heatmap = era.psup_O(exits, P, R, O.shape, P_heatmap, alpha = alpha)
+                        Os, P_heatmap = era.psup_O(exits, P, R, O.shape, P_heatmap, alpha = alpha, sample_blur = sample_blur)
             
             # enforce the modulus of the far-field probe 
             if Pmod_probe is not None and i < Pmod_probe :
-                Ps = era.Pmod_P(Pamp, Ps, mask, alpha)
+                Ps = era.Pmod_P(Pamp, Ps, mask, alpha, prop = (prop, iprop))
 
             ex_0 = era.make_exits(Os, Ps, R, ex_0)
-            eMod = model_error_1(amp, ex_0, mask)
+            eMod = model_error_1(amp, ex_0, mask, prop=(prop, iprop))
             #eMod = model_error_1(amp, pmod_1(amp, ex_0, mask, alpha=alpha), mask, I_norm)
             
             eMod   = comm.reduce(eMod, op=MPI.SUM)
@@ -158,6 +158,27 @@ def DM(I, R, P, O, iters, OP_iters = 1, mask = 1, Fresnel = False, background = 
                 if update == 'O' : bak = Os.copy()
                 if update == 'P' : bak = Ps.copy()
                 if update == 'OP': bak = np.hstack((Os.ravel().copy(), Ps.ravel().copy()))
+                
+                # output O, P and eMod 
+                ######################
+                if (output_h5file is not None) and (i % output_h5interval == 0) :
+                    import h5py
+                    f = h5py.File(output_h5file)
+                    key = output_h5group + '/O'
+                    if key in f :
+                        del f[key]
+                    f[key] = Os
+                    
+                    key = output_h5group + '/P'
+                    if key in f :
+                        del f[key]
+                    f[key] = Ps
+                    
+                    key = output_h5group + '/eMod'
+                    if key in f :
+                        del f[key]
+                    f[key] = np.array(eMods)
+                    f.close()
 
     # method 4 or 5 or 6
     #---------
@@ -171,8 +192,8 @@ def DM(I, R, P, O, iters, OP_iters = 1, mask = 1, Fresnel = False, background = 
             exits, background  = era.pmod_7(amp, background, exits, mask, alpha = alpha)
             
             # consistency projection 
-            if update == 'O': O, P_heatmap = era.psup_O(exits, P, R, O.shape, P_heatmap, alpha = alpha)
-            if update == 'P': P, O_heatmap = era.psup_P(exits, O, R, O_heatmap, alpha = alpha)
+            if update == 'O': O, P_heatmap = era.psup_O(exits, P, R, O.shape, P_heatmap, alpha = alpha, sample_blur = sample_blur)
+            if update == 'P': P, O_heatmap = era.psup_P(exits, O, R, O_heatmap, alpha = alpha, sample_blur = sample_blur)
             if update == 'OP':
                 if i % OP_iters[1] == 0 :
                     for j in range(OP_iters[0]):
@@ -199,11 +220,11 @@ def DM(I, R, P, O, iters, OP_iters = 1, mask = 1, Fresnel = False, background = 
                         # because dm remembers the last exits we need to shift them too
                         exits = era.multiroll(exits, [0, -cm[0], -cm[1]])
                 else :
-                        O, P_heatmap = era.psup_O(exits, P, R, O.shape, P_heatmap, alpha = alpha)
+                        O, P_heatmap = era.psup_O(exits, P, R, O.shape, P_heatmap, alpha = alpha, sample_blur = sample_blur)
             
             # enforce the modulus of the far-field probe 
             if Pmod_probe is not None and i < Pmod_probe :
-                P = era.Pmod_P(Pamp, P, mask, alpha)
+                P = era.Pmod_P(Pamp, P, mask, alpha, prop = (prop, iprop))
 
             backgroundT  = np.mean(background, axis=0)
             backgroundTT = np.empty_like(backgroundT)
@@ -230,12 +251,12 @@ def DM(I, R, P, O, iters, OP_iters = 1, mask = 1, Fresnel = False, background = 
             # consistency projection 
             Os = O.copy()
             Ps = P.copy()
-            if update == 'O': Os, P_heatmap = era.psup_O(exits, Ps, R, O.shape, P_heatmap, alpha = alpha)
+            if update == 'O': Os, P_heatmap = era.psup_O(exits, Ps, R, O.shape, P_heatmap, alpha = alpha, sample_blur = sample_blur)
             if update == 'P': Ps, O_heatmap = era.psup_P(exits, Os, R, O_heatmap, alpha = alpha)
             if update == 'OP':
                 if i % OP_iters[1] == 0 :
                     for j in range(OP_iters[0]):
-                        Os, Ph_t = era.psup_O(exits, Ps, R, O.shape, None, alpha = alpha)
+                        Os, Ph_t = era.psup_O(exits, Ps, R, O.shape, None, alpha = alpha, sample_blur = sample_blur)
                         Ps, Oh_t = era.psup_P(exits, Os, R, None, alpha = alpha)
                     
                     # only centre if both P and O are updated
@@ -254,11 +275,11 @@ def DM(I, R, P, O, iters, OP_iters = 1, mask = 1, Fresnel = False, background = 
                         Os = era.multiroll(Os, -cm)
                         
                 else :
-                        Os, P_heatmap = era.psup_O(exits, P, R, O.shape, P_heatmap, alpha = alpha)
+                        Os, P_heatmap = era.psup_O(exits, P, R, O.shape, P_heatmap, alpha = alpha, sample_blur = sample_blur)
             
             # enforce the modulus of the far-field probe 
             if Pmod_probe is not None and i < Pmod_probe :
-                Ps = era.Pmod_P(Pamp, Ps, mask, alpha)
+                Ps = era.Pmod_P(Pamp, Ps, mask, alpha, prop = (prop, iprop))
 
             backgroundT  = np.mean(background, axis=0)
             backgroundTT = np.empty_like(backgroundT)
@@ -293,6 +314,7 @@ def DM(I, R, P, O, iters, OP_iters = 1, mask = 1, Fresnel = False, background = 
                 if update == 'P' : bak = Ps.copy()
                 if update == 'OP': bak = np.hstack((Os.ravel().copy(), Ps.ravel().copy()))
         
+    """
     # This should not be necessary but it crashes otherwise
     exits = era.make_exits(Os, Ps, R, exits)
     I = np.fft.fftshift(np.abs(np.fft.fftn(exits, axes = (-2, -1)))**2, axes = (-2, -1))
@@ -316,11 +338,51 @@ def DM(I, R, P, O, iters, OP_iters = 1, mask = 1, Fresnel = False, background = 
         return O, P, info
     else :
         return None, None, None
+    """
+
+    # This should not be necessary but it crashes otherwise
+    #I = np.fft.fftshift(np.abs(np.fft.fftn(exits, axes = (-2, -1)))**2, axes = (-2, -1))
+    #exits = era.make_exits(Os, Ps, R, exits)
+    per_diff_eMod = era.model_error_per_diff(amp, ex_0, mask, background = 0, prop = prop)
+       
+    I = np.fft.fftshift(np.abs(prop(ex_0))**2, axes = (-2,-1))
+    if rank == 0 :
+        I_rec = [I.copy()]
+        for i in range(1, size):
+            #print 'gathering I from rank:', i
+            I_rec.append( comm.recv(source = i, tag = i) )
+        I = np.array([e for es in I_rec for e in es])
+    else :
+        comm.send(I, dest=0, tag=rank)
+
+    if rank == 0 :
+        info = {}
+        info['I']       = I
+        info['eMod']    = eMods
+
+        # combine the per diff eMods
+        err = per_diff_eMod[0]
+        for i in range(1, size):
+            err = np.hstack((err, per_diff_eMod[i]))
+        info['eMod_diff'] = err
+        info['eCon']    = eCons
+        info['heatmap'] = P_heatmap
+        if background is not None :
+            if len(background.shape) == 3 :
+                background = background[0]
+            info['background'] = np.fft.fftshift(background)**2
+        return Os, Ps, info
+    else :
+        return None, None, None
 
 
 
-def model_error_1(amp, exits, mask, background = 0):
-    exits = np.fft.fftn(exits, axes = (-2, -1))
+def model_error_1(amp, exits, mask, background = 0, prop = None):
+    if prop is None :
+        exits = np.fft.fftn(exits, axes = (-2, -1))
+    else :
+        exits = prop[0](exits)
+   # exits = np.fft.fftn(exits, axes = (-2, -1))
     M     = np.sqrt((exits.conj() * exits).real + background**2)
     err   = np.sum( mask * (M - amp)**2 ) 
     return err
